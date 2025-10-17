@@ -3,8 +3,8 @@ import { Users, Mail, UserCheck, Clock, Activity } from 'lucide-react';
 import { StatsCard } from '@/components/StatsCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { storage } from '@/lib/storage';
-import { DashboardStats, AccessEntry, Mail as MailType, RealtimeEvent } from '@/types';
+import { supabaseStorage } from '@/lib/supabase-storage';
+import { DashboardStats, AccessEntry, Mail as MailType, RealtimeEvent, Resident } from '@/types';
 
 export const Dashboard = () => {
   const [stats, setStats] = useState<DashboardStats>({
@@ -17,6 +17,7 @@ export const Dashboard = () => {
   const [recentEntries, setRecentEntries] = useState<AccessEntry[]>([]);
   const [recentMails, setRecentMails] = useState<MailType[]>([]);
   const [realtimeEvents, setRealtimeEvents] = useState<RealtimeEvent[]>([]);
+  const [residents, setResidents] = useState<Resident[]>([]);
 
   useEffect(() => {
     loadStats();
@@ -24,28 +25,33 @@ export const Dashboard = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const loadStats = () => {
-    const residents = storage.getResidents();
-    const mails = storage.getMails();
-    const entries = storage.getEntries();
+  const loadStats = async () => {
+    const [residentsData, mailsData, entriesData, eventsData] = await Promise.all([
+      supabaseStorage.getResidents(),
+      supabaseStorage.getMails(),
+      supabaseStorage.getEntries(),
+      supabaseStorage.getEvents(),
+    ]);
+
+    setResidents(residentsData);
 
     const today = new Date().toDateString();
-    const todayEntries = entries.filter(
+    const todayEntries = entriesData.filter(
       (e) => new Date(e.entryTime).toDateString() === today
     );
-    const activeVisitors = entries.filter((e) => !e.exitTime).length;
-    const pendingMails = mails.filter((m) => m.status === 'pending').length;
+    const activeVisitors = entriesData.filter((e) => !e.exitTime).length;
+    const pendingMails = mailsData.filter((m) => m.status === 'pending').length;
 
     setStats({
-      totalResidents: residents.length,
+      totalResidents: residentsData.length,
       pendingMails,
       activeVisitors,
       todayEntries: todayEntries.length,
     });
 
-    setRecentEntries(entries.slice(-5).reverse());
-    setRecentMails(mails.slice(-5).reverse());
-    setRealtimeEvents(storage.getEvents().slice(0, 10));
+    setRecentEntries(entriesData.slice(0, 5));
+    setRecentMails(mailsData.slice(0, 5));
+    setRealtimeEvents(eventsData.slice(0, 10));
   };
 
   return (
@@ -144,7 +150,7 @@ export const Dashboard = () => {
                 </p>
               ) : (
                 recentMails.map((mail) => {
-                  const resident = storage.getResidents().find((r) => r.id === mail.residentId);
+                  const resident = residents.find((r) => r.id === mail.residentId);
                   return (
                     <div
                       key={mail.id}

@@ -2,11 +2,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Settings as SettingsIcon, Trash2, Download, Upload, Send, FileText, FileSpreadsheet } from 'lucide-react';
+import { Settings as SettingsIcon, Trash2, Download, Upload, Send, FileText, FileSpreadsheet, Lock } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { useState } from 'react';
 
 // Funções auxiliares para CSV
 const arrayToCSV = (data: any[], headers: string[]) => {
@@ -56,6 +57,19 @@ const parseCSV = (text: string): any[] => {
 };
 
 export const Settings = () => {
+  const [isIntegrationsUnlocked, setIsIntegrationsUnlocked] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+
+  const handleUnlockIntegrations = () => {
+    if (username === 'admin' && password === 'admin') {
+      setIsIntegrationsUnlocked(true);
+      toast.success('Acesso concedido às integrações!');
+    } else {
+      toast.error('Usuário ou senha incorretos!');
+    }
+  };
+
   const handleExportData = () => {
     const doc = new jsPDF();
     const residents = storage.getResidents();
@@ -364,52 +378,110 @@ export const Settings = () => {
             <CardTitle className="flex items-center space-x-2">
               <Send className="h-5 w-5 text-primary" />
               <span>Integrações</span>
+              <Lock className="h-4 w-4 text-muted-foreground" />
             </CardTitle>
             <CardDescription>
-              Configure integrações com dispositivos e notificações
+              Configure integrações com dispositivos e notificações (Protegido por senha)
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="p-4 bg-muted rounded-lg">
-              <Label className="text-base font-semibold mb-2 block">Control ID - Dispositivos</Label>
-              <p className="text-sm text-muted-foreground mb-3">
-                Configure a conexão com seus dispositivos Control ID para reconhecimento facial e tags veiculares.
-              </p>
-              <Input placeholder="IP do dispositivo (ex: 192.168.1.100)" className="mb-2" />
-              <Input placeholder="Porta (ex: 80)" className="mb-2" />
-              <Button variant="outline" className="w-full">
-                <SettingsIcon className="h-4 w-4 mr-2" />
-                Configurar Control ID
-              </Button>
-            </div>
-            
-            <div className="p-4 bg-muted rounded-lg">
-              <Label className="text-base font-semibold mb-2 block">WhatsApp Business API</Label>
-              <p className="text-sm text-muted-foreground mb-3">
-                Envie notificações automáticas via WhatsApp quando uma correspondência for registrada.
-              </p>
-              <Input placeholder="Token da API" type="password" className="mb-2" />
-              <Input placeholder="Número de telefone (ex: 5511999999999)" className="mb-2" />
-              <Button variant="outline" className="w-full">
-                <Send className="h-4 w-4 mr-2" />
-                Conectar WhatsApp
-              </Button>
-            </div>
-            
-            <div className="p-4 bg-muted rounded-lg">
-              <Label className="text-base font-semibold mb-2 block">Email - SMTP</Label>
-              <p className="text-sm text-muted-foreground mb-3">
-                Configure o servidor SMTP para enviar emails automáticos aos moradores.
-              </p>
-              <Input placeholder="Servidor SMTP (ex: smtp.gmail.com)" className="mb-2" />
-              <Input placeholder="Porta (ex: 587)" className="mb-2" />
-              <Input placeholder="Email" type="email" className="mb-2" />
-              <Input placeholder="Senha" type="password" className="mb-2" />
-              <Button variant="outline" className="w-full">
-                <Send className="h-4 w-4 mr-2" />
-                Configurar Email
-              </Button>
-            </div>
+            {!isIntegrationsUnlocked ? (
+              <div className="p-6 bg-muted rounded-lg space-y-4">
+                <div className="flex items-center justify-center mb-4">
+                  <Lock className="h-12 w-12 text-primary" />
+                </div>
+                <p className="text-center text-sm text-muted-foreground mb-4">
+                  Esta seção está protegida. Faça login para acessar as configurações de integrações.
+                </p>
+                <div className="space-y-3 max-w-sm mx-auto">
+                  <div className="space-y-2">
+                    <Label htmlFor="username">Usuário</Label>
+                    <Input
+                      id="username"
+                      type="text"
+                      placeholder="Digite o usuário"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleUnlockIntegrations()}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Senha</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      placeholder="Digite a senha"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleUnlockIntegrations()}
+                    />
+                  </div>
+                  <Button onClick={handleUnlockIntegrations} className="w-full">
+                    <Lock className="h-4 w-4 mr-2" />
+                    Desbloquear Integrações
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-4 p-3 bg-success/10 border border-success rounded-lg">
+                  <span className="text-sm font-medium text-success">🔓 Acesso concedido às integrações</span>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => {
+                      setIsIntegrationsUnlocked(false);
+                      setUsername('');
+                      setPassword('');
+                      toast.info('Integrações bloqueadas novamente');
+                    }}
+                  >
+                    Bloquear
+                  </Button>
+                </div>
+                
+                <div className="p-4 bg-muted rounded-lg">
+                  <Label className="text-base font-semibold mb-2 block">Control ID - Dispositivos</Label>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Configure a conexão com seus dispositivos Control ID para reconhecimento facial e tags veiculares.
+                  </p>
+                  <Input placeholder="IP do dispositivo (ex: 192.168.1.100)" className="mb-2" />
+                  <Input placeholder="Porta (ex: 80)" className="mb-2" />
+                  <Button variant="outline" className="w-full">
+                    <SettingsIcon className="h-4 w-4 mr-2" />
+                    Configurar Control ID
+                  </Button>
+                </div>
+                
+                <div className="p-4 bg-muted rounded-lg">
+                  <Label className="text-base font-semibold mb-2 block">WhatsApp Business API</Label>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Envie notificações automáticas via WhatsApp quando uma correspondência for registrada.
+                  </p>
+                  <Input placeholder="Token da API" type="password" className="mb-2" />
+                  <Input placeholder="Número de telefone (ex: 5511999999999)" className="mb-2" />
+                  <Button variant="outline" className="w-full">
+                    <Send className="h-4 w-4 mr-2" />
+                    Conectar WhatsApp
+                  </Button>
+                </div>
+                
+                <div className="p-4 bg-muted rounded-lg">
+                  <Label className="text-base font-semibold mb-2 block">Email - SMTP</Label>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Configure o servidor SMTP para enviar emails automáticos aos moradores.
+                  </p>
+                  <Input placeholder="Servidor SMTP (ex: smtp.gmail.com)" className="mb-2" />
+                  <Input placeholder="Porta (ex: 587)" className="mb-2" />
+                  <Input placeholder="Email" type="email" className="mb-2" />
+                  <Input placeholder="Senha" type="password" className="mb-2" />
+                  <Button variant="outline" className="w-full">
+                    <Send className="h-4 w-4 mr-2" />
+                    Configurar Email
+                  </Button>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 

@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { LogIn, LogOut, Camera, Upload, X, Plus } from 'lucide-react';
+import { LogIn, LogOut, Camera, Upload, X, Plus, Pencil, Trash2 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { AccessEntry, Resident } from '@/types';
 import { toast } from 'sonner';
@@ -24,15 +24,27 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 export const NewRegistry = () => {
   const [residents, setResidents] = useState<Resident[]>([]);
   const [entries, setEntries] = useState<AccessEntry[]>([]);
+  const [allEntries, setAllEntries] = useState<AccessEntry[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string>('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [currentPageAll, setCurrentPageAll] = useState(1);
   const [visitedLocationSearch, setVisitedLocationSearch] = useState('');
   const [showResidentSuggestions, setShowResidentSuggestions] = useState(false);
   const itemsPerPage = 12;
+  const itemsPerPageTable = 10;
   const [formData, setFormData] = useState({
     visitorName: '',
     visitorDocument: '',
@@ -58,7 +70,9 @@ export const NewRegistry = () => {
 
   const loadData = () => {
     setResidents(storage.getResidents());
-    setEntries(storage.getEntries().filter((e) => !e.exitTime));
+    const storedEntries = storage.getEntries();
+    setEntries(storedEntries.filter((e) => !e.exitTime));
+    setAllEntries(storedEntries.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()));
   };
 
   const activeEntries = entries.filter(e => !e.exitTime).reverse();
@@ -66,6 +80,12 @@ export const NewRegistry = () => {
   const paginatedEntries = activeEntries.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
+  );
+
+  const totalPagesAll = Math.ceil(allEntries.length / itemsPerPageTable);
+  const paginatedAllEntries = allEntries.slice(
+    (currentPageAll - 1) * itemsPerPageTable,
+    currentPageAll * itemsPerPageTable
   );
 
   const filteredResidents = residents.filter(r => 
@@ -179,37 +199,108 @@ export const NewRegistry = () => {
       return;
     }
 
-    const entry: AccessEntry = {
-      id: `entry_${Date.now()}`,
-      visitorName: formData.visitorName,
-      visitorDocument: formData.visitorDocument,
-      visitorType: formData.visitorType,
-      residentId: formData.residentId,
-      residentName: resident.name,
-      apartment: resident.apartment,
-      purpose: formData.purpose,
-      entryTime: new Date().toISOString(),
-      exitTime: null,
-      vehiclePlate: formData.vehiclePlate,
-      vehicleModel: formData.vehicleModel,
-      vehicleColor: formData.vehicleColor,
-      photo: formData.photo,
-      company: formData.company,
-      autoRecognized: showSuggestions && suggestions.length > 0,
-    };
+    if (editingId) {
+      // Update existing entry
+      const allStoredEntries = storage.getEntries();
+      const updatedEntries = allStoredEntries.map((entry) =>
+        entry.id === editingId
+          ? {
+              ...entry,
+              visitorName: formData.visitorName,
+              visitorDocument: formData.visitorDocument,
+              visitorType: formData.visitorType,
+              residentId: formData.residentId,
+              residentName: resident.name,
+              apartment: resident.apartment,
+              purpose: formData.purpose,
+              vehiclePlate: formData.vehiclePlate,
+              vehicleModel: formData.vehicleModel,
+              vehicleColor: formData.vehicleColor,
+              photo: formData.photo,
+              company: formData.company,
+            }
+          : entry
+      );
+      
+      storage.saveEntries(updatedEntries);
+      setEntries(updatedEntries.filter((e) => !e.exitTime));
+      setAllEntries(updatedEntries.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()));
+      toast.success('Cadastro atualizado com sucesso!');
+    } else {
+      // Create new entry
+      const entry: AccessEntry = {
+        id: `entry_${Date.now()}`,
+        visitorName: formData.visitorName,
+        visitorDocument: formData.visitorDocument,
+        visitorType: formData.visitorType,
+        residentId: formData.residentId,
+        residentName: resident.name,
+        apartment: resident.apartment,
+        purpose: formData.purpose,
+        entryTime: new Date().toISOString(),
+        exitTime: null,
+        vehiclePlate: formData.vehiclePlate,
+        vehicleModel: formData.vehicleModel,
+        vehicleColor: formData.vehicleColor,
+        photo: formData.photo,
+        company: formData.company,
+        autoRecognized: showSuggestions && suggestions.length > 0,
+      };
 
-    const allEntries = storage.getEntries();
-    const updatedEntries = [...allEntries, entry];
+      const allStoredEntries = storage.getEntries();
+      const updatedEntries = [...allStoredEntries, entry];
+      storage.saveEntries(updatedEntries);
+      
+      storage.addEvent({
+        type: 'entry',
+        description: `${formData.visitorType === 'visitor' ? 'Visitante' : 'Prestador'} registrado: ${formData.visitorName} - ${resident.apartment}`,
+        priority: 'medium',
+        relatedId: entry.id,
+      });
+
+      setEntries(updatedEntries.filter((e) => !e.exitTime));
+      setAllEntries(updatedEntries.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()));
+      toast.success(`Entrada registrada: ${formData.visitorName}`);
+    }
+
+    resetForm();
+  };
+
+  const handleEdit = (entry: AccessEntry) => {
+    setEditingId(entry.id);
+    setFormData({
+      visitorName: entry.visitorName,
+      visitorDocument: entry.visitorDocument,
+      visitorType: entry.visitorType,
+      residentId: entry.residentId,
+      purpose: entry.purpose || '',
+      company: entry.company || '',
+      vehiclePlate: entry.vehiclePlate || '',
+      vehicleModel: entry.vehicleModel || '',
+      vehicleColor: entry.vehicleColor || '',
+      photo: entry.photo || '',
+    });
+    const resident = residents.find(r => r.id === entry.residentId);
+    if (resident) {
+      setVisitedLocationSearch(`${resident.name} - ${resident.apartment}`);
+    }
+    setIsDialogOpen(true);
+  };
+
+  const handleDelete = (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir este cadastro?')) return;
+    
+    const allStoredEntries = storage.getEntries();
+    const updatedEntries = allStoredEntries.filter((e) => e.id !== id);
     storage.saveEntries(updatedEntries);
     
-    storage.addEvent({
-      type: 'entry',
-      description: `${formData.visitorType === 'visitor' ? 'Visitante' : 'Prestador'} registrado: ${formData.visitorName} - ${resident.apartment}`,
-      priority: 'medium',
-      relatedId: entry.id,
-    });
-
     setEntries(updatedEntries.filter((e) => !e.exitTime));
+    setAllEntries(updatedEntries.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()));
+    toast.success('Cadastro excluído com sucesso!');
+  };
+
+  const resetForm = () => {
+    setEditingId('');
     setFormData({
       visitorName: '',
       visitorDocument: '',
@@ -226,14 +317,13 @@ export const NewRegistry = () => {
     setSuggestions([]);
     setShowSuggestions(false);
     setIsDialogOpen(false);
-
-    toast.success(`Entrada registrada: ${formData.visitorName}`);
+    stopCamera();
   };
 
   const handleExit = (entryId: string) => {
-    const allEntries = storage.getEntries();
-    const entry = allEntries.find((e) => e.id === entryId);
-    const updatedEntries = allEntries.map((e) =>
+    const allStoredEntries = storage.getEntries();
+    const entry = allStoredEntries.find((e) => e.id === entryId);
+    const updatedEntries = allStoredEntries.map((e) =>
       e.id === entryId
         ? { ...e, exitTime: new Date().toISOString() }
         : e
@@ -241,6 +331,7 @@ export const NewRegistry = () => {
     
     storage.saveEntries(updatedEntries);
     setEntries(updatedEntries.filter((e) => !e.exitTime));
+    setAllEntries(updatedEntries.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()));
     
     if (entry) {
       storage.addEvent({
@@ -367,10 +458,147 @@ export const NewRegistry = () => {
         </CardContent>
       </Card>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>Todos os Cadastros</span>
+            <span className="text-sm font-normal text-muted-foreground">
+              Total: {allEntries.length}
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[80px]">Foto</TableHead>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Documento</TableHead>
+                  <TableHead>Apartamento</TableHead>
+                  <TableHead>Entrada</TableHead>
+                  <TableHead>Saída</TableHead>
+                  <TableHead className="text-right w-[100px]">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paginatedAllEntries.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                      Nenhum cadastro ainda
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  paginatedAllEntries.map((entry) => (
+                    <TableRow key={entry.id} className="hover:bg-muted/50">
+                      <TableCell>
+                        {entry.photo ? (
+                          <img 
+                            src={entry.photo} 
+                            alt={entry.visitorName} 
+                            className="w-12 h-12 rounded-full object-cover border-2 border-primary/20" 
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-xl">
+                            {entry.visitorType === 'service_provider' ? '🔧' : '👤'}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-medium">{entry.visitorName}</TableCell>
+                      <TableCell>
+                        <span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${
+                          entry.visitorType === 'service_provider' 
+                            ? 'bg-warning/10 text-warning' 
+                            : 'bg-success/10 text-success'
+                        }`}>
+                          {entry.visitorType === 'service_provider' ? 'Prestador' : 'Visitante'}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{entry.visitorDocument}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{entry.apartment}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {new Date(entry.entryTime).toLocaleDateString('pt-BR')} {new Date(entry.entryTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {entry.exitTime ? (
+                          <>
+                            {new Date(entry.exitTime).toLocaleDateString('pt-BR')} {new Date(entry.exitTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          </>
+                        ) : (
+                          <span className="text-success font-medium">Ativo</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleEdit(entry)}
+                            className="h-8 w-8"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleDelete(entry.id)}
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          
+          {totalPagesAll > 1 && (
+            <div className="mt-6">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious 
+                      onClick={() => setCurrentPageAll(p => Math.max(1, p - 1))}
+                      className={currentPageAll === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                    />
+                  </PaginationItem>
+                  
+                  {Array.from({ length: totalPagesAll }, (_, i) => i + 1).map((page) => (
+                    <PaginationItem key={page}>
+                      <PaginationLink
+                        onClick={() => setCurrentPageAll(page)}
+                        isActive={currentPageAll === page}
+                        className="cursor-pointer"
+                      >
+                        {page}
+                      </PaginationLink>
+                    </PaginationItem>
+                  ))}
+                  
+                  <PaginationItem>
+                    <PaginationNext 
+                      onClick={() => setCurrentPageAll(p => Math.min(totalPagesAll, p + 1))}
+                      className={currentPageAll === totalPagesAll ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={isDialogOpen} onOpenChange={(open) => {
+        if (!open) resetForm();
+        setIsDialogOpen(open);
+      }}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Registrar Nova Entrada</DialogTitle>
+            <DialogTitle>{editingId ? 'Editar Cadastro' : 'Registrar Nova Entrada'}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleEntry} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

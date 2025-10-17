@@ -1,0 +1,358 @@
+import { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Wifi, WifiOff, Camera, Tag, CreditCard, Pencil, Trash2, Plus } from 'lucide-react';
+import { storage } from '@/lib/storage';
+import { Device } from '@/types';
+import { toast } from 'sonner';
+
+export const Devices = () => {
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string>('');
+  const [formData, setFormData] = useState({
+    name: '',
+    type: 'facial_recognition' as Device['type'],
+    location: '',
+    status: 'online' as Device['status'],
+    ipAddress: '',
+    serialNumber: '',
+  });
+
+  useEffect(() => {
+    loadDevices();
+  }, []);
+
+  const loadDevices = () => {
+    setDevices(storage.getDevices());
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    const deviceData: Device = {
+      id: editingId || `device_${Date.now()}`,
+      ...formData,
+      lastSync: new Date().toISOString(),
+    };
+
+    let updatedDevices: Device[];
+    
+    if (editingId) {
+      updatedDevices = devices.map((d) => (d.id === editingId ? deviceData : d));
+      toast.success('Dispositivo atualizado!');
+      
+      storage.addEvent({
+        type: 'device',
+        description: `Dispositivo atualizado: ${formData.name}`,
+        priority: 'low',
+      });
+    } else {
+      updatedDevices = [...devices, deviceData];
+      toast.success('Dispositivo cadastrado!');
+      
+      storage.addEvent({
+        type: 'device',
+        description: `Novo dispositivo cadastrado: ${formData.name}`,
+        priority: 'medium',
+      });
+    }
+
+    storage.saveDevices(updatedDevices);
+    setDevices(updatedDevices);
+    resetForm();
+  };
+
+  const handleEdit = (device: Device) => {
+    setEditingId(device.id);
+    setFormData({
+      name: device.name,
+      type: device.type,
+      location: device.location,
+      status: device.status,
+      ipAddress: device.ipAddress || '',
+      serialNumber: device.serialNumber || '',
+    });
+    setShowForm(true);
+  };
+
+  const handleDelete = (id: string) => {
+    if (!confirm('Deseja realmente excluir este dispositivo?')) return;
+    
+    const device = devices.find(d => d.id === id);
+    const updatedDevices = devices.filter((d) => d.id !== id);
+    storage.saveDevices(updatedDevices);
+    setDevices(updatedDevices);
+    
+    if (device) {
+      storage.addEvent({
+        type: 'device',
+        description: `Dispositivo removido: ${device.name}`,
+        priority: 'low',
+      });
+    }
+    
+    toast.success('Dispositivo excluído!');
+  };
+
+  const toggleStatus = (id: string) => {
+    const updatedDevices = devices.map((d) =>
+      d.id === id
+        ? { ...d, status: d.status === 'online' ? 'offline' as const : 'online' as const, lastSync: new Date().toISOString() }
+        : d
+    );
+    storage.saveDevices(updatedDevices);
+    setDevices(updatedDevices);
+    
+    const device = updatedDevices.find(d => d.id === id);
+    if (device) {
+      storage.addEvent({
+        type: 'device',
+        description: `Status alterado: ${device.name} - ${device.status === 'online' ? 'Online' : 'Offline'}`,
+        priority: device.status === 'offline' ? 'high' : 'low',
+      });
+      
+      toast.success(`Dispositivo ${device.status === 'online' ? 'ativado' : 'desativado'}!`);
+    }
+  };
+
+  const resetForm = () => {
+    setEditingId('');
+    setFormData({
+      name: '',
+      type: 'facial_recognition',
+      location: '',
+      status: 'online',
+      ipAddress: '',
+      serialNumber: '',
+    });
+    setShowForm(false);
+  };
+
+  const getDeviceIcon = (type: Device['type']) => {
+    switch (type) {
+      case 'facial_recognition':
+        return <Camera className="h-5 w-5" />;
+      case 'vehicle_tag':
+        return <Tag className="h-5 w-5" />;
+      case 'card_reader':
+        return <CreditCard className="h-5 w-5" />;
+    }
+  };
+
+  const getDeviceTypeName = (type: Device['type']) => {
+    switch (type) {
+      case 'facial_recognition':
+        return 'Reconhecimento Facial';
+      case 'vehicle_tag':
+        return 'TAG Veicular';
+      case 'card_reader':
+        return 'Leitor de Cartão';
+    }
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-3xl font-bold text-foreground mb-2">Dispositivos</h2>
+          <p className="text-muted-foreground">Gerencie os dispositivos de controle de acesso</p>
+        </div>
+        <Button onClick={() => setShowForm(!showForm)}>
+          <Plus className="h-4 w-4 mr-2" />
+          Novo Dispositivo
+        </Button>
+      </div>
+
+      {showForm && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{editingId ? 'Editar Dispositivo' : 'Novo Dispositivo'}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Nome do Dispositivo *</Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="Ex: Portaria Principal"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="type">Tipo *</Label>
+                  <Select 
+                    value={formData.type} 
+                    onValueChange={(value: Device['type']) => setFormData({ ...formData, type: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="facial_recognition">📷 Reconhecimento Facial</SelectItem>
+                      <SelectItem value="vehicle_tag">🏷️ TAG Veicular</SelectItem>
+                      <SelectItem value="card_reader">💳 Leitor de Cartão</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="location">Localização *</Label>
+                  <Input
+                    id="location"
+                    value={formData.location}
+                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                    placeholder="Ex: Portaria 1, Garagem, etc."
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="status">Status *</Label>
+                  <Select 
+                    value={formData.status} 
+                    onValueChange={(value: Device['status']) => setFormData({ ...formData, status: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="online">🟢 Online</SelectItem>
+                      <SelectItem value="offline">🔴 Offline</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="ipAddress">Endereço IP</Label>
+                  <Input
+                    id="ipAddress"
+                    value={formData.ipAddress}
+                    onChange={(e) => setFormData({ ...formData, ipAddress: e.target.value })}
+                    placeholder="192.168.1.100"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="serialNumber">Número de Série</Label>
+                  <Input
+                    id="serialNumber"
+                    value={formData.serialNumber}
+                    onChange={(e) => setFormData({ ...formData, serialNumber: e.target.value })}
+                    placeholder="SN12345678"
+                  />
+                </div>
+              </div>
+
+              <div className="flex space-x-2">
+                <Button type="submit" className="flex-1">
+                  {editingId ? 'Salvar Alterações' : 'Cadastrar Dispositivo'}
+                </Button>
+                <Button type="button" variant="secondary" onClick={resetForm}>
+                  Cancelar
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {devices.length === 0 ? (
+          <Card className="col-span-full">
+            <CardContent className="py-8">
+              <p className="text-center text-muted-foreground">
+                Nenhum dispositivo cadastrado. Clique em "Novo Dispositivo" para começar.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          devices.map((device) => (
+            <Card key={device.id} className="hover:shadow-lg transition-shadow">
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center space-x-2">
+                    <div className={`p-2 rounded-lg ${device.status === 'online' ? 'bg-success/20' : 'bg-destructive/20'}`}>
+                      {getDeviceIcon(device.type)}
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg">{device.name}</CardTitle>
+                      <p className="text-xs text-muted-foreground">{getDeviceTypeName(device.type)}</p>
+                    </div>
+                  </div>
+                  <Badge variant={device.status === 'online' ? 'default' : 'destructive'}>
+                    {device.status === 'online' ? <Wifi className="h-3 w-3 mr-1" /> : <WifiOff className="h-3 w-3 mr-1" />}
+                    {device.status === 'online' ? 'Online' : 'Offline'}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Localização:</span>
+                    <span className="font-medium">{device.location}</span>
+                  </div>
+                  {device.ipAddress && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">IP:</span>
+                      <span className="font-mono text-xs">{device.ipAddress}</span>
+                    </div>
+                  )}
+                  {device.serialNumber && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Série:</span>
+                      <span className="font-mono text-xs">{device.serialNumber}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Última Sync:</span>
+                    <span className="text-xs">{new Date(device.lastSync).toLocaleString('pt-BR')}</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => toggleStatus(device.id)}
+                    className="flex-1"
+                  >
+                    {device.status === 'online' ? 'Desativar' : 'Ativar'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleEdit(device)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleDelete(device.id)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </div>
+    </div>
+  );
+};

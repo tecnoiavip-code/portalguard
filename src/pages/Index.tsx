@@ -1,0 +1,56 @@
+import { useState } from 'react';
+import { Layout } from '@/components/Layout';
+import { Sidebar } from '@/components/Sidebar';
+import { Dashboard } from './Dashboard';
+import { Residents } from './Residents';
+import { NewRegistry } from './NewRegistry';
+import { MailManagement } from './MailManagement';
+import { Devices } from './Devices';
+import { Logs } from './Logs';
+import { Settings } from './Settings';
+
+const Index = () => {
+  const [activeSection, setActiveSection] = useState('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const renderSection = () => {
+    switch (activeSection) {
+      case 'dashboard':
+        return <Dashboard />;
+      case 'residents':
+        return <Residents />;
+      case 'new-registry':
+        return <NewRegistry />;
+      case 'mail':
+        return <MailManagement />;
+      case 'devices':
+        return <Devices />;
+      case 'logs':
+        return <Logs />;
+      case 'settings':
+        return <Settings />;
+      default:
+        return <Dashboard />;
+    }
+  };
+
+  const handleSectionChange = (section: string) => {
+    setActiveSection(section);
+    setSidebarOpen(false);
+  };
+
+  return (
+    <Layout>
+      <Sidebar
+        activeSection={activeSection}
+        onSectionChange={handleSectionChange}
+        isOpen={sidebarOpen}
+      />
+      <main className="flex-1 p-6 md:ml-0 overflow-x-hidden">
+        {renderSection()}
+      </main>
+    </Layout>
+  );
+};
+
+export default Index;

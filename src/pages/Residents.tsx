@@ -1,0 +1,498 @@
+import { useState, useEffect, useRef } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Pencil, Trash2, Save, X, Plus } from 'lucide-react';
+import { storage } from '@/lib/storage';
+import { Resident } from '@/types';
+import { toast } from 'sonner';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
+export const Residents = () => {
+  const [residents, setResidents] = useState<Resident[]>([]);
+  const [editingId, setEditingId] = useState<string>('');
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+  const [formData, setFormData] = useState({
+    name: '',
+    cpf: '',
+    apartment: '',
+    phone: '',
+    email: '',
+    photo: '',
+    vehiclePlate: '',
+    vehicleModel: '',
+    vehicleColor: '',
+    vehicleTag: '',
+  });
+  const [showCamera, setShowCamera] = useState(false);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    loadResidents();
+  }, []);
+
+  const totalPages = Math.ceil(residents.length / itemsPerPage);
+  const paginatedResidents = residents.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  const loadResidents = () => {
+    setResidents(storage.getResidents());
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    const residentData: Resident = {
+      id: editingId || `res_${Date.now()}`,
+      ...formData,
+      createdAt: editingId
+        ? residents.find((r) => r.id === editingId)?.createdAt || new Date().toISOString()
+        : new Date().toISOString(),
+    };
+
+    let updatedResidents: Resident[];
+    
+    if (editingId) {
+      updatedResidents = residents.map((r) => (r.id === editingId ? residentData : r));
+      toast.success('Morador atualizado com sucesso!');
+    } else {
+      updatedResidents = [...residents, residentData];
+      toast.success('Morador cadastrado com sucesso!');
+    }
+
+    storage.saveResidents(updatedResidents);
+    setResidents(updatedResidents);
+    resetForm();
+  };
+
+  const handleEdit = (resident: Resident) => {
+    setEditingId(resident.id);
+    setFormData({
+      name: resident.name,
+      cpf: resident.cpf,
+      apartment: resident.apartment,
+      phone: resident.phone,
+      email: resident.email,
+      photo: resident.photo || '',
+      vehiclePlate: resident.vehiclePlate || '',
+      vehicleModel: resident.vehicleModel || '',
+      vehicleColor: resident.vehicleColor || '',
+      vehicleTag: resident.vehicleTag || '',
+    });
+    setIsDialogOpen(true);
+  };
+
+  const startCamera = async () => {
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      setStream(mediaStream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+      }
+      setShowCamera(true);
+    } catch (error) {
+      toast.error('Não foi possível acessar a câmera');
+    }
+  };
+
+  const stopCamera = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+    setShowCamera(false);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const context = canvasRef.current.getContext('2d');
+      if (context) {
+        canvasRef.current.width = videoRef.current.videoWidth;
+        canvasRef.current.height = videoRef.current.videoHeight;
+        context.drawImage(videoRef.current, 0, 0);
+        const photoData = canvasRef.current.toDataURL('image/jpeg');
+        setFormData({ ...formData, photo: photoData });
+        stopCamera();
+        toast.success('Foto capturada!');
+      }
+    }
+  };
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData({ ...formData, photo: reader.result as string });
+        toast.success('Foto carregada!');
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleDelete = (id: string) => {
+    if (!confirm('Tem certeza? Isso também removerá correspondências associadas.')) return;
+    
+    const updatedResidents = residents.filter((r) => r.id !== id);
+    storage.saveResidents(updatedResidents);
+    
+    const mails = storage.getMails().filter((m) => m.residentId !== id);
+    storage.saveMails(mails);
+    
+    setResidents(updatedResidents);
+    toast.success('Morador excluído com sucesso!');
+  };
+
+  const resetForm = () => {
+    setEditingId('');
+    setFormData({
+      name: '',
+      cpf: '',
+      apartment: '',
+      phone: '',
+      email: '',
+      photo: '',
+      vehiclePlate: '',
+      vehicleModel: '',
+      vehicleColor: '',
+      vehicleTag: '',
+    });
+    stopCamera();
+    setIsDialogOpen(false);
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-bold text-foreground mb-2">Moradores</h2>
+          <p className="text-muted-foreground">Cadastre e gerencie os moradores do condomínio</p>
+        </div>
+        <Button onClick={() => setIsDialogOpen(true)} size="lg" className="gap-2">
+          <Plus className="h-5 w-5" />
+          Novo Cadastro
+        </Button>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>Lista de Moradores</span>
+            <span className="text-sm font-normal text-muted-foreground">
+              Total: {residents.length}
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[80px]">Foto</TableHead>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Apartamento</TableHead>
+                  <TableHead>CPF</TableHead>
+                  <TableHead>Telefone</TableHead>
+                  <TableHead>E-mail</TableHead>
+                  <TableHead>Veículo</TableHead>
+                  <TableHead className="text-right w-[100px]">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paginatedResidents.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                      Nenhum morador cadastrado ainda
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  paginatedResidents.map((resident) => (
+                    <TableRow key={resident.id} className="hover:bg-muted/50">
+                      <TableCell>
+                        {resident.photo ? (
+                          <img 
+                            src={resident.photo} 
+                            alt={resident.name} 
+                            className="w-12 h-12 rounded-full object-cover border-2 border-primary/20" 
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-xl">
+                            👤
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-medium">{resident.name}</TableCell>
+                      <TableCell>{resident.apartment}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{resident.cpf}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {resident.phone || '-'}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
+                        {resident.email || '-'}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {resident.vehiclePlate ? (
+                          <div className="space-y-1">
+                            <div>🚗 {resident.vehiclePlate}</div>
+                            {resident.vehicleModel && (
+                              <div className="text-xs">{resident.vehicleModel}</div>
+                            )}
+                          </div>
+                        ) : (
+                          '-'
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleEdit(resident)}
+                            className="h-8 w-8"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleDelete(resident.id)}
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          
+          {totalPages > 1 && (
+            <div className="mt-6">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious 
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                    />
+                  </PaginationItem>
+                  
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                    <PaginationItem key={page}>
+                      <PaginationLink
+                        onClick={() => setCurrentPage(page)}
+                        isActive={currentPage === page}
+                        className="cursor-pointer"
+                      >
+                        {page}
+                      </PaginationLink>
+                    </PaginationItem>
+                  ))}
+                  
+                  <PaginationItem>
+                    <PaginationNext 
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingId ? 'Editar Morador' : 'Cadastro de Morador'}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Foto Section */}
+              <div className="space-y-2 md:col-span-3 flex items-center gap-4">
+                <div>
+                  {formData.photo ? (
+                    <img src={formData.photo} alt="Foto" className="w-24 h-24 rounded-full object-cover border-2 border-primary" />
+                  ) : (
+                    <div className="w-24 h-24 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
+                      Sem foto
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Foto do Morador</Label>
+                  <div className="flex gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={startCamera}>
+                      📷 Webcam
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" onClick={() => document.getElementById('photoUpload')?.click()}>
+                      📁 Carregar
+                    </Button>
+                    {formData.photo && (
+                      <Button type="button" size="sm" variant="destructive" onClick={() => setFormData({ ...formData, photo: '' })}>
+                        🗑️ Remover
+                      </Button>
+                    )}
+                  </div>
+                  <input
+                    id="photoUpload"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handlePhotoUpload}
+                  />
+                </div>
+              </div>
+
+              {/* Camera Modal */}
+              {showCamera && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 md:col-span-3">
+                  <div className="bg-background p-4 rounded-lg">
+                    <video ref={videoRef} autoPlay className="w-full max-w-md rounded-lg" />
+                    <canvas ref={canvasRef} className="hidden" />
+                    <div className="flex gap-2 mt-4">
+                      <Button type="button" onClick={capturePhoto}>
+                        📸 Capturar
+                      </Button>
+                      <Button type="button" variant="secondary" onClick={stopCamera}>
+                        Cancelar
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Personal Info */}
+              <div className="space-y-2">
+                <Label htmlFor="name">Nome Completo *</Label>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="Nome do morador"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="cpf">CPF *</Label>
+                <Input
+                  id="cpf"
+                  value={formData.cpf}
+                  onChange={(e) => setFormData({ ...formData, cpf: e.target.value })}
+                  placeholder="000.000.000-00"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="apartment">Apartamento/Casa *</Label>
+                <Input
+                  id="apartment"
+                  value={formData.apartment}
+                  onChange={(e) => setFormData({ ...formData, apartment: e.target.value })}
+                  placeholder="Ex: Apto 101"
+                  required
+                />
+              </div>
+
+              {/* Contact Info */}
+              <div className="space-y-2">
+                <Label htmlFor="phone">Telefone (com DDD)</Label>
+                <Input
+                  id="phone"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  placeholder="11999999999"
+                />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="email">E-mail</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="exemplo@email.com"
+                />
+              </div>
+
+              {/* Vehicle Info */}
+              <div className="space-y-2">
+                <Label htmlFor="vehiclePlate">Placa do Veículo</Label>
+                <Input
+                  id="vehiclePlate"
+                  value={formData.vehiclePlate}
+                  onChange={(e) => setFormData({ ...formData, vehiclePlate: e.target.value })}
+                  placeholder="ABC-1234"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="vehicleModel">Modelo do Veículo</Label>
+                <Input
+                  id="vehicleModel"
+                  value={formData.vehicleModel}
+                  onChange={(e) => setFormData({ ...formData, vehicleModel: e.target.value })}
+                  placeholder="Ex: Honda Civic"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="vehicleColor">Cor do Veículo</Label>
+                <Input
+                  id="vehicleColor"
+                  value={formData.vehicleColor}
+                  onChange={(e) => setFormData({ ...formData, vehicleColor: e.target.value })}
+                  placeholder="Ex: Preto"
+                />
+              </div>
+              <div className="space-y-2 md:col-span-3">
+                <Label htmlFor="vehicleTag">TAG Veicular</Label>
+                <Input
+                  id="vehicleTag"
+                  value={formData.vehicleTag}
+                  onChange={(e) => setFormData({ ...formData, vehicleTag: e.target.value })}
+                  placeholder="Número da TAG de acesso"
+                />
+              </div>
+            </div>
+            <div className="flex space-x-2">
+              <Button type="submit" className="flex-1">
+                <Save className="h-4 w-4 mr-2" />
+                {editingId ? 'Salvar Alterações' : 'Cadastrar Morador'}
+              </Button>
+              <Button type="button" variant="secondary" onClick={resetForm}>
+                <X className="h-4 w-4 mr-2" />
+                Cancelar
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};

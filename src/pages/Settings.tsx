@@ -1,0 +1,440 @@
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Settings as SettingsIcon, Trash2, Download, Upload, Send, FileText, FileSpreadsheet } from 'lucide-react';
+import { storage } from '@/lib/storage';
+import { toast } from 'sonner';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
+// Funções auxiliares para CSV
+const arrayToCSV = (data: any[], headers: string[]) => {
+  const csvRows = [];
+  csvRows.push(headers.join(','));
+  
+  for (const row of data) {
+    const values = headers.map(header => {
+      const escaped = ('' + row[header]).replace(/"/g, '\\"');
+      return `"${escaped}"`;
+    });
+    csvRows.push(values.join(','));
+  }
+  
+  return csvRows.join('\n');
+};
+
+const downloadCSV = (content: string, filename: string) => {
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+const parseCSV = (text: string): any[] => {
+  const lines = text.split('\n').filter(line => line.trim());
+  if (lines.length === 0) return [];
+  
+  const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
+  const rows = [];
+  
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split(',').map(v => v.replace(/"/g, '').trim());
+    const obj: any = {};
+    headers.forEach((header, index) => {
+      obj[header] = values[index] || '';
+    });
+    rows.push(obj);
+  }
+  
+  return rows;
+};
+
+export const Settings = () => {
+  const handleExportData = () => {
+    const doc = new jsPDF();
+    const residents = storage.getResidents();
+    const mails = storage.getMails();
+    const entries = storage.getEntries();
+    
+    // Header
+    doc.setFontSize(18);
+    doc.text('PortalGuard - Backup de Dados', 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Data de exportação: ${new Date().toLocaleString('pt-BR')}`, 14, 28);
+    
+    // Residents
+    doc.setFontSize(14);
+    doc.text('Moradores Cadastrados', 14, 38);
+    
+    if (residents.length > 0) {
+      autoTable(doc, {
+        startY: 42,
+        head: [['Nome', 'Apartamento', 'Telefone', 'Veículo']],
+        body: residents.map(r => [
+          r.name,
+          r.apartment,
+          r.phone || '-',
+          r.vehiclePlate ? `${r.vehiclePlate} (${r.vehicleModel || '-'})` : '-'
+        ]),
+        theme: 'grid',
+        styles: { fontSize: 8 }
+      });
+    }
+    
+    // Mails
+    const finalY1 = (doc as any).lastAutoTable?.finalY || 42;
+    doc.setFontSize(14);
+    doc.text('Correspondências', 14, finalY1 + 10);
+    
+    if (mails.length > 0) {
+      autoTable(doc, {
+        startY: finalY1 + 14,
+        head: [['Morador ID', 'Remetente', 'Tipo', 'Status', 'Data']],
+        body: mails.map(m => [
+          m.residentId.substring(0, 12),
+          m.sender,
+          m.packageType,
+          m.status === 'pending' ? 'Pendente' : 'Entregue',
+          new Date(m.receivedAt).toLocaleDateString('pt-BR')
+        ]),
+        theme: 'grid',
+        styles: { fontSize: 8 }
+      });
+    }
+    
+    // Entries
+    const finalY2 = (doc as any).lastAutoTable?.finalY || finalY1 + 14;
+    doc.setFontSize(14);
+    doc.text('Registros de Acesso', 14, finalY2 + 10);
+    
+    if (entries.length > 0) {
+      autoTable(doc, {
+        startY: finalY2 + 14,
+        head: [['Nome', 'Tipo', 'Apartamento', 'Entrada', 'Saída']],
+        body: entries.map(e => [
+          e.visitorName,
+          e.visitorType === 'visitor' ? 'Visitante' : 'Prestador',
+          e.apartment,
+          new Date(e.entryTime).toLocaleString('pt-BR'),
+          e.exitTime ? new Date(e.exitTime).toLocaleString('pt-BR') : 'Ativo'
+        ]),
+        theme: 'grid',
+        styles: { fontSize: 8 }
+      });
+    }
+    
+    // Save PDF
+    doc.save(`portalguard-backup-${new Date().toISOString().split('T')[0]}.pdf`);
+    toast.success('Backup em PDF gerado com sucesso!');
+  };
+
+  const handleImportData = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = JSON.parse(event.target?.result as string);
+          
+          if (data.residents) storage.saveResidents(data.residents);
+          if (data.mails) storage.saveMails(data.mails);
+          if (data.entries) storage.saveEntries(data.entries);
+          if (data.devices) storage.saveDevices(data.devices);
+
+          toast.success('Dados importados com sucesso! Recarregue a página.');
+        } catch (error) {
+          toast.error('Erro ao importar dados. Verifique o arquivo JSON.');
+        }
+      };
+      reader.readAsText(file);
+    };
+
+    input.click();
+  };
+
+  const handleExportCSV = () => {
+    const residents = storage.getResidents();
+    const mails = storage.getMails();
+    const entries = storage.getEntries();
+    
+    // Export Residents
+    if (residents.length > 0) {
+      const residentsData = residents.map(r => ({
+        id: r.id,
+        name: r.name,
+        apartment: r.apartment,
+        cpf: r.cpf || '',
+        phone: r.phone || '',
+        email: r.email || '',
+        vehiclePlate: r.vehiclePlate || '',
+        vehicleModel: r.vehicleModel || '',
+        vehicleColor: r.vehicleColor || ''
+      }));
+      const csv = arrayToCSV(residentsData, ['id', 'name', 'apartment', 'cpf', 'phone', 'email', 'vehiclePlate', 'vehicleModel', 'vehicleColor']);
+      downloadCSV(csv, `moradores-${new Date().toISOString().split('T')[0]}.csv`);
+    }
+    
+    // Export Mails
+    if (mails.length > 0) {
+      const mailsData = mails.map(m => ({
+        id: m.id,
+        residentId: m.residentId,
+        sender: m.sender,
+        packageType: m.packageType,
+        status: m.status,
+        receivedAt: m.receivedAt,
+        deliveredAt: m.deliveredAt || ''
+      }));
+      const csv = arrayToCSV(mailsData, ['id', 'residentId', 'sender', 'packageType', 'status', 'receivedAt', 'deliveredAt']);
+      downloadCSV(csv, `correspondencias-${new Date().toISOString().split('T')[0]}.csv`);
+    }
+    
+    // Export Entries
+    if (entries.length > 0) {
+      const entriesData = entries.map(e => ({
+        id: e.id,
+        visitorName: e.visitorName,
+        visitorType: e.visitorType,
+        visitorDocument: e.visitorDocument || '',
+        apartment: e.apartment,
+        purpose: e.purpose || '',
+        entryTime: e.entryTime,
+        exitTime: e.exitTime || '',
+        company: e.company || '',
+        vehiclePlate: e.vehiclePlate || '',
+        vehicleModel: e.vehicleModel || '',
+        vehicleColor: e.vehicleColor || ''
+      }));
+      const csv = arrayToCSV(entriesData, ['id', 'visitorName', 'visitorType', 'visitorDocument', 'apartment', 'purpose', 'entryTime', 'exitTime', 'company', 'vehiclePlate', 'vehicleModel', 'vehicleColor']);
+      downloadCSV(csv, `acessos-${new Date().toISOString().split('T')[0]}.csv`);
+    }
+    
+    toast.success('Arquivos CSV exportados com sucesso!');
+  };
+
+  const handleImportCSV = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+    input.multiple = true;
+    
+    input.onchange = (e) => {
+      const files = (e.target as HTMLInputElement).files;
+      if (!files || files.length === 0) return;
+
+      let processedFiles = 0;
+      const totalFiles = files.length;
+
+      Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            const text = event.target?.result as string;
+            const data = parseCSV(text);
+            
+            // Identifica o tipo de arquivo pelo nome
+            if (file.name.includes('morador')) {
+              storage.saveResidents(data);
+              toast.success(`${data.length} moradores importados!`);
+            } else if (file.name.includes('correspondencia')) {
+              storage.saveMails(data);
+              toast.success(`${data.length} correspondências importadas!`);
+            } else if (file.name.includes('acesso')) {
+              storage.saveEntries(data);
+              toast.success(`${data.length} acessos importados!`);
+            } else {
+              toast.warning(`Arquivo ${file.name} não reconhecido. Use: moradores-*.csv, correspondencias-*.csv ou acessos-*.csv`);
+            }
+            
+            processedFiles++;
+            if (processedFiles === totalFiles) {
+              setTimeout(() => {
+                toast.info('Recarregue a página para ver as alterações.');
+              }, 1000);
+            }
+          } catch (error) {
+            toast.error(`Erro ao importar ${file.name}. Verifique o formato CSV.`);
+          }
+        };
+        reader.readAsText(file);
+      });
+    };
+
+    input.click();
+  };
+
+  const handleImportPDF = () => {
+    toast.info('A importação de PDF requer integração com backend. Use CSV ou JSON.');
+  };
+
+  const handleClearData = () => {
+    if (!confirm('ATENÇÃO: Isso removerá TODOS os dados do sistema. Esta ação não pode ser desfeita. Deseja continuar?')) {
+      return;
+    }
+
+    if (!confirm('Última confirmação: Tem certeza absoluta?')) {
+      return;
+    }
+
+    localStorage.clear();
+    toast.success('Todos os dados foram removidos. Recarregue a página.');
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div>
+        <h2 className="text-3xl font-bold text-foreground mb-2">Configurações</h2>
+        <p className="text-muted-foreground">Gerencie as configurações do sistema</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <SettingsIcon className="h-5 w-5 text-primary" />
+              <span>Backup e Restauração</span>
+            </CardTitle>
+            <CardDescription>
+              Exporte e importe dados em CSV, PDF ou JSON
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Button onClick={handleExportData} className="w-full" variant="outline">
+                <Download className="h-4 w-4 mr-2" />
+                Exportar PDF
+              </Button>
+              <Button onClick={handleExportCSV} className="w-full" variant="outline">
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Exportar CSV
+              </Button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Button onClick={handleImportData} className="w-full" variant="outline">
+                <Upload className="h-4 w-4 mr-2" />
+                Importar JSON
+              </Button>
+              <Button onClick={handleImportCSV} className="w-full" variant="outline">
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Importar CSV
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-destructive/50">
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              <span>Zona de Perigo</span>
+            </CardTitle>
+            <CardDescription>
+              Ações irreversíveis - use com cuidado
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              onClick={handleClearData}
+              variant="destructive"
+              className="w-full"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Limpar Todos os Dados
+            </Button>
+            <p className="text-xs text-muted-foreground mt-2">
+              Esta ação removerá permanentemente todos os moradores, correspondências e registros de acesso.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <Send className="h-5 w-5 text-primary" />
+              <span>Integrações</span>
+            </CardTitle>
+            <CardDescription>
+              Configure integrações com dispositivos e notificações
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="p-4 bg-muted rounded-lg">
+              <Label className="text-base font-semibold mb-2 block">Control ID - Dispositivos</Label>
+              <p className="text-sm text-muted-foreground mb-3">
+                Configure a conexão com seus dispositivos Control ID para reconhecimento facial e tags veiculares.
+              </p>
+              <Input placeholder="IP do dispositivo (ex: 192.168.1.100)" className="mb-2" />
+              <Input placeholder="Porta (ex: 80)" className="mb-2" />
+              <Button variant="outline" className="w-full">
+                <SettingsIcon className="h-4 w-4 mr-2" />
+                Configurar Control ID
+              </Button>
+            </div>
+            
+            <div className="p-4 bg-muted rounded-lg">
+              <Label className="text-base font-semibold mb-2 block">WhatsApp Business API</Label>
+              <p className="text-sm text-muted-foreground mb-3">
+                Envie notificações automáticas via WhatsApp quando uma correspondência for registrada.
+              </p>
+              <Input placeholder="Token da API" type="password" className="mb-2" />
+              <Input placeholder="Número de telefone (ex: 5511999999999)" className="mb-2" />
+              <Button variant="outline" className="w-full">
+                <Send className="h-4 w-4 mr-2" />
+                Conectar WhatsApp
+              </Button>
+            </div>
+            
+            <div className="p-4 bg-muted rounded-lg">
+              <Label className="text-base font-semibold mb-2 block">Email - SMTP</Label>
+              <p className="text-sm text-muted-foreground mb-3">
+                Configure o servidor SMTP para enviar emails automáticos aos moradores.
+              </p>
+              <Input placeholder="Servidor SMTP (ex: smtp.gmail.com)" className="mb-2" />
+              <Input placeholder="Porta (ex: 587)" className="mb-2" />
+              <Input placeholder="Email" type="email" className="mb-2" />
+              <Input placeholder="Senha" type="password" className="mb-2" />
+              <Button variant="outline" className="w-full">
+                <Send className="h-4 w-4 mr-2" />
+                Configurar Email
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Informações do Sistema</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div className="p-4 bg-muted rounded-lg">
+                <p className="text-muted-foreground mb-1">Versão</p>
+                <p className="font-semibold">PortalGuard Pro v1.0</p>
+              </div>
+              <div className="p-4 bg-muted rounded-lg">
+                <p className="text-muted-foreground mb-1">Armazenamento</p>
+                <p className="font-semibold">LocalStorage (Navegador)</p>
+              </div>
+              <div className="p-4 bg-muted rounded-lg">
+                <p className="text-muted-foreground mb-1">Status</p>
+                <p className="font-semibold text-success">Operacional</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+};

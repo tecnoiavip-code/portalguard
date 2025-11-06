@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { LayoutDashboard, Users, FileText, Mail, ScrollText, Settings, Smartphone } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Mail, ScrollText, Settings, Smartphone, ClipboardList } from 'lucide-react';
 
 interface SidebarProps {
   activeSection: string;
@@ -12,12 +12,13 @@ const navItems = [
   { id: 'residents', label: 'Moradores', icon: Users, group: 'Cadastros' },
   { id: 'new-registry', label: 'Novo Cadastro', icon: FileText, group: 'Cadastros' },
   { id: 'mail', label: 'Correspondências', icon: Mail, group: 'Cadastros' },
+  { id: 'reports', label: 'Relatórios', icon: ClipboardList, group: 'Operações' },
   { id: 'devices', label: 'Dispositivos', icon: Smartphone, group: 'Sistema' },
   { id: 'logs', label: 'Logs de Acesso', icon: ScrollText, group: 'Sistema' },
   { id: 'settings', label: 'Configurações', icon: Settings, group: 'Sistema' },
 ];
 
-const groups = ['Principal', 'Cadastros', 'Sistema'];
+const groups = ['Principal', 'Cadastros', 'Operações', 'Sistema'];
 
 export const Sidebar = ({ activeSection, onSectionChange, isOpen }: SidebarProps) => {
   return (

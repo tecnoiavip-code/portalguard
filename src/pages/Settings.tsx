@@ -4,10 +4,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Settings as SettingsIcon, Trash2, Download, Upload, Send, FileText, FileSpreadsheet, Lock } from 'lucide-react';
 import { storage } from '@/lib/storage';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 // Funções auxiliares para CSV
 const arrayToCSV = (data: any[], headers: string[]) => {
@@ -60,6 +61,76 @@ export const Settings = () => {
   const [isIntegrationsUnlocked, setIsIntegrationsUnlocked] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  
+  // Control iD config
+  const [controlIdName, setControlIdName] = useState('');
+  const [controlIdIp, setControlIdIp] = useState('');
+  const [controlIdPort, setControlIdPort] = useState('80');
+  const [controlIdDeviceId, setControlIdDeviceId] = useState('');
+  const [existingConfigs, setExistingConfigs] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (isIntegrationsUnlocked) {
+      loadControlIdConfigs();
+    }
+  }, [isIntegrationsUnlocked]);
+
+  const loadControlIdConfigs = async () => {
+    const { data, error } = await supabase
+      .from('controlid_config')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error loading Control iD configs:', error);
+    } else {
+      setExistingConfigs(data || []);
+    }
+  };
+
+  const handleSaveControlIdConfig = async () => {
+    if (!controlIdName.trim() || !controlIdIp.trim()) {
+      toast.error('Preencha nome e IP do dispositivo');
+      return;
+    }
+
+    const webhookUrl = `${window.location.origin.replace('https://', 'https://kxdqffkkufgsizszchvw.supabase.co')}/functions/v1/controlid-webhook`;
+
+    const { error } = await supabase
+      .from('controlid_config')
+      .insert({
+        device_name: controlIdName,
+        device_ip: controlIdIp,
+        device_port: controlIdPort,
+        device_id: controlIdDeviceId || null,
+        is_active: true
+      });
+
+    if (error) {
+      toast.error('Erro ao salvar configuração');
+    } else {
+      toast.success('Configuração salva! Configure o webhook no dispositivo: ' + webhookUrl);
+      setControlIdName('');
+      setControlIdIp('');
+      setControlIdPort('80');
+      setControlIdDeviceId('');
+      loadControlIdConfigs();
+    }
+  };
+
+  const handleDeleteConfig = async (id: string) => {
+    const { error } = await supabase
+      .from('controlid_config')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      toast.error('Erro ao excluir configuração');
+    } else {
+      toast.success('Configuração excluída');
+      loadControlIdConfigs();
+    }
+  };
 
   const handleUnlockIntegrations = () => {
     if (username === 'admin' && password === 'admin') {
@@ -440,17 +511,82 @@ export const Settings = () => {
                   </Button>
                 </div>
                 
-                <div className="p-4 bg-muted rounded-lg">
-                  <Label className="text-base font-semibold mb-2 block">Control ID - Dispositivos</Label>
+                <div className="p-4 bg-muted rounded-lg space-y-4">
+                  <Label className="text-base font-semibold mb-2 block">Control iD - Dispositivos de Acesso</Label>
                   <p className="text-sm text-muted-foreground mb-3">
-                    Configure a conexão com seus dispositivos Control ID para reconhecimento facial e tags veiculares.
+                    Configure a conexão com seus dispositivos Control iD para reconhecimento facial e tags veiculares.
+                    Os eventos serão recebidos automaticamente via webhook.
                   </p>
-                  <Input placeholder="IP do dispositivo (ex: 192.168.1.100)" className="mb-2" />
-                  <Input placeholder="Porta (ex: 80)" className="mb-2" />
-                  <Button variant="outline" className="w-full">
-                    <SettingsIcon className="h-4 w-4 mr-2" />
-                    Configurar Control ID
-                  </Button>
+                  
+                  <div className="space-y-3 border-t pt-4">
+                    <div>
+                      <Label>Nome do Dispositivo</Label>
+                      <Input 
+                        placeholder="Ex: Portaria Principal" 
+                        value={controlIdName}
+                        onChange={(e) => setControlIdName(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label>IP do Dispositivo</Label>
+                      <Input 
+                        placeholder="Ex: 192.168.1.100" 
+                        value={controlIdIp}
+                        onChange={(e) => setControlIdIp(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label>Porta</Label>
+                      <Input 
+                        placeholder="80" 
+                        value={controlIdPort}
+                        onChange={(e) => setControlIdPort(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label>ID do Dispositivo (Opcional)</Label>
+                      <Input 
+                        placeholder="Ex: 478435" 
+                        value={controlIdDeviceId}
+                        onChange={(e) => setControlIdDeviceId(e.target.value)}
+                      />
+                    </div>
+                    <Button onClick={handleSaveControlIdConfig} className="w-full">
+                      <SettingsIcon className="h-4 w-4 mr-2" />
+                      Salvar Configuração
+                    </Button>
+                  </div>
+
+                  {existingConfigs.length > 0 && (
+                    <div className="border-t pt-4 space-y-2">
+                      <Label className="text-sm font-semibold">Dispositivos Configurados</Label>
+                      {existingConfigs.map((config) => (
+                        <div key={config.id} className="flex items-center justify-between p-3 bg-background rounded border">
+                          <div>
+                            <p className="font-medium">{config.device_name}</p>
+                            <p className="text-xs text-muted-foreground">{config.device_ip}:{config.device_port}</p>
+                          </div>
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => handleDeleteConfig(config.id)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="mt-4 p-3 bg-primary/10 rounded-lg">
+                    <p className="text-xs font-semibold mb-1">URL do Webhook:</p>
+                    <code className="text-xs bg-background p-2 rounded block overflow-x-auto">
+                      https://kxdqffkkufgsizszchvw.supabase.co/functions/v1/controlid-webhook
+                    </code>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Configure este endpoint no seu dispositivo Control iD para receber eventos automaticamente.
+                    </p>
+                  </div>
                 </div>
                 
                 <div className="p-4 bg-muted rounded-lg">

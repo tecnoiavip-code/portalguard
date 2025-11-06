@@ -8,6 +8,7 @@ import { MailManagement } from './MailManagement';
 import { Devices } from './Devices';
 import { Logs } from './Logs';
 import { Settings } from './Settings';
+import { Reports } from './Reports';
 
 const Index = () => {
   const [activeSection, setActiveSection] = useState('dashboard');
@@ -27,6 +28,8 @@ const Index = () => {
         return <Devices />;
       case 'logs':
         return <Logs />;
+      case 'reports':
+        return <Reports />;
       case 'settings':
         return <Settings />;
       default:

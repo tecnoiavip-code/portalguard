@@ -85,6 +85,72 @@ export type Database = {
           },
         ]
       }
+      controlid_config: {
+        Row: {
+          api_path: string | null
+          created_at: string | null
+          device_id: string | null
+          device_ip: string
+          device_name: string
+          device_port: string | null
+          id: string
+          is_active: boolean | null
+          last_sync: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          api_path?: string | null
+          created_at?: string | null
+          device_id?: string | null
+          device_ip: string
+          device_name: string
+          device_port?: string | null
+          id?: string
+          is_active?: boolean | null
+          last_sync?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          api_path?: string | null
+          created_at?: string | null
+          device_id?: string | null
+          device_ip?: string
+          device_name?: string
+          device_port?: string | null
+          id?: string
+          is_active?: boolean | null
+          last_sync?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      controlid_logs: {
+        Row: {
+          device_id: string
+          event_type: string
+          id: string
+          payload: Json
+          processed: boolean | null
+          received_at: string | null
+        }
+        Insert: {
+          device_id: string
+          event_type: string
+          id?: string
+          payload: Json
+          processed?: boolean | null
+          received_at?: string | null
+        }
+        Update: {
+          device_id?: string
+          event_type?: string
+          id?: string
+          payload?: Json
+          processed?: boolean | null
+          received_at?: string | null
+        }
+        Relationships: []
+      }
       devices: {
         Row: {
           created_at: string | null
@@ -115,6 +181,45 @@ export type Database = {
           serial_number?: string | null
           status?: string | null
           type?: string | null
+        }
+        Relationships: []
+      }
+      incidents: {
+        Row: {
+          created_at: string | null
+          description: string
+          id: string
+          reported_by: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          severity: string
+          status: string | null
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description: string
+          id?: string
+          reported_by?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity: string
+          status?: string | null
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string
+          id?: string
+          reported_by?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity?: string
+          status?: string | null
+          title?: string
+          updated_at?: string | null
         }
         Relationships: []
       }
@@ -267,6 +372,36 @@ export type Database = {
         }
         Relationships: []
       }
+      shifts: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          id: string
+          notes: string | null
+          shift_end: string | null
+          shift_start: string
+          team_members: string[]
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          shift_end?: string | null
+          shift_start: string
+          team_members: string[]
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          shift_end?: string | null
+          shift_start?: string
+          team_members?: string[]
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           granted_at: string | null
@@ -290,6 +425,47 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      vehicles: {
+        Row: {
+          color: string | null
+          created_at: string | null
+          id: string
+          model: string | null
+          plate: string
+          resident_id: string
+          tag: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string | null
+          id?: string
+          model?: string | null
+          plate: string
+          resident_id: string
+          tag?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          color?: string | null
+          created_at?: string | null
+          id?: string
+          model?: string | null
+          plate?: string
+          resident_id?: string
+          tag?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vehicles_resident_id_fkey"
+            columns: ["resident_id"]
+            isOneToOne: false
+            referencedRelation: "residents"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

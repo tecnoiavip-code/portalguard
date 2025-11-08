@@ -5,34 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LogIn, LogOut, Camera, Upload, X, Plus, Pencil, Trash2 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { AccessEntry, Resident } from '@/types';
 import { toast } from 'sonner';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 export const NewRegistry = () => {
   const [residents, setResidents] = useState<Resident[]>([]);
   const [entries, setEntries] = useState<AccessEntry[]>([]);
@@ -55,7 +34,7 @@ export const NewRegistry = () => {
     vehiclePlate: '',
     vehicleModel: '',
     vehicleColor: '',
-    photo: '',
+    photo: ''
   });
   const [showCamera, setShowCamera] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -63,56 +42,41 @@ export const NewRegistry = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-
   useEffect(() => {
     loadData();
   }, []);
-
   const loadData = () => {
     setResidents(storage.getResidents());
     const storedEntries = storage.getEntries();
-    setEntries(storedEntries.filter((e) => !e.exitTime));
+    setEntries(storedEntries.filter(e => !e.exitTime));
     setAllEntries(storedEntries.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()));
   };
-
   const activeEntries = entries.filter(e => !e.exitTime).reverse();
   const totalPages = Math.ceil(activeEntries.length / itemsPerPage);
-  const paginatedEntries = activeEntries.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
-
+  const paginatedEntries = activeEntries.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   const totalPagesAll = Math.ceil(allEntries.length / itemsPerPageTable);
-  const paginatedAllEntries = allEntries.slice(
-    (currentPageAll - 1) * itemsPerPageTable,
-    currentPageAll * itemsPerPageTable
-  );
-
-  const filteredResidents = residents.filter(r => 
-    r.name.toLowerCase().includes(visitedLocationSearch.toLowerCase()) ||
-    r.apartment.toLowerCase().includes(visitedLocationSearch.toLowerCase())
-  );
-
+  const paginatedAllEntries = allEntries.slice((currentPageAll - 1) * itemsPerPageTable, currentPageAll * itemsPerPageTable);
+  const filteredResidents = residents.filter(r => r.name.toLowerCase().includes(visitedLocationSearch.toLowerCase()) || r.apartment.toLowerCase().includes(visitedLocationSearch.toLowerCase()));
   const handleVisitedLocationSelect = (residentId: string, residentName: string, apartment: string) => {
     setVisitedLocationSearch(`${residentName} - ${apartment}`);
-    setFormData({ ...formData, residentId });
+    setFormData({
+      ...formData,
+      residentId
+    });
     setShowResidentSuggestions(false);
   };
-
   const findSimilarEntries = (name: string, document: string) => {
     if (!name && !document) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
-
     const allEntries = storage.getEntries();
     const similar = allEntries.filter(entry => {
       const nameMatch = name && entry.visitorName.toLowerCase().includes(name.toLowerCase());
       const docMatch = document && entry.visitorDocument.includes(document);
       return nameMatch || docMatch;
     });
-
     if (similar.length > 0) {
       setSuggestions(similar.slice(0, 3));
       setShowSuggestions(true);
@@ -120,7 +84,6 @@ export const NewRegistry = () => {
       setShowSuggestions(false);
     }
   };
-
   const applySuggestion = (entry: AccessEntry) => {
     setFormData({
       ...formData,
@@ -131,20 +94,21 @@ export const NewRegistry = () => {
       vehiclePlate: entry.vehiclePlate || '',
       vehicleModel: entry.vehicleModel || '',
       vehicleColor: entry.vehicleColor || '',
-      photo: entry.photo || '',
+      photo: entry.photo || ''
     });
     setShowSuggestions(false);
     toast.success('Dados preenchidos automaticamente!');
     storage.addEvent({
       type: 'entry',
       description: `Sistema reconheceu visitante: ${entry.visitorName}`,
-      priority: 'low',
+      priority: 'low'
     });
   };
-
   const startCamera = async () => {
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: true
+      });
       setStream(mediaStream);
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
@@ -154,7 +118,6 @@ export const NewRegistry = () => {
       toast.error('Não foi possível acessar a câmera');
     }
   };
-
   const stopCamera = () => {
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
@@ -162,7 +125,6 @@ export const NewRegistry = () => {
     }
     setShowCamera(false);
   };
-
   const capturePhoto = () => {
     if (videoRef.current && canvasRef.current) {
       const context = canvasRef.current.getContext('2d');
@@ -171,59 +133,56 @@ export const NewRegistry = () => {
         canvasRef.current.height = videoRef.current.videoHeight;
         context.drawImage(videoRef.current, 0, 0);
         const photoData = canvasRef.current.toDataURL('image/jpeg');
-        setFormData({ ...formData, photo: photoData });
+        setFormData({
+          ...formData,
+          photo: photoData
+        });
         stopCamera();
         toast.success('Foto capturada com sucesso!');
       }
     }
   };
-
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setFormData({ ...formData, photo: reader.result as string });
+        setFormData({
+          ...formData,
+          photo: reader.result as string
+        });
         toast.success('Foto carregada com sucesso!');
       };
       reader.readAsDataURL(file);
     }
   };
-
   const handleEntry = (e: React.FormEvent) => {
     e.preventDefault();
-
-    const resident = residents.find((r) => r.id === formData.residentId);
+    const resident = residents.find(r => r.id === formData.residentId);
     if (!resident) {
       toast.error('Selecione um morador válido');
       return;
     }
-
     if (editingId) {
       // Update existing entry
       const allStoredEntries = storage.getEntries();
-      const updatedEntries = allStoredEntries.map((entry) =>
-        entry.id === editingId
-          ? {
-              ...entry,
-              visitorName: formData.visitorName,
-              visitorDocument: formData.visitorDocument,
-              visitorType: formData.visitorType,
-              residentId: formData.residentId,
-              residentName: resident.name,
-              apartment: resident.apartment,
-              purpose: formData.purpose,
-              vehiclePlate: formData.vehiclePlate,
-              vehicleModel: formData.vehicleModel,
-              vehicleColor: formData.vehicleColor,
-              photo: formData.photo,
-              company: formData.company,
-            }
-          : entry
-      );
-      
+      const updatedEntries = allStoredEntries.map(entry => entry.id === editingId ? {
+        ...entry,
+        visitorName: formData.visitorName,
+        visitorDocument: formData.visitorDocument,
+        visitorType: formData.visitorType,
+        residentId: formData.residentId,
+        residentName: resident.name,
+        apartment: resident.apartment,
+        purpose: formData.purpose,
+        vehiclePlate: formData.vehiclePlate,
+        vehicleModel: formData.vehicleModel,
+        vehicleColor: formData.vehicleColor,
+        photo: formData.photo,
+        company: formData.company
+      } : entry);
       storage.saveEntries(updatedEntries);
-      setEntries(updatedEntries.filter((e) => !e.exitTime));
+      setEntries(updatedEntries.filter(e => !e.exitTime));
       setAllEntries(updatedEntries.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()));
       toast.success('Cadastro atualizado com sucesso!');
     } else {
@@ -244,28 +203,23 @@ export const NewRegistry = () => {
         vehicleColor: formData.vehicleColor,
         photo: formData.photo,
         company: formData.company,
-        autoRecognized: showSuggestions && suggestions.length > 0,
+        autoRecognized: showSuggestions && suggestions.length > 0
       };
-
       const allStoredEntries = storage.getEntries();
       const updatedEntries = [...allStoredEntries, entry];
       storage.saveEntries(updatedEntries);
-      
       storage.addEvent({
         type: 'entry',
         description: `${formData.visitorType === 'visitor' ? 'Visitante' : 'Prestador'} registrado: ${formData.visitorName} - ${resident.apartment}`,
         priority: 'medium',
-        relatedId: entry.id,
+        relatedId: entry.id
       });
-
-      setEntries(updatedEntries.filter((e) => !e.exitTime));
+      setEntries(updatedEntries.filter(e => !e.exitTime));
       setAllEntries(updatedEntries.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()));
       toast.success(`Entrada registrada: ${formData.visitorName}`);
     }
-
     resetForm();
   };
-
   const handleEdit = (entry: AccessEntry) => {
     setEditingId(entry.id);
     setFormData({
@@ -278,7 +232,7 @@ export const NewRegistry = () => {
       vehiclePlate: entry.vehiclePlate || '',
       vehicleModel: entry.vehicleModel || '',
       vehicleColor: entry.vehicleColor || '',
-      photo: entry.photo || '',
+      photo: entry.photo || ''
     });
     const resident = residents.find(r => r.id === entry.residentId);
     if (resident) {
@@ -286,19 +240,15 @@ export const NewRegistry = () => {
     }
     setIsDialogOpen(true);
   };
-
   const handleDelete = (id: string) => {
     if (!confirm('Tem certeza que deseja excluir este cadastro?')) return;
-    
     const allStoredEntries = storage.getEntries();
-    const updatedEntries = allStoredEntries.filter((e) => e.id !== id);
+    const updatedEntries = allStoredEntries.filter(e => e.id !== id);
     storage.saveEntries(updatedEntries);
-    
-    setEntries(updatedEntries.filter((e) => !e.exitTime));
+    setEntries(updatedEntries.filter(e => !e.exitTime));
     setAllEntries(updatedEntries.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()));
     toast.success('Cadastro excluído com sucesso!');
   };
-
   const resetForm = () => {
     setEditingId('');
     setFormData({
@@ -311,7 +261,7 @@ export const NewRegistry = () => {
       vehiclePlate: '',
       vehicleModel: '',
       vehicleColor: '',
-      photo: '',
+      photo: ''
     });
     setVisitedLocationSearch('');
     setSuggestions([]);
@@ -319,33 +269,27 @@ export const NewRegistry = () => {
     setIsDialogOpen(false);
     stopCamera();
   };
-
   const handleExit = (entryId: string) => {
     const allStoredEntries = storage.getEntries();
-    const entry = allStoredEntries.find((e) => e.id === entryId);
-    const updatedEntries = allStoredEntries.map((e) =>
-      e.id === entryId
-        ? { ...e, exitTime: new Date().toISOString() }
-        : e
-    );
-    
+    const entry = allStoredEntries.find(e => e.id === entryId);
+    const updatedEntries = allStoredEntries.map(e => e.id === entryId ? {
+      ...e,
+      exitTime: new Date().toISOString()
+    } : e);
     storage.saveEntries(updatedEntries);
-    setEntries(updatedEntries.filter((e) => !e.exitTime));
+    setEntries(updatedEntries.filter(e => !e.exitTime));
     setAllEntries(updatedEntries.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()));
-    
     if (entry) {
       storage.addEvent({
         type: 'exit',
         description: `Saída registrada: ${entry.visitorName} - ${entry.apartment}`,
         priority: 'low',
-        relatedId: entryId,
+        relatedId: entryId
       });
       toast.success(`Saída registrada: ${entry.visitorName}`);
     }
   };
-
-  return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+  return <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold text-foreground mb-2">Novo Cadastro</h2>
@@ -371,231 +315,61 @@ export const NewRegistry = () => {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {paginatedEntries.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8 col-span-full">
+            {paginatedEntries.length === 0 ? <p className="text-sm text-muted-foreground text-center py-8 col-span-full">
                 Nenhuma pessoa no momento
-              </p>
-            ) : (
-              paginatedEntries.map((entry) => (
-                <div
-                  key={entry.id}
-                  className={`p-4 rounded-lg border-l-4 ${
-                    entry.visitorType === 'service_provider' 
-                      ? 'bg-warning/10 border-warning' 
-                      : 'bg-success/10 border-success'
-                  }`}
-                >
+              </p> : paginatedEntries.map(entry => <div key={entry.id} className={`p-4 rounded-lg border-l-4 ${entry.visitorType === 'service_provider' ? 'bg-warning/10 border-warning' : 'bg-success/10 border-success'}`}>
                   <div className="flex gap-3 mb-3">
-                    {entry.photo ? (
-                      <img src={entry.photo} alt={entry.visitorName} className="w-12 h-12 rounded-full object-cover" />
-                    ) : (
-                      <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-xl">
+                    {entry.photo ? <img src={entry.photo} alt={entry.visitorName} className="w-12 h-12 rounded-full object-cover" /> : <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-xl">
                         {entry.visitorType === 'service_provider' ? '🔧' : '👤'}
-                      </div>
-                    )}
+                      </div>}
                     <div className="flex-1">
                       <p className="font-semibold text-foreground">{entry.visitorName}</p>
                       <p className="text-xs text-muted-foreground">{entry.visitorDocument}</p>
-                      {entry.company && (
-                        <p className="text-xs text-muted-foreground">🏢 {entry.company}</p>
-                      )}
+                      {entry.company && <p className="text-xs text-muted-foreground">🏢 {entry.company}</p>}
                     </div>
                   </div>
                   <div className="space-y-1 text-xs text-muted-foreground mb-3">
                     <p>📍 {entry.apartment} - {entry.residentName}</p>
                     <p>🕐 {new Date(entry.entryTime).toLocaleString('pt-BR')}</p>
-                    {entry.vehiclePlate && (
-                      <p>🚗 {entry.vehiclePlate} - {entry.vehicleModel}</p>
-                    )}
+                    {entry.vehiclePlate && <p>🚗 {entry.vehiclePlate} - {entry.vehicleModel}</p>}
                   </div>
-                  <Button
-                    onClick={() => handleExit(entry.id)}
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                  >
+                  <Button onClick={() => handleExit(entry.id)} variant="outline" size="sm" className="w-full">
                     <LogOut className="h-4 w-4 mr-2" />
                     Registrar Saída
                   </Button>
-                </div>
-              ))
-            )}
+                </div>)}
           </div>
           
-          {totalPages > 1 && (
-            <div className="mt-6">
+          {totalPages > 1 && <div className="mt-6">
               <Pagination>
                 <PaginationContent>
                   <PaginationItem>
-                    <PaginationPrevious 
-                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                      className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                    />
+                    <PaginationPrevious onClick={() => setCurrentPage(p => Math.max(1, p - 1))} className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'} />
                   </PaginationItem>
                   
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                    <PaginationItem key={page}>
-                      <PaginationLink
-                        onClick={() => setCurrentPage(page)}
-                        isActive={currentPage === page}
-                        className="cursor-pointer"
-                      >
+                  {Array.from({
+                length: totalPages
+              }, (_, i) => i + 1).map(page => <PaginationItem key={page}>
+                      <PaginationLink onClick={() => setCurrentPage(page)} isActive={currentPage === page} className="cursor-pointer">
                         {page}
                       </PaginationLink>
-                    </PaginationItem>
-                  ))}
+                    </PaginationItem>)}
                   
                   <PaginationItem>
-                    <PaginationNext 
-                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                      className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                    />
+                    <PaginationNext onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'} />
                   </PaginationItem>
                 </PaginationContent>
               </Pagination>
-            </div>
-          )}
+            </div>}
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>Todos os Cadastros</span>
-            <span className="text-sm font-normal text-muted-foreground">
-              Total: {allEntries.length}
-            </span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[80px]">Foto</TableHead>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Documento</TableHead>
-                  <TableHead>Apartamento</TableHead>
-                  <TableHead>Entrada</TableHead>
-                  <TableHead>Saída</TableHead>
-                  <TableHead className="text-right w-[100px]">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paginatedAllEntries.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                      Nenhum cadastro ainda
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  paginatedAllEntries.map((entry) => (
-                    <TableRow key={entry.id} className="hover:bg-muted/50">
-                      <TableCell>
-                        {entry.photo ? (
-                          <img 
-                            src={entry.photo} 
-                            alt={entry.visitorName} 
-                            className="w-12 h-12 rounded-full object-cover border-2 border-primary/20" 
-                          />
-                        ) : (
-                          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-xl">
-                            {entry.visitorType === 'service_provider' ? '🔧' : '👤'}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell className="font-medium">{entry.visitorName}</TableCell>
-                      <TableCell>
-                        <span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${
-                          entry.visitorType === 'service_provider' 
-                            ? 'bg-warning/10 text-warning' 
-                            : 'bg-success/10 text-success'
-                        }`}>
-                          {entry.visitorType === 'service_provider' ? 'Prestador' : 'Visitante'}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{entry.visitorDocument}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{entry.apartment}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {new Date(entry.entryTime).toLocaleDateString('pt-BR')} {new Date(entry.entryTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {entry.exitTime ? (
-                          <>
-                            {new Date(entry.exitTime).toLocaleDateString('pt-BR')} {new Date(entry.exitTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                          </>
-                        ) : (
-                          <span className="text-success font-medium">Ativo</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => handleEdit(entry)}
-                            className="h-8 w-8"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => handleDelete(entry.id)}
-                            className="h-8 w-8 text-destructive hover:text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-          
-          {totalPagesAll > 1 && (
-            <div className="mt-6">
-              <Pagination>
-                <PaginationContent>
-                  <PaginationItem>
-                    <PaginationPrevious 
-                      onClick={() => setCurrentPageAll(p => Math.max(1, p - 1))}
-                      className={currentPageAll === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                    />
-                  </PaginationItem>
-                  
-                  {Array.from({ length: totalPagesAll }, (_, i) => i + 1).map((page) => (
-                    <PaginationItem key={page}>
-                      <PaginationLink
-                        onClick={() => setCurrentPageAll(page)}
-                        isActive={currentPageAll === page}
-                        className="cursor-pointer"
-                      >
-                        {page}
-                      </PaginationLink>
-                    </PaginationItem>
-                  ))}
-                  
-                  <PaginationItem>
-                    <PaginationNext 
-                      onClick={() => setCurrentPageAll(p => Math.min(totalPagesAll, p + 1))}
-                      className={currentPageAll === totalPagesAll ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                    />
-                  </PaginationItem>
-                </PaginationContent>
-              </Pagination>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      
 
-      <Dialog open={isDialogOpen} onOpenChange={(open) => {
-        if (!open) resetForm();
-        setIsDialogOpen(open);
-      }}>
+      <Dialog open={isDialogOpen} onOpenChange={open => {
+      if (!open) resetForm();
+      setIsDialogOpen(open);
+    }}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingId ? 'Editar Cadastro' : 'Registrar Nova Entrada'}</DialogTitle>
@@ -604,12 +378,10 @@ export const NewRegistry = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="visitorType">Tipo *</Label>
-                  <Select 
-                    value={formData.visitorType} 
-                    onValueChange={(value: 'visitor' | 'service_provider') => 
-                      setFormData({ ...formData, visitorType: value })
-                    }
-                  >
+                  <Select value={formData.visitorType} onValueChange={(value: 'visitor' | 'service_provider') => setFormData({
+                ...formData,
+                visitorType: value
+              })}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -622,134 +394,90 @@ export const NewRegistry = () => {
 
                 <div className="space-y-2">
                   <Label htmlFor="visitorName">Nome Completo *</Label>
-                  <Input
-                    id="visitorName"
-                    value={formData.visitorName}
-                    onChange={(e) => {
-                      setFormData({ ...formData, visitorName: e.target.value });
-                      findSimilarEntries(e.target.value, formData.visitorDocument);
-                    }}
-                    placeholder="Nome completo"
-                    required
-                  />
+                  <Input id="visitorName" value={formData.visitorName} onChange={e => {
+                setFormData({
+                  ...formData,
+                  visitorName: e.target.value
+                });
+                findSimilarEntries(e.target.value, formData.visitorDocument);
+              }} placeholder="Nome completo" required />
                 </div>
                 
                 <div className="space-y-2">
                   <Label htmlFor="visitorDocument">RG/CPF *</Label>
-                  <Input
-                    id="visitorDocument"
-                    value={formData.visitorDocument}
-                    onChange={(e) => {
-                      setFormData({ ...formData, visitorDocument: e.target.value });
-                      findSimilarEntries(formData.visitorName, e.target.value);
-                    }}
-                    placeholder="Número do documento"
-                    required
-                  />
+                  <Input id="visitorDocument" value={formData.visitorDocument} onChange={e => {
+                setFormData({
+                  ...formData,
+                  visitorDocument: e.target.value
+                });
+                findSimilarEntries(formData.visitorName, e.target.value);
+              }} placeholder="Número do documento" required />
                 </div>
 
-                {showSuggestions && suggestions.length > 0 && (
-                  <div className="md:col-span-2 p-3 bg-primary/10 border border-primary rounded-lg">
+                {showSuggestions && suggestions.length > 0 && <div className="md:col-span-2 p-3 bg-primary/10 border border-primary rounded-lg">
                     <p className="text-sm font-semibold text-primary mb-2">✨ Cadastros encontrados:</p>
                     <div className="space-y-2">
-                      {suggestions.map((suggestion) => (
-                        <button
-                          key={suggestion.id}
-                          type="button"
-                          onClick={() => applySuggestion(suggestion)}
-                          className="w-full text-left p-2 bg-background rounded hover:bg-muted transition-colors text-sm"
-                        >
+                      {suggestions.map(suggestion => <button key={suggestion.id} type="button" onClick={() => applySuggestion(suggestion)} className="w-full text-left p-2 bg-background rounded hover:bg-muted transition-colors text-sm">
                           <p className="font-medium">{suggestion.visitorName}</p>
                           <p className="text-xs text-muted-foreground">
                             Doc: {suggestion.visitorDocument} • Última visita: {new Date(suggestion.entryTime).toLocaleDateString('pt-BR')}
                           </p>
-                        </button>
-                      ))}
+                        </button>)}
                     </div>
-                  </div>
-                )}
+                  </div>}
 
-                {formData.visitorType === 'service_provider' && (
-                  <div className="space-y-2 md:col-span-2">
+                {formData.visitorType === 'service_provider' && <div className="space-y-2 md:col-span-2">
                     <Label htmlFor="company">Empresa</Label>
-                    <Input
-                      id="company"
-                      value={formData.company}
-                      onChange={(e) => setFormData({ ...formData, company: e.target.value })}
-                      placeholder="Nome da empresa"
-                    />
-                  </div>
-                )}
+                    <Input id="company" value={formData.company} onChange={e => setFormData({
+                ...formData,
+                company: e.target.value
+              })} placeholder="Nome da empresa" />
+                  </div>}
 
                 <div className="space-y-2 md:col-span-2 relative">
                   <Label htmlFor="residentId">Visitando *</Label>
-                  <Input
-                    id="visitedLocation"
-                    value={visitedLocationSearch}
-                    onChange={(e) => {
-                      setVisitedLocationSearch(e.target.value);
-                      setShowResidentSuggestions(e.target.value.length > 0);
-                    }}
-                    onFocus={() => setShowResidentSuggestions(visitedLocationSearch.length > 0)}
-                    placeholder="Digite o nome ou apartamento do morador"
-                    required
-                  />
-                  {showResidentSuggestions && filteredResidents.length > 0 && (
-                    <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg max-h-48 overflow-y-auto">
-                      {filteredResidents.slice(0, 5).map((resident) => (
-                        <button
-                          key={resident.id}
-                          type="button"
-                          className="w-full text-left px-4 py-2 hover:bg-accent transition-colors"
-                          onClick={() => handleVisitedLocationSelect(resident.id, resident.name, resident.apartment)}
-                        >
+                  <Input id="visitedLocation" value={visitedLocationSearch} onChange={e => {
+                setVisitedLocationSearch(e.target.value);
+                setShowResidentSuggestions(e.target.value.length > 0);
+              }} onFocus={() => setShowResidentSuggestions(visitedLocationSearch.length > 0)} placeholder="Digite o nome ou apartamento do morador" required />
+                  {showResidentSuggestions && filteredResidents.length > 0 && <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                      {filteredResidents.slice(0, 5).map(resident => <button key={resident.id} type="button" className="w-full text-left px-4 py-2 hover:bg-accent transition-colors" onClick={() => handleVisitedLocationSelect(resident.id, resident.name, resident.apartment)}>
                           <div className="font-medium">{resident.name}</div>
                           <div className="text-sm text-muted-foreground">{resident.apartment}</div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                        </button>)}
+                    </div>}
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="vehiclePlate">Placa do Veículo</Label>
-                  <Input
-                    id="vehiclePlate"
-                    value={formData.vehiclePlate}
-                    onChange={(e) => setFormData({ ...formData, vehiclePlate: e.target.value })}
-                    placeholder="ABC-1234"
-                  />
+                  <Input id="vehiclePlate" value={formData.vehiclePlate} onChange={e => setFormData({
+                ...formData,
+                vehiclePlate: e.target.value
+              })} placeholder="ABC-1234" />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="vehicleModel">Modelo</Label>
-                  <Input
-                    id="vehicleModel"
-                    value={formData.vehicleModel}
-                    onChange={(e) => setFormData({ ...formData, vehicleModel: e.target.value })}
-                    placeholder="Ex: Honda Civic"
-                  />
+                  <Input id="vehicleModel" value={formData.vehicleModel} onChange={e => setFormData({
+                ...formData,
+                vehicleModel: e.target.value
+              })} placeholder="Ex: Honda Civic" />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="vehicleColor">Cor do Veículo</Label>
-                  <Input
-                    id="vehicleColor"
-                    value={formData.vehicleColor}
-                    onChange={(e) => setFormData({ ...formData, vehicleColor: e.target.value })}
-                    placeholder="Ex: Preto"
-                  />
+                  <Input id="vehicleColor" value={formData.vehicleColor} onChange={e => setFormData({
+                ...formData,
+                vehicleColor: e.target.value
+              })} placeholder="Ex: Preto" />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="purpose">Motivo da Visita</Label>
-                  <Textarea
-                    id="purpose"
-                    value={formData.purpose}
-                    onChange={(e) => setFormData({ ...formData, purpose: e.target.value })}
-                    placeholder="Ex: Visita social, manutenção..."
-                    rows={2}
-                  />
+                  <Textarea id="purpose" value={formData.purpose} onChange={e => setFormData({
+                ...formData,
+                purpose: e.target.value
+              })} placeholder="Ex: Visita social, manutenção..." rows={2} />
                 </div>
 
                 <div className="space-y-2 md:col-span-2">
@@ -763,31 +491,21 @@ export const NewRegistry = () => {
                       <Upload className="h-4 w-4 mr-2" />
                       Carregar
                     </Button>
-                    <input
-                      id="photoUpload"
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handlePhotoUpload}
-                    />
+                    <input id="photoUpload" type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
                   </div>
-                  {formData.photo && (
-                    <div className="relative inline-block">
+                  {formData.photo && <div className="relative inline-block">
                       <img src={formData.photo} alt="Foto" className="w-24 h-24 object-cover rounded-lg border" />
-                      <button
-                        type="button"
-                        onClick={() => setFormData({ ...formData, photo: '' })}
-                        className="absolute -top-2 -right-2 bg-destructive text-white rounded-full p-1"
-                      >
+                      <button type="button" onClick={() => setFormData({
+                  ...formData,
+                  photo: ''
+                })} className="absolute -top-2 -right-2 bg-destructive text-white rounded-full p-1">
                         <X className="h-3 w-3" />
                       </button>
-                    </div>
-                  )}
+                    </div>}
                 </div>
               </div>
 
-              {showCamera && (
-                <div className="space-y-2">
+              {showCamera && <div className="space-y-2">
                   <video ref={videoRef} autoPlay className="w-full rounded-lg border" />
                   <canvas ref={canvasRef} className="hidden" />
                   <div className="flex gap-2">
@@ -798,8 +516,7 @@ export const NewRegistry = () => {
                       Cancelar
                     </Button>
                   </div>
-                </div>
-              )}
+                </div>}
 
               <Button type="submit" className="w-full">
                 <LogIn className="h-4 w-4 mr-2" />
@@ -808,6 +525,5 @@ export const NewRegistry = () => {
             </form>
         </DialogContent>
       </Dialog>
-    </div>
-  );
+    </div>;
 };

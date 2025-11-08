@@ -57,19 +57,10 @@ export const NewRegistry = () => {
     setAllEntries(storedEntries.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()));
   };
   const activeEntries = entries.filter(e => !e.exitTime).reverse();
-  const filteredActiveEntries = activeEntries.filter(entry =>
-    entry.visitorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    entry.apartment.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    entry.visitorDocument.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredActiveEntries = activeEntries.filter(entry => entry.visitorName.toLowerCase().includes(searchTerm.toLowerCase()) || entry.apartment.toLowerCase().includes(searchTerm.toLowerCase()) || entry.visitorDocument.toLowerCase().includes(searchTerm.toLowerCase()));
   const totalPages = Math.ceil(filteredActiveEntries.length / itemsPerPage);
   const paginatedEntries = filteredActiveEntries.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-  
-  const filteredAllEntries = allEntries.filter(entry =>
-    entry.visitorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    entry.apartment.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    entry.visitorDocument.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredAllEntries = allEntries.filter(entry => entry.visitorName.toLowerCase().includes(searchTerm.toLowerCase()) || entry.apartment.toLowerCase().includes(searchTerm.toLowerCase()) || entry.visitorDocument.toLowerCase().includes(searchTerm.toLowerCase()));
   const totalPagesAll = Math.ceil(filteredAllEntries.length / itemsPerPageTable);
   const paginatedAllEntries = filteredAllEntries.slice((currentPageAll - 1) * itemsPerPageTable, currentPageAll * itemsPerPageTable);
   const filteredResidents = residents.filter(r => r.name.toLowerCase().includes(visitedLocationSearch.toLowerCase()) || r.apartment.toLowerCase().includes(visitedLocationSearch.toLowerCase()));
@@ -267,57 +258,45 @@ export const NewRegistry = () => {
     setAllEntries(updatedEntries.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()));
     toast.success('Cadastro excluído com sucesso!');
   };
-
   const exportActiveEntriesToPDF = () => {
     const doc = new jsPDF();
     doc.text('Cadastros Ativos', 14, 15);
-    doc.text(`Data: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: ptBR })}`, 14, 22);
-
+    doc.text(`Data: ${format(new Date(), 'dd/MM/yyyy HH:mm', {
+      locale: ptBR
+    })}`, 14, 22);
     const tableData = filteredActiveEntries.map(entry => {
       const resident = residents.find(r => r.id === entry.residentId);
-      return [
-        entry.visitorName,
-        entry.visitorDocument,
-        resident?.name || '-',
-        resident?.apartment || '-',
-        entry.visitorType === 'visitor' ? 'Visitante' : 'Prestador',
-        format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', { locale: ptBR })
-      ];
+      return [entry.visitorName, entry.visitorDocument, resident?.name || '-', resident?.apartment || '-', entry.visitorType === 'visitor' ? 'Visitante' : 'Prestador', format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', {
+        locale: ptBR
+      })];
     });
-
     autoTable(doc, {
       head: [['Nome', 'Documento', 'Morador', 'Apt', 'Tipo', 'Entrada']],
       body: tableData,
-      startY: 28,
+      startY: 28
     });
-
     doc.save(`cadastros-ativos-${format(new Date(), 'dd-MM-yyyy')}.pdf`);
     toast.success('PDF gerado com sucesso');
   };
-
   const exportAllEntriesToPDF = () => {
     const doc = new jsPDF();
     doc.text('Todos os Cadastros', 14, 15);
-    doc.text(`Data: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: ptBR })}`, 14, 22);
-
+    doc.text(`Data: ${format(new Date(), 'dd/MM/yyyy HH:mm', {
+      locale: ptBR
+    })}`, 14, 22);
     const tableData = filteredAllEntries.map(entry => {
       const resident = residents.find(r => r.id === entry.residentId);
-      return [
-        entry.visitorName,
-        entry.visitorDocument,
-        resident?.name || '-',
-        resident?.apartment || '-',
-        format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', { locale: ptBR }),
-        entry.exitTime ? format(new Date(entry.exitTime), 'dd/MM/yyyy HH:mm', { locale: ptBR }) : 'Ativo'
-      ];
+      return [entry.visitorName, entry.visitorDocument, resident?.name || '-', resident?.apartment || '-', format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', {
+        locale: ptBR
+      }), entry.exitTime ? format(new Date(entry.exitTime), 'dd/MM/yyyy HH:mm', {
+        locale: ptBR
+      }) : 'Ativo'];
     });
-
     autoTable(doc, {
       head: [['Nome', 'Documento', 'Morador', 'Apt', 'Entrada', 'Saída']],
       body: tableData,
-      startY: 28,
+      startY: 28
     });
-
     doc.save(`todos-cadastros-${format(new Date(), 'dd-MM-yyyy')}.pdf`);
     toast.success('PDF gerado com sucesso');
   };
@@ -367,7 +346,7 @@ export const NewRegistry = () => {
           <h2 className="text-3xl font-bold text-foreground mb-2">Novo Cadastro</h2>
           <p className="text-muted-foreground">Registre entradas e saídas de visitantes e prestadores</p>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)} size="lg" className="gap-2 text-gray-800">
+        <Button onClick={() => setIsDialogOpen(true)} size="lg" className="gap-2 text-slate-50">
           <Plus className="h-5 w-5" />
           Nova Entrada
         </Button>
@@ -395,16 +374,11 @@ export const NewRegistry = () => {
           <div className="mb-4">
             <div className="relative">
               <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar por nome, documento ou apartamento..."
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCurrentPage(1);
-                  setCurrentPageAll(1);
-                }}
-                className="pl-10"
-              />
+              <Input placeholder="Buscar por nome, documento ou apartamento..." value={searchTerm} onChange={e => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+              setCurrentPageAll(1);
+            }} className="pl-10" />
             </div>
           </div>
           <div className="rounded-md border">
@@ -420,23 +394,15 @@ export const NewRegistry = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedEntries.length === 0 ? (
-                  <TableRow>
+                {paginatedEntries.length === 0 ? <TableRow>
                     <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                       {searchTerm ? 'Nenhum registro encontrado' : 'Nenhuma pessoa no momento'}
                     </TableCell>
-                  </TableRow>
-                ) : (
-                  paginatedEntries.map((entry) => (
-                    <TableRow key={entry.id} className={entry.visitorType === 'service_provider' ? 'bg-warning/5' : 'bg-success/5'}>
+                  </TableRow> : paginatedEntries.map(entry => <TableRow key={entry.id} className={entry.visitorType === 'service_provider' ? 'bg-warning/5' : 'bg-success/5'}>
                       <TableCell>
-                        {entry.photo ? (
-                          <img src={entry.photo} alt={entry.visitorName} className="w-12 h-12 rounded-full object-cover border-2 border-primary/20" />
-                        ) : (
-                          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-xl">
+                        {entry.photo ? <img src={entry.photo} alt={entry.visitorName} className="w-12 h-12 rounded-full object-cover border-2 border-primary/20" /> : <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-xl">
                             {entry.visitorType === 'service_provider' ? '🔧' : '👤'}
-                          </div>
-                        )}
+                          </div>}
                       </TableCell>
                       <TableCell>
                         <div>
@@ -452,54 +418,34 @@ export const NewRegistry = () => {
                         </div>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {new Date(entry.entryTime).toLocaleString('pt-BR', { 
-                          day: '2-digit', 
-                          month: '2-digit', 
-                          hour: '2-digit', 
-                          minute: '2-digit' 
-                        })}
+                        {new Date(entry.entryTime).toLocaleString('pt-BR', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {entry.vehiclePlate ? (
-                          <div>
+                        {entry.vehiclePlate ? <div>
                             <p>🚗 {entry.vehiclePlate}</p>
                             {entry.vehicleModel && <p className="text-xs">{entry.vehicleModel}</p>}
-                          </div>
-                        ) : (
-                          '-'
-                        )}
+                          </div> : '-'}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => handleEdit(entry)}
-                            className="h-8 w-8"
-                          >
+                          <Button size="icon" variant="ghost" onClick={() => handleEdit(entry)} className="h-8 w-8">
                             <Pencil className="h-4 w-4" />
                           </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => handleDelete(entry.id)}
-                            className="h-8 w-8 text-destructive hover:text-destructive"
-                          >
+                          <Button size="icon" variant="ghost" onClick={() => handleDelete(entry.id)} className="h-8 w-8 text-destructive hover:text-destructive">
                             <Trash2 className="h-4 w-4" />
                           </Button>
-                          <Button
-                            size="sm"
-                            onClick={() => handleExit(entry.id)}
-                            className="h-8"
-                          >
+                          <Button size="sm" onClick={() => handleExit(entry.id)} className="h-8">
                             <LogOut className="h-4 w-4 mr-1" />
                             Saída
                           </Button>
                         </div>
                       </TableCell>
-                    </TableRow>
-                  ))
-                )}
+                    </TableRow>)}
               </TableBody>
             </Table>
           </div>

@@ -295,7 +295,7 @@ export const NewRegistry = () => {
           <h2 className="text-3xl font-bold text-foreground mb-2">Novo Cadastro</h2>
           <p className="text-muted-foreground">Registre entradas e saídas de visitantes e prestadores</p>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)} size="lg" className="gap-2">
+        <Button onClick={() => setIsDialogOpen(true)} size="lg" className="gap-2 text-gray-800">
           <Plus className="h-5 w-5" />
           Nova Entrada
         </Button>

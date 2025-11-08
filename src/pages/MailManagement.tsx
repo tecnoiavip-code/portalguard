@@ -20,14 +20,19 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Combobox } from '@/components/ui/combobox';
-import { Package, CheckCircle } from 'lucide-react';
+import { Package, CheckCircle, Search, Pencil, Trash2 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { Mail, Resident } from '@/types';
 import { toast } from 'sonner';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 
 export const MailManagement = () => {
   const [residents, setResidents] = useState<Resident[]>([]);
   const [mails, setMails] = useState<Mail[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const [formData, setFormData] = useState({
     residentId: '',
     sender: '',
@@ -38,6 +43,7 @@ export const MailManagement = () => {
     open: boolean;
     mailId: string | null;
   }>({ open: false, mailId: null });
+  const [editingMail, setEditingMail] = useState<Mail | null>(null);
   const [withdrawnBy, setWithdrawnBy] = useState('');
 
   useEffect(() => {
@@ -58,21 +64,44 @@ export const MailManagement = () => {
       return;
     }
 
-    const mail: Mail = {
-      id: `mail_${Date.now()}`,
-      residentId: formData.residentId,
-      sender: formData.sender || 'Não identificado',
-      packageType: formData.packageType,
-      notes: formData.notes,
-      receivedAt: new Date().toISOString(),
-      status: 'pending',
-      deliveredAt: null,
-      withdrawnBy: null,
-    };
+    if (editingMail) {
+      const updatedMails = mails.map((m) =>
+        m.id === editingMail.id
+          ? {
+              ...m,
+              residentId: formData.residentId,
+              sender: formData.sender || 'Não identificado',
+              packageType: formData.packageType,
+              notes: formData.notes,
+            }
+          : m
+      );
+      storage.saveMails(updatedMails);
+      setMails(updatedMails);
+      toast.success('Correspondência atualizada!');
+      setEditingMail(null);
+    } else {
+      const mail: Mail = {
+        id: `mail_${Date.now()}`,
+        residentId: formData.residentId,
+        sender: formData.sender || 'Não identificado',
+        packageType: formData.packageType,
+        notes: formData.notes,
+        receivedAt: new Date().toISOString(),
+        status: 'pending',
+        deliveredAt: null,
+        withdrawnBy: null,
+      };
 
-    const updatedMails = [...mails, mail];
-    storage.saveMails(updatedMails);
-    setMails(updatedMails);
+      const updatedMails = [...mails, mail];
+      storage.saveMails(updatedMails);
+      setMails(updatedMails);
+
+      toast.success(
+        `Correspondência registrada! ${resident.name} seria notificado.`,
+        { description: `${mail.packageType} de ${mail.sender}` }
+      );
+    }
 
     setFormData({
       residentId: '',
@@ -80,11 +109,6 @@ export const MailManagement = () => {
       packageType: 'Carta',
       notes: '',
     });
-
-    toast.success(
-      `Correspondência registrada! ${resident.name} seria notificado.`,
-      { description: `${mail.packageType} de ${mail.sender}` }
-    );
   };
 
   const handleDeliverClick = (mailId: string) => {
@@ -118,10 +142,37 @@ export const MailManagement = () => {
   };
 
   const pendingMails = mails.filter((m) => m.status === 'pending');
-  const today = new Date().toDateString();
-  const deliveredToday = mails.filter(
-    (m) => m.status === 'delivered' && new Date(m.deliveredAt!).toDateString() === today
+  const filteredPendingMails = pendingMails.filter((mail) => {
+    const resident = residents.find((r) => r.id === mail.residentId);
+    return (
+      resident?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      resident?.apartment.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      mail.sender.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  });
+  const totalPages = Math.ceil(filteredPendingMails.length / itemsPerPage);
+  const paginatedMails = filteredPendingMails.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
   );
+
+  const handleEdit = (mail: Mail) => {
+    setEditingMail(mail);
+    setFormData({
+      residentId: mail.residentId,
+      sender: mail.sender,
+      packageType: mail.packageType,
+      notes: mail.notes,
+    });
+  };
+
+  const handleDelete = (mailId: string) => {
+    if (!confirm('Tem certeza que deseja excluir esta correspondência?')) return;
+    const updatedMails = mails.filter((m) => m.id !== mailId);
+    storage.saveMails(updatedMails);
+    setMails(updatedMails);
+    toast.success('Correspondência excluída!');
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -130,16 +181,16 @@ export const MailManagement = () => {
         <p className="text-muted-foreground">Registre e gerencie as correspondências dos moradores</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
               <Package className="h-5 w-5 text-primary" />
-              <span>Registrar Nova</span>
+              <span>{editingMail ? 'Editar Correspondência' : 'Registrar Nova'}</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="residentId">Morador *</Label>
                 <Combobox
@@ -191,10 +242,28 @@ export const MailManagement = () => {
                 />
               </div>
 
-              <Button type="submit" className="w-full bg-success hover:bg-success/90">
+              <Button type="submit" className="w-full">
                 <Package className="h-4 w-4 mr-2" />
-                Registrar e Notificar
+                {editingMail ? 'Atualizar' : 'Registrar e Notificar'}
               </Button>
+              {editingMail && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setEditingMail(null);
+                    setFormData({
+                      residentId: '',
+                      sender: '',
+                      packageType: 'Carta',
+                      notes: '',
+                    });
+                  }}
+                  className="w-full"
+                >
+                  Cancelar Edição
+                </Button>
+              )}
             </form>
           </CardContent>
         </Card>
@@ -207,89 +276,124 @@ export const MailManagement = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3 max-h-[600px] overflow-y-auto">
-              {pendingMails.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  Nenhuma pendência
-                </p>
-              ) : (
-                pendingMails.map((mail) => {
-                  const resident = residents.find((r) => r.id === mail.residentId);
-                  return (
-                    <div
-                      key={mail.id}
-                      className="p-3 bg-warning/10 rounded-lg border-l-4 border-warning"
-                    >
-                      <p className="font-semibold text-sm mb-1">
-                        {resident?.name || 'Morador Removido'}
-                      </p>
-                      <p className="text-xs text-muted-foreground mb-2">
-                        <span className="font-medium">De:</span> {mail.sender} ({mail.packageType})
-                      </p>
-                      <p className="text-xs text-muted-foreground mb-3">
-                        Recebido: {new Date(mail.receivedAt).toLocaleString('pt-BR')}
-                      </p>
-                      {mail.notes && (
-                        <p className="text-xs text-muted-foreground mb-3 italic">
-                          {mail.notes}
-                        </p>
-                      )}
-                      <Button
-                        size="sm"
-                        onClick={() => handleDeliverClick(mail.id)}
-                        className="w-full bg-warning hover:bg-warning/90"
-                      >
-                        <CheckCircle className="h-3.5 w-3.5 mr-1" />
-                        Marcar como Entregue
-                      </Button>
-                    </div>
-                  );
-                })
-              )}
+            <div className="mb-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar correspondência..."
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="pl-10"
+                />
+              </div>
             </div>
-          </CardContent>
-        </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span className="text-success">Entregues Hoje</span>
-              <span className="text-sm font-normal">{deliveredToday.length}</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3 max-h-[600px] overflow-y-auto">
-              {deliveredToday.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  Nenhuma entrega hoje
-                </p>
-              ) : (
-                deliveredToday.map((mail) => {
-                  const resident = residents.find((r) => r.id === mail.residentId);
-                  return (
-                    <div
-                      key={mail.id}
-                      className="p-3 bg-success/10 rounded-lg border-l-4 border-success"
-                    >
-                      <p className="font-semibold text-sm mb-1">
-                        {resident?.name || 'Morador Removido'}
-                      </p>
-                      <p className="text-xs text-muted-foreground mb-2">
-                        <span className="font-medium">De:</span> {mail.sender} ({mail.packageType})
-                      </p>
-                      <p className="text-xs text-muted-foreground mb-1">
-                        Entregue: {new Date(mail.deliveredAt!).toLocaleTimeString('pt-BR')}
-                      </p>
-                      {mail.withdrawnBy && (
-                        <p className="text-xs text-muted-foreground font-medium">
-                          Retirado por: {mail.withdrawnBy}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })
-              )}
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Morador</TableHead>
+                    <TableHead>Remetente</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead>Recebido</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginatedMails.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                        {searchTerm ? 'Nenhuma correspondência encontrada' : 'Nenhuma pendência'}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    paginatedMails.map((mail) => {
+                      const resident = residents.find((r) => r.id === mail.residentId);
+                      return (
+                        <TableRow key={mail.id}>
+                          <TableCell className="font-medium">
+                            <div>
+                              <p>{resident?.name || 'Morador Removido'}</p>
+                              <p className="text-xs text-muted-foreground">{resident?.apartment}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell>{mail.sender}</TableCell>
+                          <TableCell>{mail.packageType}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {new Date(mail.receivedAt).toLocaleDateString('pt-BR')}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleEdit(mail)}
+                                className="h-8 w-8"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleDeliverClick(mail.id)}
+                                className="h-8 w-8 text-success"
+                              >
+                                <CheckCircle className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleDelete(mail.id)}
+                                className="h-8 w-8 text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
             </div>
+
+            {totalPages > 1 && (
+              <div className="mt-4">
+                <Pagination>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                      />
+                    </PaginationItem>
+
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                      <PaginationItem key={page}>
+                        <PaginationLink
+                          onClick={() => setCurrentPage(page)}
+                          isActive={currentPage === page}
+                          className="cursor-pointer"
+                        >
+                          {page}
+                        </PaginationLink>
+                      </PaginationItem>
+                    ))}
+
+                    <PaginationItem>
+                      <PaginationNext
+                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                        className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

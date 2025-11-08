@@ -5,10 +5,13 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollText, Search, LogIn, LogOut } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { AccessEntry } from '@/types';
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 
 export const Logs = () => {
   const [entries, setEntries] = useState<AccessEntry[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   useEffect(() => {
     loadEntries();
@@ -27,6 +30,12 @@ export const Logs = () => {
       entry.residentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       entry.apartment.toLowerCase().includes(searchTerm.toLowerCase()) ||
       entry.visitorDocument.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const totalPages = Math.ceil(filteredEntries.length / itemsPerPage);
+  const paginatedEntries = filteredEntries.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
   );
 
   return (
@@ -53,19 +62,22 @@ export const Logs = () => {
               <Input
                 placeholder="Buscar por visitante, morador, apartamento ou documento..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="pl-10"
               />
             </div>
           </div>
 
-          <div className="space-y-3 max-h-[600px] overflow-y-auto">
-            {filteredEntries.length === 0 ? (
+          <div className="space-y-3">
+            {paginatedEntries.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">
                 {searchTerm ? 'Nenhum registro encontrado' : 'Nenhum acesso registrado ainda'}
               </p>
             ) : (
-              filteredEntries.map((entry) => (
+              paginatedEntries.map((entry) => (
                 <div
                   key={entry.id}
                   className="p-4 bg-card rounded-lg border border-border hover:shadow-md transition-shadow"
@@ -134,6 +146,40 @@ export const Logs = () => {
               ))
             )}
           </div>
+
+          {totalPages > 1 && (
+            <div className="mt-6">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                    />
+                  </PaginationItem>
+
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                    <PaginationItem key={page}>
+                      <PaginationLink
+                        onClick={() => setCurrentPage(page)}
+                        isActive={currentPage === page}
+                        className="cursor-pointer"
+                      >
+                        {page}
+                      </PaginationLink>
+                    </PaginationItem>
+                  ))}
+
+                  <PaginationItem>
+                    <PaginationNext
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

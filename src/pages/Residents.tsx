@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Pencil, Trash2, Save, X, Plus } from 'lucide-react';
+import { Pencil, Trash2, Save, X, Plus, Search } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { Resident } from '@/types';
 import { toast } from 'sonner';
@@ -30,6 +30,7 @@ export const Residents = () => {
   const [editingId, setEditingId] = useState<string>('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [searchTerm, setSearchTerm] = useState('');
   const itemsPerPage = 10;
   const [formData, setFormData] = useState({
     name: '',
@@ -52,8 +53,13 @@ export const Residents = () => {
     loadResidents();
   }, []);
 
-  const totalPages = Math.ceil(residents.length / itemsPerPage);
-  const paginatedResidents = residents.slice(
+  const filteredResidents = residents.filter(resident =>
+    resident.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    resident.apartment.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    resident.cpf.includes(searchTerm)
+  );
+  const totalPages = Math.ceil(filteredResidents.length / itemsPerPage);
+  const paginatedResidents = filteredResidents.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
@@ -109,10 +115,12 @@ export const Residents = () => {
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
       setStream(mediaStream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-      }
       setShowCamera(true);
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = mediaStream;
+        }
+      }, 100);
     } catch (error) {
       toast.error('Não foi possível acessar a câmera');
     }
@@ -207,6 +215,20 @@ export const Residents = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
+          <div className="mb-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nome, apartamento ou CPF..."
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="pl-10"
+              />
+            </div>
+          </div>
           <div className="rounded-md border">
             <Table>
               <TableHeader>

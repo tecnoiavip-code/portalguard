@@ -7,7 +7,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { ClipboardList, Users, AlertTriangle, Activity } from 'lucide-react';
+import { ClipboardList, Users, AlertTriangle, Activity, Plus, Wrench } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -57,6 +58,12 @@ export const Reports = () => {
   
   // Devices state
   const [devices, setDevices] = useState<Device[]>([]);
+  const [isDeviceDialogOpen, setIsDeviceDialogOpen] = useState(false);
+  const [deviceFormData, setDeviceFormData] = useState({
+    name: '',
+    type: 'facial_recognition' as 'facial_recognition' | 'vehicle_tag' | 'card_reader',
+    location: '',
+  });
 
   useEffect(() => {
     loadShifts();
@@ -235,6 +242,36 @@ export const Reports = () => {
       case 'resolved': return 'Resolvida';
       case 'closed': return 'Fechada';
       default: return status;
+    }
+  };
+
+  const handleCreateDevice = async () => {
+    if (!deviceFormData.name.trim() || !deviceFormData.location.trim()) {
+      toast.error('Preencha nome e localização do equipamento');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('devices')
+      .insert({
+        name: deviceFormData.name,
+        type: deviceFormData.type,
+        location: deviceFormData.location,
+        status: 'online',
+        last_sync: new Date().toISOString()
+      });
+
+    if (error) {
+      toast.error('Erro ao cadastrar equipamento');
+    } else {
+      toast.success('Equipamento cadastrado com sucesso');
+      setDeviceFormData({
+        name: '',
+        type: 'facial_recognition',
+        location: ''
+      });
+      setIsDeviceDialogOpen(false);
+      loadDevices();
     }
   };
 
@@ -463,35 +500,98 @@ export const Reports = () => {
       )}
 
       {activeTab === 'devices' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Status dos Equipamentos</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {devices.map((device) => (
-                <div key={device.id} className="border rounded-lg p-4 flex justify-between items-center">
-                  <div>
-                    <h3 className="font-semibold">{device.name}</h3>
-                    <p className="text-sm text-muted-foreground">{device.location}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Última sincronização: {device.last_sync ? format(new Date(device.last_sync), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }) : 'Nunca'}
-                    </p>
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Wrench className="h-5 w-5" />
+                  Equipamentos do Plantão
+                </CardTitle>
+                <Button onClick={() => setIsDeviceDialogOpen(true)} size="sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Cadastrar Equipamento
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {devices.map((device) => (
+                  <div key={device.id} className="border rounded-lg p-4">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="font-semibold">{device.name}</h3>
+                        <p className="text-sm text-muted-foreground">{device.location}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Tipo: {device.type === 'facial_recognition' ? 'Reconhecimento Facial' : 
+                                device.type === 'vehicle_tag' ? 'Tag Veicular' : 'Leitor de Cartão'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Última sincronização: {format(new Date(device.last_sync), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                        </p>
+                      </div>
+                      <Badge variant={device.status === 'online' ? 'default' : 'destructive'}>
+                        {device.status === 'online' ? 'Online' : 'Offline'}
+                      </Badge>
+                    </div>
                   </div>
-                  <Badge variant={device.status === 'online' ? 'default' : 'destructive'}>
-                    {device.status === 'online' ? 'Online' : 'Offline'}
-                  </Badge>
-                </div>
-              ))}
-              {devices.length === 0 && (
-                <p className="text-center text-muted-foreground py-8">
-                  Nenhum equipamento cadastrado
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+                ))}
+                {devices.length === 0 && (
+                  <p className="text-center text-muted-foreground py-8">
+                    Nenhum equipamento cadastrado
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
+
+      <Dialog open={isDeviceDialogOpen} onOpenChange={setIsDeviceDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cadastrar Equipamento</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label>Nome do Equipamento *</Label>
+              <Input
+                value={deviceFormData.name}
+                onChange={(e) => setDeviceFormData({ ...deviceFormData, name: e.target.value })}
+                placeholder="Ex: Leitor Principal"
+              />
+            </div>
+            <div>
+              <Label>Tipo *</Label>
+              <Select 
+                value={deviceFormData.type} 
+                onValueChange={(v: any) => setDeviceFormData({ ...deviceFormData, type: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="facial_recognition">Reconhecimento Facial</SelectItem>
+                  <SelectItem value="vehicle_tag">Tag Veicular</SelectItem>
+                  <SelectItem value="card_reader">Leitor de Cartão</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Localização *</Label>
+              <Input
+                value={deviceFormData.location}
+                onChange={(e) => setDeviceFormData({ ...deviceFormData, location: e.target.value })}
+                placeholder="Ex: Portaria Principal"
+              />
+            </div>
+            <Button onClick={handleCreateDevice} className="w-full">
+              <Plus className="h-4 w-4 mr-2" />
+              Cadastrar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

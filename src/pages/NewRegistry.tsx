@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { LogIn, LogOut, Camera, Upload, X, Plus, Pencil, Trash2 } from 'lucide-react';
+import { LogIn, LogOut, Camera, Upload, X, Plus, Pencil, Trash2, Search } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { AccessEntry, Resident } from '@/types';
 import { toast } from 'sonner';
@@ -22,6 +22,7 @@ export const NewRegistry = () => {
   const [currentPageAll, setCurrentPageAll] = useState(1);
   const [visitedLocationSearch, setVisitedLocationSearch] = useState('');
   const [showResidentSuggestions, setShowResidentSuggestions] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   const itemsPerPage = 12;
   const itemsPerPageTable = 10;
   const [formData, setFormData] = useState({
@@ -52,10 +53,21 @@ export const NewRegistry = () => {
     setAllEntries(storedEntries.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()));
   };
   const activeEntries = entries.filter(e => !e.exitTime).reverse();
-  const totalPages = Math.ceil(activeEntries.length / itemsPerPage);
-  const paginatedEntries = activeEntries.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-  const totalPagesAll = Math.ceil(allEntries.length / itemsPerPageTable);
-  const paginatedAllEntries = allEntries.slice((currentPageAll - 1) * itemsPerPageTable, currentPageAll * itemsPerPageTable);
+  const filteredActiveEntries = activeEntries.filter(entry =>
+    entry.visitorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    entry.apartment.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    entry.visitorDocument.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  const totalPages = Math.ceil(filteredActiveEntries.length / itemsPerPage);
+  const paginatedEntries = filteredActiveEntries.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  
+  const filteredAllEntries = allEntries.filter(entry =>
+    entry.visitorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    entry.apartment.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    entry.visitorDocument.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  const totalPagesAll = Math.ceil(filteredAllEntries.length / itemsPerPageTable);
+  const paginatedAllEntries = filteredAllEntries.slice((currentPageAll - 1) * itemsPerPageTable, currentPageAll * itemsPerPageTable);
   const filteredResidents = residents.filter(r => r.name.toLowerCase().includes(visitedLocationSearch.toLowerCase()) || r.apartment.toLowerCase().includes(visitedLocationSearch.toLowerCase()));
   const handleVisitedLocationSelect = (residentId: string, residentName: string, apartment: string) => {
     setVisitedLocationSearch(`${residentName} - ${apartment}`);
@@ -110,10 +122,12 @@ export const NewRegistry = () => {
         video: true
       });
       setStream(mediaStream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-      }
       setShowCamera(true);
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = mediaStream;
+        }
+      }, 100);
     } catch (error) {
       toast.error('Não foi possível acessar a câmera');
     }
@@ -309,35 +323,121 @@ export const NewRegistry = () => {
               <span>Ativos no Condomínio</span>
             </div>
             <span className="text-sm font-normal text-muted-foreground">
-              {entries.length} {entries.length === 1 ? 'pessoa' : 'pessoas'}
+              {activeEntries.length} {activeEntries.length === 1 ? 'pessoa' : 'pessoas'}
             </span>
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {paginatedEntries.length === 0 ? <p className="text-sm text-muted-foreground text-center py-8 col-span-full">
-                Nenhuma pessoa no momento
-              </p> : paginatedEntries.map(entry => <div key={entry.id} className={`p-4 rounded-lg border-l-4 ${entry.visitorType === 'service_provider' ? 'bg-warning/10 border-warning' : 'bg-success/10 border-success'}`}>
-                  <div className="flex gap-3 mb-3">
-                    {entry.photo ? <img src={entry.photo} alt={entry.visitorName} className="w-12 h-12 rounded-full object-cover" /> : <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-xl">
-                        {entry.visitorType === 'service_provider' ? '🔧' : '👤'}
-                      </div>}
-                    <div className="flex-1">
-                      <p className="font-semibold text-foreground">{entry.visitorName}</p>
-                      <p className="text-xs text-muted-foreground">{entry.visitorDocument}</p>
-                      {entry.company && <p className="text-xs text-muted-foreground">🏢 {entry.company}</p>}
-                    </div>
-                  </div>
-                  <div className="space-y-1 text-xs text-muted-foreground mb-3">
-                    <p>📍 {entry.apartment} - {entry.residentName}</p>
-                    <p>🕐 {new Date(entry.entryTime).toLocaleString('pt-BR')}</p>
-                    {entry.vehiclePlate && <p>🚗 {entry.vehiclePlate} - {entry.vehicleModel}</p>}
-                  </div>
-                  <Button onClick={() => handleExit(entry.id)} variant="outline" size="sm" className="w-full">
-                    <LogOut className="h-4 w-4 mr-2" />
-                    Registrar Saída
-                  </Button>
-                </div>)}
+          <div className="mb-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nome, documento ou apartamento..."
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                  setCurrentPageAll(1);
+                }}
+                className="pl-10"
+              />
+            </div>
+          </div>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[80px]">Foto</TableHead>
+                  <TableHead>Visitante</TableHead>
+                  <TableHead>Apartamento</TableHead>
+                  <TableHead>Entrada</TableHead>
+                  <TableHead>Veículo</TableHead>
+                  <TableHead className="text-right w-[180px]">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paginatedEntries.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                      {searchTerm ? 'Nenhum registro encontrado' : 'Nenhuma pessoa no momento'}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  paginatedEntries.map((entry) => (
+                    <TableRow key={entry.id} className={entry.visitorType === 'service_provider' ? 'bg-warning/5' : 'bg-success/5'}>
+                      <TableCell>
+                        {entry.photo ? (
+                          <img src={entry.photo} alt={entry.visitorName} className="w-12 h-12 rounded-full object-cover border-2 border-primary/20" />
+                        ) : (
+                          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-xl">
+                            {entry.visitorType === 'service_provider' ? '🔧' : '👤'}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <p className="font-semibold">{entry.visitorName}</p>
+                          <p className="text-xs text-muted-foreground">{entry.visitorDocument}</p>
+                          {entry.company && <p className="text-xs text-muted-foreground">🏢 {entry.company}</p>}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <p className="font-medium">{entry.apartment}</p>
+                          <p className="text-xs text-muted-foreground">{entry.residentName}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {new Date(entry.entryTime).toLocaleString('pt-BR', { 
+                          day: '2-digit', 
+                          month: '2-digit', 
+                          hour: '2-digit', 
+                          minute: '2-digit' 
+                        })}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {entry.vehiclePlate ? (
+                          <div>
+                            <p>🚗 {entry.vehiclePlate}</p>
+                            {entry.vehicleModel && <p className="text-xs">{entry.vehicleModel}</p>}
+                          </div>
+                        ) : (
+                          '-'
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleEdit(entry)}
+                            className="h-8 w-8"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleDelete(entry.id)}
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => handleExit(entry.id)}
+                            className="h-8"
+                          >
+                            <LogOut className="h-4 w-4 mr-1" />
+                            Saída
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
           </div>
           
           {totalPages > 1 && <div className="mt-6">

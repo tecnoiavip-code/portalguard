@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Pencil, Trash2, Save, X, Plus, Search } from 'lucide-react';
+import { Pencil, Trash2, Save, X, Plus, Search, Download } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { Resident } from '@/types';
 import { toast } from 'sonner';
@@ -24,6 +24,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 export const Residents = () => {
   const [residents, setResidents] = useState<Resident[]>([]);
@@ -174,6 +178,30 @@ export const Residents = () => {
     toast.success('Morador excluído com sucesso!');
   };
 
+  const exportResidentsToPDF = () => {
+    const doc = new jsPDF();
+    doc.text('Lista de Moradores', 14, 15);
+    doc.text(`Data: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: ptBR })}`, 14, 22);
+
+    const tableData = filteredResidents.map(resident => [
+      resident.name,
+      resident.apartment,
+      resident.cpf,
+      resident.phone || '-',
+      resident.email || '-',
+      resident.vehiclePlate ? `${resident.vehiclePlate} - ${resident.vehicleModel || ''}` : '-'
+    ]);
+
+    autoTable(doc, {
+      head: [['Nome', 'Apt', 'CPF', 'Telefone', 'E-mail', 'Veículo']],
+      body: tableData,
+      startY: 28,
+    });
+
+    doc.save(`moradores-${format(new Date(), 'dd-MM-yyyy')}.pdf`);
+    toast.success('PDF gerado com sucesso');
+  };
+
   const resetForm = () => {
     setEditingId('');
     setFormData({
@@ -208,10 +236,16 @@ export const Residents = () => {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
-            <span>Lista de Moradores</span>
-            <span className="text-sm font-normal text-muted-foreground">
-              Total: {residents.length}
-            </span>
+            <div className="flex items-center gap-2">
+              <span>Lista de Moradores</span>
+              <span className="text-sm font-normal text-muted-foreground">
+                Total: {residents.length}
+              </span>
+            </div>
+            <Button variant="outline" size="sm" onClick={exportResidentsToPDF}>
+              <Download className="h-4 w-4 mr-2" />
+              Exportar PDF
+            </Button>
           </CardTitle>
         </CardHeader>
         <CardContent>

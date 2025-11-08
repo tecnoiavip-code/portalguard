@@ -20,12 +20,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Combobox } from '@/components/ui/combobox';
-import { Package, CheckCircle, Search, Pencil, Trash2 } from 'lucide-react';
+import { Package, CheckCircle, Search, Pencil, Trash2, Download } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { Mail, Resident } from '@/types';
 import { toast } from 'sonner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 export const MailManagement = () => {
   const [residents, setResidents] = useState<Resident[]>([]);
@@ -174,6 +178,33 @@ export const MailManagement = () => {
     toast.success('Correspondência excluída!');
   };
 
+  const exportMailsToPDF = () => {
+    const doc = new jsPDF();
+    doc.text('Correspondências Pendentes', 14, 15);
+    doc.text(`Data: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: ptBR })}`, 14, 22);
+
+    const tableData = filteredPendingMails.map(mail => {
+      const resident = residents.find(r => r.id === mail.residentId);
+      return [
+        resident?.name || 'Desconhecido',
+        resident?.apartment || '-',
+        mail.sender,
+        mail.packageType,
+        format(new Date(mail.receivedAt), 'dd/MM/yyyy HH:mm', { locale: ptBR }),
+        mail.notes || '-'
+      ];
+    });
+
+    autoTable(doc, {
+      head: [['Morador', 'Apartamento', 'Remetente', 'Tipo', 'Recebida em', 'Observações']],
+      body: tableData,
+      startY: 28,
+    });
+
+    doc.save(`correspondencias-${format(new Date(), 'dd-MM-yyyy')}.pdf`);
+    toast.success('PDF gerado com sucesso');
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div>
@@ -271,8 +302,14 @@ export const MailManagement = () => {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
-              <span className="text-warning">Pendentes de Retirada</span>
-              <span className="text-sm font-normal">{pendingMails.length}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-warning">Pendentes de Retirada</span>
+                <span className="text-sm font-normal">{pendingMails.length}</span>
+              </div>
+              <Button variant="outline" size="sm" onClick={exportMailsToPDF}>
+                <Download className="h-4 w-4 mr-2" />
+                Exportar PDF
+              </Button>
             </CardTitle>
           </CardHeader>
           <CardContent>

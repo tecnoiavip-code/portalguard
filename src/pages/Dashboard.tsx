@@ -66,7 +66,7 @@ export const Dashboard = () => {
           title="Total de Moradores"
           value={stats.totalResidents}
           icon={Users}
-          colorClass="bg-gradient-primary"
+          colorClass="bg-primary"
         />
         <StatsCard
           title="Correspondências Pendentes"

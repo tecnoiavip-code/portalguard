@@ -6,12 +6,16 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { LogIn, LogOut, Camera, Upload, X, Plus, Pencil, Trash2, Search } from 'lucide-react';
+import { LogIn, LogOut, Camera, Upload, X, Plus, Pencil, Trash2, Search, Download } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { AccessEntry, Resident } from '@/types';
 import { toast } from 'sonner';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 export const NewRegistry = () => {
   const [residents, setResidents] = useState<Resident[]>([]);
   const [entries, setEntries] = useState<AccessEntry[]>([]);
@@ -263,6 +267,60 @@ export const NewRegistry = () => {
     setAllEntries(updatedEntries.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()));
     toast.success('Cadastro excluído com sucesso!');
   };
+
+  const exportActiveEntriesToPDF = () => {
+    const doc = new jsPDF();
+    doc.text('Cadastros Ativos', 14, 15);
+    doc.text(`Data: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: ptBR })}`, 14, 22);
+
+    const tableData = filteredActiveEntries.map(entry => {
+      const resident = residents.find(r => r.id === entry.residentId);
+      return [
+        entry.visitorName,
+        entry.visitorDocument,
+        resident?.name || '-',
+        resident?.apartment || '-',
+        entry.visitorType === 'visitor' ? 'Visitante' : 'Prestador',
+        format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', { locale: ptBR })
+      ];
+    });
+
+    autoTable(doc, {
+      head: [['Nome', 'Documento', 'Morador', 'Apt', 'Tipo', 'Entrada']],
+      body: tableData,
+      startY: 28,
+    });
+
+    doc.save(`cadastros-ativos-${format(new Date(), 'dd-MM-yyyy')}.pdf`);
+    toast.success('PDF gerado com sucesso');
+  };
+
+  const exportAllEntriesToPDF = () => {
+    const doc = new jsPDF();
+    doc.text('Todos os Cadastros', 14, 15);
+    doc.text(`Data: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: ptBR })}`, 14, 22);
+
+    const tableData = filteredAllEntries.map(entry => {
+      const resident = residents.find(r => r.id === entry.residentId);
+      return [
+        entry.visitorName,
+        entry.visitorDocument,
+        resident?.name || '-',
+        resident?.apartment || '-',
+        format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', { locale: ptBR }),
+        entry.exitTime ? format(new Date(entry.exitTime), 'dd/MM/yyyy HH:mm', { locale: ptBR }) : 'Ativo'
+      ];
+    });
+
+    autoTable(doc, {
+      head: [['Nome', 'Documento', 'Morador', 'Apt', 'Entrada', 'Saída']],
+      body: tableData,
+      startY: 28,
+    });
+
+    doc.save(`todos-cadastros-${format(new Date(), 'dd-MM-yyyy')}.pdf`);
+    toast.success('PDF gerado com sucesso');
+  };
   const resetForm = () => {
     setEditingId('');
     setFormData({
@@ -322,9 +380,15 @@ export const NewRegistry = () => {
               <LogOut className="h-5 w-5 text-warning" />
               <span>Ativos no Condomínio</span>
             </div>
-            <span className="text-sm font-normal text-muted-foreground">
-              {activeEntries.length} {activeEntries.length === 1 ? 'pessoa' : 'pessoas'}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-normal text-muted-foreground">
+                {activeEntries.length} {activeEntries.length === 1 ? 'pessoa' : 'pessoas'}
+              </span>
+              <Button variant="outline" size="sm" onClick={exportActiveEntriesToPDF}>
+                <Download className="h-4 w-4 mr-2" />
+                PDF
+              </Button>
+            </div>
           </CardTitle>
         </CardHeader>
         <CardContent>

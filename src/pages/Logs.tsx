@@ -2,10 +2,16 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { ScrollText, Search, LogIn, LogOut } from 'lucide-react';
+import { ScrollText, Search, LogIn, LogOut, Download } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { AccessEntry } from '@/types';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 
 export const Logs = () => {
   const [entries, setEntries] = useState<AccessEntry[]>([]);
@@ -38,6 +44,30 @@ export const Logs = () => {
     currentPage * itemsPerPage
   );
 
+  const exportLogsToPDF = () => {
+    const doc = new jsPDF();
+    doc.text('Logs de Acesso', 14, 15);
+    doc.text(`Data: ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: ptBR })}`, 14, 22);
+
+    const tableData = filteredEntries.map(entry => [
+      entry.visitorName,
+      entry.visitorDocument,
+      entry.residentName,
+      entry.apartment,
+      format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', { locale: ptBR }),
+      entry.exitTime ? format(new Date(entry.exitTime), 'dd/MM/yyyy HH:mm', { locale: ptBR }) : 'Ativo',
+    ]);
+
+    autoTable(doc, {
+      head: [['Visitante', 'Documento', 'Morador', 'Apt', 'Entrada', 'Saída']],
+      body: tableData,
+      startY: 28,
+    });
+
+    doc.save(`logs-acesso-${format(new Date(), 'dd-MM-yyyy')}.pdf`);
+    toast.success('PDF gerado com sucesso');
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div>
@@ -52,7 +82,13 @@ export const Logs = () => {
               <ScrollText className="h-5 w-5 text-primary" />
               <span>Histórico de Acessos</span>
             </div>
-            <Badge variant="secondary">{entries.length} registros</Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary">{entries.length} registros</Badge>
+              <Button variant="outline" size="sm" onClick={exportLogsToPDF}>
+                <Download className="h-4 w-4 mr-2" />
+                Exportar PDF
+              </Button>
+            </div>
           </CardTitle>
         </CardHeader>
         <CardContent>

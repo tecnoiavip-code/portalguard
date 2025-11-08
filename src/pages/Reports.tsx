@@ -7,11 +7,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { ClipboardList, Users, AlertTriangle, Activity, Plus, Wrench } from 'lucide-react';
+import { ClipboardList, Users, AlertTriangle, Activity, Plus, Wrench, Download, Search, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface Shift {
   id: string;
@@ -32,6 +34,12 @@ interface Incident {
   resolved_at: string | null;
 }
 
+interface ShiftEquipment {
+  id: string;
+  name: string;
+  status: 'functional' | 'defective' | 'maintenance';
+}
+
 interface Device {
   id: string;
   name: string;
@@ -49,12 +57,16 @@ export const Reports = () => {
   const [teamMembers, setTeamMembers] = useState<string>('');
   const [shiftNotes, setShiftNotes] = useState<string>('');
   const [currentShift, setCurrentShift] = useState<Shift | null>(null);
+  const [shiftSearch, setShiftSearch] = useState('');
+  const [shiftPage, setShiftPage] = useState(1);
+  const [equipmentItems, setEquipmentItems] = useState<ShiftEquipment[]>([{ id: crypto.randomUUID(), name: '', status: 'functional' }]);
   
   // Incidents state
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [incidentTitle, setIncidentTitle] = useState('');
   const [incidentDescription, setIncidentDescription] = useState('');
   const [incidentSeverity, setIncidentSeverity] = useState<'low' | 'medium' | 'high' | 'critical'>('low');
+  const [incidentPage, setIncidentPage] = useState(1);
   
   // Devices state
   const [devices, setDevices] = useState<Device[]>([]);
@@ -64,6 +76,9 @@ export const Reports = () => {
     type: 'facial_recognition' as 'facial_recognition' | 'vehicle_tag' | 'card_reader',
     location: '',
   });
+  const [devicePage, setDevicePage] = useState(1);
+
+  const ITEMS_PER_PAGE = 10;
 
   useEffect(() => {
     loadShifts();
@@ -132,6 +147,12 @@ export const Reports = () => {
       return;
     }
 
+    const validEquipment = equipmentItems.filter(item => item.name.trim());
+    if (validEquipment.length === 0) {
+      toast.error('Informe pelo menos um equipamento');
+      return;
+    }
+
     const members = teamMembers.split(',').map(m => m.trim()).filter(m => m);
     
     const { error } = await supabase
@@ -139,7 +160,7 @@ export const Reports = () => {
       .insert({
         team_members: members,
         shift_start: new Date().toISOString(),
-        notes: shiftNotes || null
+        notes: `${shiftNotes ? shiftNotes + '\n\n' : ''}Equipamentos: ${validEquipment.map(e => `${e.name} (${e.status === 'functional' ? 'Funcionando' : e.status === 'defective' ? 'Defeituoso' : 'Manutenção'})`).join(', ')}`
       });
 
     if (error) {
@@ -148,6 +169,7 @@ export const Reports = () => {
       toast.success('Plantão iniciado com sucesso');
       setTeamMembers('');
       setShiftNotes('');
+      setEquipmentItems([{ id: crypto.randomUUID(), name: '', status: 'functional' }]);
       loadShifts();
       checkCurrentShift();
     }
@@ -275,6 +297,64 @@ export const Reports = () => {
     }
   };
 
+  const handleAddEquipmentItem = () => {
+    setEquipmentItems([...equipmentItems, { id: crypto.randomUUID(), name: '', status: 'functional' }]);
+  };
+
+  const handleRemoveEquipmentItem = (id: string) => {
+    if (equipmentItems.length > 1) {
+      setEquipmentItems(equipmentItems.filter(item => item.id !== id));
+    }
+  };
+
+  const handleEquipmentChange = (id: string, field: 'name' | 'status', value: string) => {
+    setEquipmentItems(equipmentItems.map(item =>
+      item.id === id ? { ...item, [field]: value } : item
+    ));
+  };
+
+  const exportShiftsToPDF = (selectedDate?: Date) => {
+    const doc = new jsPDF();
+    const filteredShifts = selectedDate
+      ? shifts.filter(s => new Date(s.shift_start).toDateString() === selectedDate.toDateString())
+      : shifts;
+
+    doc.text('Histórico de Plantões', 14, 15);
+    if (selectedDate) {
+      doc.text(`Data: ${format(selectedDate, 'dd/MM/yyyy', { locale: ptBR })}`, 14, 22);
+    }
+
+    const tableData = filteredShifts.map(shift => [
+      format(new Date(shift.shift_start), "dd/MM/yyyy HH:mm", { locale: ptBR }),
+      shift.shift_end ? format(new Date(shift.shift_end), "dd/MM/yyyy HH:mm", { locale: ptBR }) : 'Em andamento',
+      shift.team_members.join(', '),
+      shift.notes || '-'
+    ]);
+
+    autoTable(doc, {
+      head: [['Início', 'Fim', 'Equipe', 'Observações']],
+      body: tableData,
+      startY: selectedDate ? 28 : 22,
+    });
+
+    doc.save(`plantoes-${selectedDate ? format(selectedDate, 'dd-MM-yyyy') : 'todos'}.pdf`);
+    toast.success('PDF gerado com sucesso');
+  };
+
+  // Filtered and paginated data
+  const filteredShifts = shifts.filter(shift =>
+    shift.team_members.some(member => member.toLowerCase().includes(shiftSearch.toLowerCase())) ||
+    (shift.notes && shift.notes.toLowerCase().includes(shiftSearch.toLowerCase()))
+  );
+  const paginatedShifts = filteredShifts.slice((shiftPage - 1) * ITEMS_PER_PAGE, shiftPage * ITEMS_PER_PAGE);
+  const totalShiftPages = Math.ceil(filteredShifts.length / ITEMS_PER_PAGE);
+
+  const paginatedIncidents = incidents.slice((incidentPage - 1) * ITEMS_PER_PAGE, incidentPage * ITEMS_PER_PAGE);
+  const totalIncidentPages = Math.ceil(incidents.length / ITEMS_PER_PAGE);
+
+  const paginatedDevices = devices.slice((devicePage - 1) * ITEMS_PER_PAGE, devicePage * ITEMS_PER_PAGE);
+  const totalDevicePages = Math.ceil(devices.length / ITEMS_PER_PAGE);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -343,6 +423,52 @@ export const Reports = () => {
                     />
                   </div>
                   <div>
+                    <Label>Equipamentos de Portaria</Label>
+                    <div className="space-y-2 mt-2">
+                      {equipmentItems.map((item, index) => (
+                        <div key={item.id} className="flex gap-2">
+                          <Input
+                            value={item.name}
+                            onChange={(e) => handleEquipmentChange(item.id, 'name', e.target.value)}
+                            placeholder="Ex: Telefone, Rádio, Celular..."
+                            className="flex-1"
+                          />
+                          <Select
+                            value={item.status}
+                            onValueChange={(v: any) => handleEquipmentChange(item.id, 'status', v)}
+                          >
+                            <SelectTrigger className="w-36">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="functional">Funcionando</SelectItem>
+                              <SelectItem value="defective">Defeituoso</SelectItem>
+                              <SelectItem value="maintenance">Manutenção</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {equipmentItems.length > 1 && (
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={() => handleRemoveEquipmentItem(item.id)}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAddEquipmentItem}
+                        className="w-full"
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Adicionar Item
+                      </Button>
+                    </div>
+                  </div>
+                  <div>
                     <Label>Observações</Label>
                     <Textarea
                       value={shiftNotes}
@@ -361,11 +487,37 @@ export const Reports = () => {
 
           <Card>
             <CardHeader>
-              <CardTitle>Histórico de Plantões</CardTitle>
+              <div className="flex items-center justify-between gap-4">
+                <CardTitle>Histórico de Plantões</CardTitle>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => exportShiftsToPDF()}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Exportar PDF
+                  </Button>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
+              <div className="mb-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por equipe ou observações..."
+                    value={shiftSearch}
+                    onChange={(e) => {
+                      setShiftSearch(e.target.value);
+                      setShiftPage(1);
+                    }}
+                    className="pl-10"
+                  />
+                </div>
+              </div>
               <div className="space-y-4">
-                {shifts.map((shift) => (
+                {paginatedShifts.map((shift) => (
                   <div key={shift.id} className="border rounded-lg p-4">
                     <div className="flex justify-between items-start mb-2">
                       <div>
@@ -386,7 +538,35 @@ export const Reports = () => {
                     )}
                   </div>
                 ))}
+                {filteredShifts.length === 0 && (
+                  <p className="text-center text-muted-foreground py-8">
+                    Nenhum plantão encontrado
+                  </p>
+                )}
               </div>
+              {totalShiftPages > 1 && (
+                <div className="flex justify-center gap-2 mt-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShiftPage(p => Math.max(1, p - 1))}
+                    disabled={shiftPage === 1}
+                  >
+                    Anterior
+                  </Button>
+                  <span className="flex items-center px-4">
+                    Página {shiftPage} de {totalShiftPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShiftPage(p => Math.min(totalShiftPages, p + 1))}
+                    disabled={shiftPage === totalShiftPages}
+                  >
+                    Próxima
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -443,7 +623,7 @@ export const Reports = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {incidents.map((incident) => (
+                {paginatedIncidents.map((incident) => (
                   <div key={incident.id} className="border rounded-lg p-4">
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex-1">
@@ -494,6 +674,29 @@ export const Reports = () => {
                   </div>
                 ))}
               </div>
+              {totalIncidentPages > 1 && (
+                <div className="flex justify-center gap-2 mt-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIncidentPage(p => Math.max(1, p - 1))}
+                    disabled={incidentPage === 1}
+                  >
+                    Anterior
+                  </Button>
+                  <span className="flex items-center px-4">
+                    Página {incidentPage} de {totalIncidentPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIncidentPage(p => Math.min(totalIncidentPages, p + 1))}
+                    disabled={incidentPage === totalIncidentPages}
+                  >
+                    Próxima
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -516,7 +719,7 @@ export const Reports = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {devices.map((device) => (
+                {paginatedDevices.map((device) => (
                   <div key={device.id} className="border rounded-lg p-4">
                     <div className="flex justify-between items-start">
                       <div>
@@ -542,6 +745,29 @@ export const Reports = () => {
                   </p>
                 )}
               </div>
+              {totalDevicePages > 1 && (
+                <div className="flex justify-center gap-2 mt-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDevicePage(p => Math.max(1, p - 1))}
+                    disabled={devicePage === 1}
+                  >
+                    Anterior
+                  </Button>
+                  <span className="flex items-center px-4">
+                    Página {devicePage} de {totalDevicePages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDevicePage(p => Math.min(totalDevicePages, p + 1))}
+                    disabled={devicePage === totalDevicePages}
+                  >
+                    Próxima
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

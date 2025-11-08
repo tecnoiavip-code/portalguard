@@ -50,7 +50,7 @@ export const Sidebar = ({ activeSection, onSectionChange, isOpen }: SidebarProps
                         'w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-left font-medium transition-all',
                         'hover:translate-x-2',
                         isActive
-                          ? 'bg-gradient-primary text-white shadow-elegant translate-x-1'
+                          ? 'bg-primary text-primary-foreground shadow-elegant translate-x-1'
                           : 'text-foreground hover:bg-muted'
                       )}
                     >

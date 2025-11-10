@@ -38,7 +38,7 @@ export const Layout = ({ children }: LayoutProps) => {
                 <Building2 className="h-8 w-8" />
                 <div>
                   <h1 className="text-2xl md:text-3xl font-bold">PortalGuard Pro</h1>
-                  <p className="text-primary-glow text-sm hidden md:block">
+                  <p className="text-slate-50 text-sm hidden md:block">
                     Sistema Profissional de Controle de Acesso
                   </p>
                 </div>

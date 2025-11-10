@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Settings as SettingsIcon, Trash2, Download, Upload, Send, FileText, FileSpreadsheet, Lock } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { supabase } from '@/integrations/supabase/client';
+import { supabaseStorage } from '@/lib/supabase-storage';
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -59,8 +60,7 @@ const parseCSV = (text: string): any[] => {
 
 export const Settings = () => {
   const [isIntegrationsUnlocked, setIsIntegrationsUnlocked] = useState(false);
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [isCheckingRole, setIsCheckingRole] = useState(true);
   
   // Control iD config
   const [controlIdName, setControlIdName] = useState('');
@@ -70,10 +70,33 @@ export const Settings = () => {
   const [existingConfigs, setExistingConfigs] = useState<any[]>([]);
 
   useEffect(() => {
+    checkAdminRole();
+  }, []);
+
+  useEffect(() => {
     if (isIntegrationsUnlocked) {
       loadControlIdConfigs();
     }
   }, [isIntegrationsUnlocked]);
+
+  const checkAdminRole = async () => {
+    setIsCheckingRole(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (user) {
+      const { data: roleData } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .eq('role', 'admin')
+        .single();
+      
+      if (roleData) {
+        setIsIntegrationsUnlocked(true);
+      }
+    }
+    setIsCheckingRole(false);
+  };
 
   const loadControlIdConfigs = async () => {
     const { data, error } = await supabase
@@ -132,14 +155,6 @@ export const Settings = () => {
     }
   };
 
-  const handleUnlockIntegrations = () => {
-    if (username === 'admin' && password === 'admin') {
-      setIsIntegrationsUnlocked(true);
-      toast.success('Acesso concedido às integrações!');
-    } else {
-      toast.error('Usuário ou senha incorretos!');
-    }
-  };
 
   const handleExportData = () => {
     const doc = new jsPDF();
@@ -219,28 +234,66 @@ export const Settings = () => {
     toast.success('Backup em PDF gerado com sucesso!');
   };
 
-  const handleImportData = () => {
+  const handleImportData = async () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'application/json,.json';
     
-    input.onchange = (e) => {
+    input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
 
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         try {
           const data = JSON.parse(event.target?.result as string);
+          let successCount = 0;
+          let errorCount = 0;
           
-          if (data.residents) storage.saveResidents(data.residents);
-          if (data.mails) storage.saveMails(data.mails);
-          if (data.entries) storage.saveEntries(data.entries);
-          if (data.devices) storage.saveDevices(data.devices);
+          // Importar moradores
+          if (data.residents && Array.isArray(data.residents)) {
+            for (const resident of data.residents) {
+              const success = await supabaseStorage.saveResident(resident);
+              success ? successCount++ : errorCount++;
+            }
+          }
+          
+          // Importar correspondências
+          if (data.mails && Array.isArray(data.mails)) {
+            for (const mail of data.mails) {
+              const success = await supabaseStorage.saveMail(mail);
+              success ? successCount++ : errorCount++;
+            }
+          }
+          
+          // Importar registros de acesso
+          if (data.entries && Array.isArray(data.entries)) {
+            for (const entry of data.entries) {
+              const success = await supabaseStorage.saveEntry(entry);
+              success ? successCount++ : errorCount++;
+            }
+          }
+          
+          // Importar dispositivos
+          if (data.devices && Array.isArray(data.devices)) {
+            for (const device of data.devices) {
+              const success = await supabaseStorage.saveDevice(device);
+              success ? successCount++ : errorCount++;
+            }
+          }
 
-          toast.success('Dados importados com sucesso! Recarregue a página.');
+          if (successCount > 0) {
+            toast.success(`${successCount} registros importados com sucesso!`);
+          }
+          if (errorCount > 0) {
+            toast.error(`${errorCount} registros falharam na importação.`);
+          }
+          if (successCount === 0 && errorCount === 0) {
+            toast.warning('Nenhum dado válido encontrado no arquivo.');
+          }
         } catch (error) {
-          toast.error('Erro ao importar dados. Verifique o arquivo JSON.');
+          console.error('Import error:', error);
+          toast.error('Erro ao importar dados. Verifique o formato do arquivo JSON.');
         }
       };
       reader.readAsText(file);
@@ -309,52 +362,68 @@ export const Settings = () => {
     toast.success('Arquivos CSV exportados com sucesso!');
   };
 
-  const handleImportCSV = () => {
+  const handleImportCSV = async () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.csv';
     input.multiple = true;
     
-    input.onchange = (e) => {
+    input.onchange = async (e) => {
       const files = (e.target as HTMLInputElement).files;
       if (!files || files.length === 0) return;
 
       let processedFiles = 0;
       const totalFiles = files.length;
 
-      Array.from(files).forEach(file => {
+      for (const file of Array.from(files)) {
         const reader = new FileReader();
-        reader.onload = (event) => {
+        reader.onload = async (event) => {
           try {
             const text = event.target?.result as string;
             const data = parseCSV(text);
+            let successCount = 0;
+            let errorCount = 0;
             
             // Identifica o tipo de arquivo pelo nome
             if (file.name.includes('morador')) {
-              storage.saveResidents(data);
-              toast.success(`${data.length} moradores importados!`);
+              for (const resident of data) {
+                const success = await supabaseStorage.saveResident(resident);
+                success ? successCount++ : errorCount++;
+              }
+              toast.success(`${successCount} moradores importados!`);
             } else if (file.name.includes('correspondencia')) {
-              storage.saveMails(data);
-              toast.success(`${data.length} correspondências importadas!`);
+              for (const mail of data) {
+                const success = await supabaseStorage.saveMail(mail);
+                success ? successCount++ : errorCount++;
+              }
+              toast.success(`${successCount} correspondências importadas!`);
             } else if (file.name.includes('acesso')) {
-              storage.saveEntries(data);
-              toast.success(`${data.length} acessos importados!`);
+              for (const entry of data) {
+                const success = await supabaseStorage.saveEntry(entry);
+                success ? successCount++ : errorCount++;
+              }
+              toast.success(`${successCount} acessos importados!`);
             } else {
               toast.warning(`Arquivo ${file.name} não reconhecido. Use: moradores-*.csv, correspondencias-*.csv ou acessos-*.csv`);
+            }
+            
+            if (errorCount > 0) {
+              toast.error(`${errorCount} registros falharam na importação de ${file.name}.`);
             }
             
             processedFiles++;
             if (processedFiles === totalFiles) {
               setTimeout(() => {
-                toast.info('Recarregue a página para ver as alterações.');
+                toast.info('Importação concluída!');
               }, 1000);
             }
           } catch (error) {
+            console.error('CSV import error:', error);
             toast.error(`Erro ao importar ${file.name}. Verifique o formato CSV.`);
           }
         };
         reader.readAsText(file);
-      });
+      }
     };
 
     input.click();
@@ -456,59 +525,31 @@ export const Settings = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {!isIntegrationsUnlocked ? (
+            {isCheckingRole ? (
+              <div className="p-6 bg-muted rounded-lg space-y-4">
+                <div className="flex items-center justify-center">
+                  <Lock className="h-12 w-12 text-primary animate-pulse" />
+                </div>
+                <p className="text-center text-sm text-muted-foreground">
+                  Verificando permissões...
+                </p>
+              </div>
+            ) : !isIntegrationsUnlocked ? (
               <div className="p-6 bg-muted rounded-lg space-y-4">
                 <div className="flex items-center justify-center mb-4">
-                  <Lock className="h-12 w-12 text-primary" />
+                  <Lock className="h-12 w-12 text-destructive" />
                 </div>
                 <p className="text-center text-sm text-muted-foreground mb-4">
-                  Esta seção está protegida. Faça login para acessar as configurações de integrações.
+                  Esta seção requer permissões de administrador. Apenas usuários com role "admin" podem acessar as configurações de integrações.
                 </p>
-                <div className="space-y-3 max-w-sm mx-auto">
-                  <div className="space-y-2">
-                    <Label htmlFor="username">Usuário</Label>
-                    <Input
-                      id="username"
-                      type="text"
-                      placeholder="Digite o usuário"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handleUnlockIntegrations()}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Senha</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      placeholder="Digite a senha"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handleUnlockIntegrations()}
-                    />
-                  </div>
-                  <Button onClick={handleUnlockIntegrations} className="w-full">
-                    <Lock className="h-4 w-4 mr-2" />
-                    Desbloquear Integrações
-                  </Button>
-                </div>
+                <p className="text-center text-xs text-muted-foreground">
+                  Entre em contato com um administrador do sistema para obter acesso.
+                </p>
               </div>
             ) : (
               <>
                 <div className="flex items-center justify-between mb-4 p-3 bg-success/10 border border-success rounded-lg">
-                  <span className="text-sm font-medium text-success">🔓 Acesso concedido às integrações</span>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => {
-                      setIsIntegrationsUnlocked(false);
-                      setUsername('');
-                      setPassword('');
-                      toast.info('Integrações bloqueadas novamente');
-                    }}
-                  >
-                    Bloquear
-                  </Button>
+                  <span className="text-sm font-medium text-success">🔓 Acesso de administrador concedido</span>
                 </div>
                 
                 <div className="p-4 bg-muted rounded-lg space-y-4">

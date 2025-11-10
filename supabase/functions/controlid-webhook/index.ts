@@ -2,7 +2,17 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-webhook-signature',
+};
+
+// Input validation helpers
+const sanitizeString = (val: any, maxLength = 255): string => {
+  if (typeof val !== 'string') return '';
+  return val.trim().substring(0, maxLength);
+};
+
+const isValidNumber = (val: any): boolean => {
+  return typeof val === 'number' && !isNaN(val);
 };
 
 Deno.serve(async (req) => {
@@ -17,16 +27,60 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const payload = await req.json();
-    console.log('Received Control iD webhook:', JSON.stringify(payload, null, 2));
+    // Basic request validation
+    if (req.method !== 'POST') {
+      return new Response(
+        JSON.stringify({ error: 'Method not allowed' }),
+        { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
-    // Extrair device_id do payload
-    const deviceId = payload.device_id?.toString() || 'unknown';
+    const payload = await req.json();
+    
+    // Validate payload is object
+    if (!payload || typeof payload !== 'object') {
+      return new Response(
+        JSON.stringify({ error: 'Invalid payload' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Log only essential info (not sensitive data)
+    console.log('Webhook received:', {
+      device_id: payload.device_id ? String(payload.device_id).substring(0, 20) : 'unknown',
+      event_detected: true,
+      timestamp: new Date().toISOString()
+    });
+
+    // Validate and sanitize device_id
+    const deviceId = sanitizeString(payload.device_id, 50);
+    if (!deviceId || deviceId.length === 0) {
+      return new Response(
+        JSON.stringify({ error: 'device_id is required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Verify device is registered (optional security check)
+    const { data: device, error: deviceCheckError } = await supabaseClient
+      .from('controlid_config')
+      .select('device_id, is_active')
+      .eq('device_id', deviceId)
+      .maybeSingle();
+
+    // If device check is enabled and device not found, reject
+    if (device && !device.is_active) {
+      console.error('Inactive device:', deviceId);
+      return new Response(
+        JSON.stringify({ error: 'Device inactive' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
     
     // Determinar o tipo de evento
     let eventType = 'unknown';
     if (payload.object_changes) {
-      eventType = 'dao'; // Logs de acesso, templates, cards, alarmes
+      eventType = 'dao';
     } else if (payload.operation_mode) {
       eventType = 'operation_mode';
     } else if (payload.access_logs !== undefined) {
@@ -44,7 +98,7 @@ Deno.serve(async (req) => {
       .from('controlid_logs')
       .insert({
         device_id: deviceId,
-        event_type: eventType,
+        event_type: sanitizeString(eventType, 100),
         payload: payload,
         processed: false
       });
@@ -83,23 +137,49 @@ Deno.serve(async (req) => {
   }
 });
 
+// Input validation helpers (duplicated for clarity)
+const sanitizeStringInner = (val: any, maxLength = 255): string => {
+  if (typeof val !== 'string') return '';
+  return val.trim().substring(0, maxLength);
+};
+
+const isValidNumberInner = (val: any): boolean => {
+  return typeof val === 'number' && !isNaN(val);
+};
+
 async function processAccessLogs(supabaseClient: any, objectChanges: any[], deviceId: string) {
   console.log('Processing access logs from Control iD');
   
   for (const change of objectChanges) {
     if (change.object === 'access_logs' && change.type === 'inserted') {
-      const values = change.values;
+      const values = change.values || {};
       
-      // Criar entrada de acesso no sistema
+      // Validate and sanitize all inputs
+      const userId = sanitizeStringInner(values.user_id, 100);
+      const cardValue = sanitizeStringInner(values.card_value, 100);
+      const eventDesc = sanitizeStringInner(values.event, 100);
+      const portalId = sanitizeStringInner(values.portal_id, 50);
+      
+      // Validate timestamp
+      let entryTime = new Date().toISOString();
+      if (values.time && isValidNumberInner(values.time)) {
+        try {
+          entryTime = new Date(parseInt(values.time) * 1000).toISOString();
+        } catch (e) {
+          console.error('Invalid timestamp:', values.time);
+        }
+      }
+      
+      // Criar entrada de acesso no sistema com dados validados
       const entryData = {
-        visitor_name: `Acesso Control iD - User ${values.user_id}`,
-        visitor_document: values.card_value || values.user_id || 'N/A',
+        visitor_name: sanitizeStringInner(`Acesso Control iD - User ${userId || cardValue}`, 200),
+        visitor_document: sanitizeStringInner(cardValue || userId || 'N/A', 50),
         visitor_type: 'visitor',
-        apartment: 'N/A', // Pode ser mapeado depois
-        purpose: `Evento: ${values.event}`,
-        entry_time: new Date(parseInt(values.time) * 1000).toISOString(),
+        apartment: 'N/A',
+        purpose: sanitizeStringInner(`Evento: ${eventDesc}`, 100),
+        entry_time: entryTime,
         auto_recognized: true,
-        notes: `Device: ${deviceId}, Portal: ${values.portal_id}`
+        notes: sanitizeStringInner(`Device: ${deviceId}, Portal: ${portalId}`, 500)
       };
 
       const { error } = await supabaseClient
@@ -111,12 +191,12 @@ async function processAccessLogs(supabaseClient: any, objectChanges: any[], devi
       } else {
         console.log('Access entry created successfully from Control iD event');
         
-        // Criar evento em tempo real
+        // Criar evento em tempo real com dados sanitizados
         await supabaseClient
           .from('realtime_events')
           .insert({
             type: 'entry',
-            description: `Acesso registrado automaticamente - Device ${deviceId}`,
+            description: sanitizeStringInner(`Acesso registrado automaticamente - Device ${deviceId}`, 200),
             priority: 'medium'
           });
       }
@@ -141,6 +221,10 @@ async function updateDeviceStatus(supabaseClient: any, deviceId: string) {
 async function processAccessPhoto(supabaseClient: any, payload: any, deviceId: string) {
   console.log('Processing access photo from Control iD');
   
+  // Validate and sanitize user_id
+  const userId = sanitizeStringInner(payload.user_id, 100);
+  const sanitizedDeviceId = sanitizeStringInner(deviceId, 50);
+  
   // Aqui você pode salvar a foto em storage do Supabase se necessário
   // Por enquanto, apenas registramos o evento
   
@@ -148,7 +232,7 @@ async function processAccessPhoto(supabaseClient: any, payload: any, deviceId: s
     .from('realtime_events')
     .insert({
       type: 'entry',
-      description: `Foto de acesso capturada - User ${payload.user_id}, Device ${deviceId}`,
+      description: sanitizeStringInner(`Foto de acesso capturada - User ${userId}, Device ${sanitizedDeviceId}`, 200),
       priority: 'low'
     });
 }

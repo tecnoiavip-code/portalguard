@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createHmac } from 'node:crypto';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,6 +14,45 @@ const sanitizeString = (val: any, maxLength = 255): string => {
 
 const isValidNumber = (val: any): boolean => {
   return typeof val === 'number' && !isNaN(val);
+};
+
+// Verify HMAC signature
+const verifyWebhookSignature = (payload: string, signature: string | null): boolean => {
+  if (!signature) return false;
+  
+  const webhookSecret = Deno.env.get('CONTROLID_WEBHOOK_SECRET');
+  if (!webhookSecret) {
+    console.error('CONTROLID_WEBHOOK_SECRET not configured');
+    return false;
+  }
+
+  const hmac = createHmac('sha256', webhookSecret);
+  hmac.update(payload);
+  const expectedSignature = hmac.digest('hex');
+  
+  return signature === expectedSignature;
+};
+
+// Rate limiting map: device_id -> { count, resetTime }
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_WINDOW = 60000; // 1 minuto
+const MAX_REQUESTS_PER_WINDOW = 100; // 100 requisições por minuto por dispositivo
+
+const checkRateLimit = (deviceId: string): boolean => {
+  const now = Date.now();
+  const limit = rateLimitMap.get(deviceId);
+  
+  if (!limit || now > limit.resetTime) {
+    rateLimitMap.set(deviceId, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+    return true;
+  }
+  
+  if (limit.count >= MAX_REQUESTS_PER_WINDOW) {
+    return false;
+  }
+  
+  limit.count++;
+  return true;
 };
 
 Deno.serve(async (req) => {
@@ -35,7 +75,21 @@ Deno.serve(async (req) => {
       );
     }
 
-    const payload = await req.json();
+    // Read raw payload for HMAC verification
+    const rawPayload = await req.text();
+    const signature = req.headers.get('x-webhook-signature');
+    
+    // Verify HMAC signature (optional: disable if Control iD doesn't support it yet)
+    const webhookSecret = Deno.env.get('CONTROLID_WEBHOOK_SECRET');
+    if (webhookSecret && !verifyWebhookSignature(rawPayload, signature)) {
+      console.error('Invalid webhook signature');
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized - invalid signature' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const payload = JSON.parse(rawPayload);
     
     // Validate payload is object
     if (!payload || typeof payload !== 'object') {
@@ -58,6 +112,15 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({ error: 'device_id is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Check rate limit
+    if (!checkRateLimit(deviceId)) {
+      console.error('Rate limit exceeded', { device_id: deviceId });
+      return new Response(
+        JSON.stringify({ error: 'Too many requests' }),
+        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 

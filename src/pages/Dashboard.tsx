@@ -51,7 +51,7 @@ export const Dashboard = () => {
 
     setRecentEntries(entriesData.slice(0, 5));
     setRecentMails(mailsData.slice(0, 5));
-    setRealtimeEvents(eventsData.slice(0, 10));
+    setRealtimeEvents(eventsData.slice(0, 5));
   };
 
   return (
@@ -97,16 +97,16 @@ export const Dashboard = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2 max-h-[380px] overflow-y-auto">
+            <div className="space-y-1.5 max-h-[320px] overflow-y-auto">
               {recentEntries.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
+                <p className="text-sm text-muted-foreground text-center py-8">
                   Nenhum acesso registrado ainda
                 </p>
               ) : (
                 recentEntries.map((entry) => (
                   <div
                     key={entry.id}
-                    className="flex items-center justify-between p-2.5 bg-muted rounded-lg"
+                    className="flex items-center justify-between p-2 bg-muted/50 rounded-md hover:bg-muted transition-colors"
                   >
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-sm truncate">{entry.visitorName}</p>
@@ -119,15 +119,12 @@ export const Dashboard = () => {
                         })}
                       </p>
                     </div>
-                    <div
-                      className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ml-2 ${
-                        entry.exitTime
-                          ? 'bg-muted text-muted-foreground'
-                          : 'bg-success/20 text-success'
-                      }`}
+                    <Badge 
+                      variant={entry.exitTime ? "secondary" : "default"}
+                      className="flex-shrink-0 ml-2 text-xs"
                     >
                       {entry.exitTime ? 'Saiu' : 'Ativo'}
-                    </div>
+                    </Badge>
                   </div>
                 ))
               )}
@@ -143,9 +140,9 @@ export const Dashboard = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2 max-h-[380px] overflow-y-auto">
+            <div className="space-y-1.5 max-h-[320px] overflow-y-auto">
               {recentMails.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
+                <p className="text-sm text-muted-foreground text-center py-8">
                   Nenhuma correspondência registrada
                 </p>
               ) : (
@@ -154,7 +151,7 @@ export const Dashboard = () => {
                   return (
                     <div
                       key={mail.id}
-                      className="flex items-center justify-between p-2.5 bg-muted rounded-lg"
+                      className="flex items-center justify-between p-2 bg-muted/50 rounded-md hover:bg-muted transition-colors"
                     >
                       <div className="min-w-0 flex-1">
                         <p className="font-medium text-sm truncate">{resident?.name || 'Desconhecido'}</p>
@@ -162,15 +159,12 @@ export const Dashboard = () => {
                           {mail.packageType} • {mail.sender}
                         </p>
                       </div>
-                      <div
-                        className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ml-2 ${
-                          mail.status === 'delivered'
-                            ? 'bg-success/20 text-success'
-                            : 'bg-warning/20 text-warning'
-                        }`}
+                      <Badge 
+                        variant={mail.status === 'delivered' ? "default" : "outline"}
+                        className="flex-shrink-0 ml-2 text-xs"
                       >
                         {mail.status === 'delivered' ? 'Entregue' : 'Pendente'}
-                      </div>
+                      </Badge>
                     </div>
                   );
                 })
@@ -179,35 +173,35 @@ export const Dashboard = () => {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-1">
-          <CardHeader className="pb-3">
+        <Card className="lg:col-span-1 border-2 border-primary/20 shadow-lg">
+          <CardHeader className="pb-3 bg-gradient-to-br from-primary/5 to-primary/10">
             <CardTitle className="flex items-center space-x-2 text-base">
-              <Activity className="h-4 w-4 text-primary" />
-              <span>Eventos em Tempo Real</span>
-              <Badge variant="outline" className="ml-auto text-xs">
-                5s
+              <Activity className="h-5 w-5 text-primary animate-pulse" />
+              <span className="text-primary">Eventos em Tempo Real</span>
+              <Badge variant="default" className="ml-auto text-xs animate-pulse">
+                Live 5s
               </Badge>
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-2 max-h-[380px] overflow-y-auto">
+          <CardContent className="pt-4">
+            <div className="space-y-2 max-h-[320px] overflow-y-auto">
               {realtimeEvents.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
+                <p className="text-sm text-muted-foreground text-center py-8">
                   Nenhum evento registrado
                 </p>
               ) : (
                 realtimeEvents.map((event) => (
                   <div
                     key={event.id}
-                    className={`flex items-start gap-2 p-2.5 rounded-lg border-l-4 ${
+                    className={`flex items-start gap-2.5 p-3 rounded-lg border-l-[3px] shadow-sm hover:shadow transition-all ${
                       event.priority === 'high'
-                        ? 'bg-destructive/10 border-destructive'
+                        ? 'bg-destructive/5 border-destructive hover:bg-destructive/10'
                         : event.priority === 'medium'
-                        ? 'bg-warning/10 border-warning'
-                        : 'bg-muted border-muted-foreground'
+                        ? 'bg-warning/5 border-warning hover:bg-warning/10'
+                        : 'bg-muted/50 border-muted-foreground/40 hover:bg-muted'
                     }`}
                   >
-                    <div className="flex-shrink-0 mt-0.5 text-sm">
+                    <div className="flex-shrink-0 mt-0.5 text-base">
                       {event.type === 'entry' && '🚪'}
                       {event.type === 'exit' && '👋'}
                       {event.type === 'mail' && '📬'}
@@ -215,15 +209,16 @@ export const Dashboard = () => {
                       {event.type === 'device' && '🔧'}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-foreground">
+                      <p className="text-sm font-semibold text-foreground leading-tight">
                         {event.description}
                       </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
+                      <p className="text-xs text-muted-foreground mt-1">
                         {new Date(event.timestamp).toLocaleString('pt-BR', { 
                           day: '2-digit', 
                           month: '2-digit', 
                           hour: '2-digit', 
-                          minute: '2-digit' 
+                          minute: '2-digit',
+                          second: '2-digit'
                         })}
                       </p>
                     </div>
@@ -235,9 +230,9 @@ export const Dashboard = () => {
                           ? 'default'
                           : 'secondary'
                       }
-                      className="flex-shrink-0 text-xs"
+                      className="flex-shrink-0 text-xs font-bold"
                     >
-                      {event.priority === 'high' ? 'Alta' : event.priority === 'medium' ? 'Média' : 'Baixa'}
+                      {event.priority === 'high' ? '⚠ Alta' : event.priority === 'medium' ? '▶ Média' : '• Baixa'}
                     </Badge>
                   </div>
                 ))

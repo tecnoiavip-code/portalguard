@@ -324,7 +324,7 @@ export type Database = {
       residents: {
         Row: {
           apartment: string
-          cpf: string
+          cpf: string | null
           created_at: string | null
           created_by: string | null
           email: string | null
@@ -340,7 +340,7 @@ export type Database = {
         }
         Insert: {
           apartment: string
-          cpf: string
+          cpf?: string | null
           created_at?: string | null
           created_by?: string | null
           email?: string | null
@@ -356,7 +356,7 @@ export type Database = {
         }
         Update: {
           apartment?: string
-          cpf?: string
+          cpf?: string | null
           created_at?: string | null
           created_by?: string | null
           email?: string | null

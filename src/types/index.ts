@@ -1,10 +1,10 @@
 export interface Resident {
   id: string;
   name: string;
-  cpf: string;
+  cpf?: string;
   apartment: string;
-  phone: string;
-  email: string;
+  phone?: string;
+  email?: string;
   photo?: string;
   vehiclePlate?: string;
   vehicleModel?: string;

@@ -457,13 +457,12 @@ export const Residents = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="cpf">CPF *</Label>
+                <Label htmlFor="cpf">CPF</Label>
                 <Input
                   id="cpf"
                   value={formData.cpf}
                   onChange={(e) => setFormData({ ...formData, cpf: e.target.value })}
-                  placeholder="000.000.000-00"
-                  required
+                  placeholder="000.000.000-00 (opcional)"
                 />
               </div>
               <div className="space-y-2">

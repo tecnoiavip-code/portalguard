@@ -35,7 +35,7 @@ export const supabaseStorage = {
     
     const residentData = {
       name: resident.name,
-      cpf: resident.cpf,
+      cpf: resident.cpf || null,
       apartment: resident.apartment,
       phone: resident.phone || null,
       email: resident.email || null,

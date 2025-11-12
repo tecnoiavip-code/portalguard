@@ -246,7 +246,13 @@ export const Settings = () => {
       const reader = new FileReader();
       reader.onload = async (event) => {
         try {
-          const data = JSON.parse(event.target?.result as string);
+          const text = event.target?.result as string;
+          if (!text || text.trim() === '') {
+            toast.error('Arquivo vazio ou inválido');
+            return;
+          }
+
+          const data = JSON.parse(text);
           let successCount = 0;
           let errorCount = 0;
           
@@ -380,7 +386,17 @@ export const Settings = () => {
         reader.onload = async (event) => {
           try {
             const text = event.target?.result as string;
+            if (!text || text.trim() === '') {
+              toast.error(`Arquivo ${file.name} está vazio`);
+              return;
+            }
+
             const data = parseCSV(text);
+            if (!data || data.length === 0) {
+              toast.error(`Nenhum dado encontrado em ${file.name}`);
+              return;
+            }
+
             let successCount = 0;
             let errorCount = 0;
             
@@ -534,7 +550,7 @@ export const Settings = () => {
                   Verificando permissões...
                 </p>
               </div>
-            ) : !isIntegrationsUnlocked ? (
+            ) : (
               <div className="p-6 bg-muted rounded-lg space-y-4">
                 <div className="flex items-center justify-center mb-4">
                   <Lock className="h-12 w-12 text-destructive" />
@@ -546,7 +562,8 @@ export const Settings = () => {
                   Entre em contato com um administrador do sistema para obter acesso.
                 </p>
               </div>
-            ) : (
+            )}
+            {false && (
               <>
                 <div className="flex items-center justify-between mb-4 p-3 bg-success/10 border border-success rounded-lg">
                   <span className="text-sm font-medium text-success">🔓 Acesso de administrador concedido</span>

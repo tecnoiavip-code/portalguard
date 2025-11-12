@@ -43,7 +43,8 @@ export const residentSchema = z.object({
     .max(100, 'Nome deve ter no máximo 100 caracteres')
     .regex(/^[a-zA-ZÀ-ÿ\s]+$/, 'Nome deve conter apenas letras'),
   cpf: z.string()
-    .refine(validateCPF, 'CPF inválido'),
+    .optional()
+    .refine((cpf) => !cpf || validateCPF(cpf), 'CPF inválido'),
   apartment: z.string()
     .min(1, 'Apartamento é obrigatório')
     .max(20, 'Apartamento deve ter no máximo 20 caracteres'),

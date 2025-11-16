@@ -7,8 +7,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LogIn, LogOut, Camera, Upload, X, Plus, Pencil, Trash2, Search, Download } from 'lucide-react';
-import { storage } from '@/lib/storage';
 import { AccessEntry, Resident } from '@/types';
+import { useAccessEntries } from '@/hooks/useAccessEntries';
+import { useResidents } from '@/hooks/useResidents';
 import { toast } from 'sonner';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -17,9 +18,9 @@ import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 export const NewRegistry = () => {
-  const [residents, setResidents] = useState<Resident[]>([]);
-  const [entries, setEntries] = useState<AccessEntry[]>([]);
-  const [allEntries, setAllEntries] = useState<AccessEntry[]>([]);
+  const { residents } = useResidents();
+  const { entries: allEntries, saveEntry, deleteEntry } = useAccessEntries();
+  const entries = allEntries.filter(e => !e.exitTime);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string>('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -47,15 +48,7 @@ export const NewRegistry = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  useEffect(() => {
-    loadData();
-  }, []);
-  const loadData = () => {
-    setResidents(storage.getResidents());
-    const storedEntries = storage.getEntries();
-    setEntries(storedEntries.filter(e => !e.exitTime));
-    setAllEntries(storedEntries.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()));
-  };
+
   const activeEntries = entries.filter(e => !e.exitTime).reverse();
   const filteredActiveEntries = activeEntries.filter(entry => entry.visitorName.toLowerCase().includes(searchTerm.toLowerCase()) || entry.apartment.toLowerCase().includes(searchTerm.toLowerCase()) || entry.visitorDocument.toLowerCase().includes(searchTerm.toLowerCase()));
   const totalPages = Math.ceil(filteredActiveEntries.length / itemsPerPage);
@@ -64,6 +57,7 @@ export const NewRegistry = () => {
   const totalPagesAll = Math.ceil(filteredAllEntries.length / itemsPerPageTable);
   const paginatedAllEntries = filteredAllEntries.slice((currentPageAll - 1) * itemsPerPageTable, currentPageAll * itemsPerPageTable);
   const filteredResidents = residents.filter(r => r.name.toLowerCase().includes(visitedLocationSearch.toLowerCase()) || r.apartment.toLowerCase().includes(visitedLocationSearch.toLowerCase()));
+  
   const handleVisitedLocationSelect = (residentId: string, residentName: string, apartment: string) => {
     setVisitedLocationSearch(`${residentName} - ${apartment}`);
     setFormData({
@@ -72,13 +66,13 @@ export const NewRegistry = () => {
     });
     setShowResidentSuggestions(false);
   };
+  
   const findSimilarEntries = (name: string, document: string) => {
     if (!name && !document) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
-    const allEntries = storage.getEntries();
     const similar = allEntries.filter(entry => {
       const nameMatch = name && entry.visitorName.toLowerCase().includes(name.toLowerCase());
       const docMatch = document && entry.visitorDocument.includes(document);
@@ -91,6 +85,7 @@ export const NewRegistry = () => {
       setShowSuggestions(false);
     }
   };
+  
   const applySuggestion = (entry: AccessEntry) => {
     setFormData({
       ...formData,
@@ -105,11 +100,6 @@ export const NewRegistry = () => {
     });
     setShowSuggestions(false);
     toast.success('Dados preenchidos automaticamente!');
-    storage.addEvent({
-      type: 'entry',
-      description: `Sistema reconheceu visitante: ${entry.visitorName}`,
-      priority: 'low'
-    });
   };
   const startCamera = async () => {
     try {
@@ -165,68 +155,50 @@ export const NewRegistry = () => {
       reader.readAsDataURL(file);
     }
   };
-  const handleEntry = (e: React.FormEvent) => {
+  const handleEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     const resident = residents.find(r => r.id === formData.residentId);
     if (!resident) {
       toast.error('Selecione um morador válido');
       return;
     }
-    if (editingId) {
-      // Update existing entry
-      const allStoredEntries = storage.getEntries();
-      const updatedEntries = allStoredEntries.map(entry => entry.id === editingId ? {
-        ...entry,
-        visitorName: formData.visitorName,
-        visitorDocument: formData.visitorDocument,
-        visitorType: formData.visitorType,
-        residentId: formData.residentId,
-        residentName: resident.name,
-        apartment: resident.apartment,
-        purpose: formData.purpose,
-        vehiclePlate: formData.vehiclePlate,
-        vehicleModel: formData.vehicleModel,
-        vehicleColor: formData.vehicleColor,
-        photo: formData.photo,
-        company: formData.company
-      } : entry);
-      storage.saveEntries(updatedEntries);
-      setEntries(updatedEntries.filter(e => !e.exitTime));
-      setAllEntries(updatedEntries.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()));
-      toast.success('Cadastro atualizado com sucesso!');
-    } else {
-      // Create new entry
-      const entry: AccessEntry = {
-        id: `entry_${Date.now()}`,
-        visitorName: formData.visitorName,
-        visitorDocument: formData.visitorDocument,
-        visitorType: formData.visitorType,
-        residentId: formData.residentId,
-        residentName: resident.name,
-        apartment: resident.apartment,
-        purpose: formData.purpose,
-        entryTime: new Date().toISOString(),
-        exitTime: null,
-        vehiclePlate: formData.vehiclePlate,
-        vehicleModel: formData.vehicleModel,
-        vehicleColor: formData.vehicleColor,
-        photo: formData.photo,
-        company: formData.company,
-        autoRecognized: showSuggestions && suggestions.length > 0
-      };
-      const allStoredEntries = storage.getEntries();
-      const updatedEntries = [...allStoredEntries, entry];
-      storage.saveEntries(updatedEntries);
-      storage.addEvent({
-        type: 'entry',
-        description: `${formData.visitorType === 'visitor' ? 'Visitante' : 'Prestador'} registrado: ${formData.visitorName} - ${resident.apartment}`,
-        priority: 'medium',
-        relatedId: entry.id
-      });
-      setEntries(updatedEntries.filter(e => !e.exitTime));
-      setAllEntries(updatedEntries.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()));
-      toast.success(`Entrada registrada: ${formData.visitorName}`);
-    }
+    
+    const entryData: AccessEntry = editingId
+      ? {
+          ...allEntries.find(e => e.id === editingId)!,
+          visitorName: formData.visitorName,
+          visitorDocument: formData.visitorDocument,
+          visitorType: formData.visitorType,
+          residentId: formData.residentId,
+          residentName: resident.name,
+          apartment: resident.apartment,
+          purpose: formData.purpose,
+          vehiclePlate: formData.vehiclePlate,
+          vehicleModel: formData.vehicleModel,
+          vehicleColor: formData.vehicleColor,
+          photo: formData.photo,
+          company: formData.company
+        }
+      : {
+          id: `entry_${Date.now()}`,
+          visitorName: formData.visitorName,
+          visitorDocument: formData.visitorDocument,
+          visitorType: formData.visitorType,
+          residentId: formData.residentId,
+          residentName: resident.name,
+          apartment: resident.apartment,
+          purpose: formData.purpose,
+          entryTime: new Date().toISOString(),
+          exitTime: null,
+          vehiclePlate: formData.vehiclePlate,
+          vehicleModel: formData.vehicleModel,
+          vehicleColor: formData.vehicleColor,
+          photo: formData.photo,
+          company: formData.company,
+          autoRecognized: showSuggestions && suggestions.length > 0
+        };
+    
+    await saveEntry(entryData);
     resetForm();
   };
   const handleEdit = (entry: AccessEntry) => {
@@ -249,14 +221,9 @@ export const NewRegistry = () => {
     }
     setIsDialogOpen(true);
   };
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir este cadastro?')) return;
-    const allStoredEntries = storage.getEntries();
-    const updatedEntries = allStoredEntries.filter(e => e.id !== id);
-    storage.saveEntries(updatedEntries);
-    setEntries(updatedEntries.filter(e => !e.exitTime));
-    setAllEntries(updatedEntries.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()));
-    toast.success('Cadastro excluído com sucesso!');
+    await deleteEntry(id);
   };
   const exportActiveEntriesToPDF = () => {
     const doc = new jsPDF();
@@ -320,25 +287,16 @@ export const NewRegistry = () => {
     setIsDialogOpen(false);
     stopCamera();
   };
-  const handleExit = (entryId: string) => {
-    const allStoredEntries = storage.getEntries();
-    const entry = allStoredEntries.find(e => e.id === entryId);
-    const updatedEntries = allStoredEntries.map(e => e.id === entryId ? {
-      ...e,
+  const handleExit = async (entryId: string) => {
+    const entry = allEntries.find(e => e.id === entryId);
+    if (!entry) return;
+    
+    const updatedEntry: AccessEntry = {
+      ...entry,
       exitTime: new Date().toISOString()
-    } : e);
-    storage.saveEntries(updatedEntries);
-    setEntries(updatedEntries.filter(e => !e.exitTime));
-    setAllEntries(updatedEntries.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()));
-    if (entry) {
-      storage.addEvent({
-        type: 'exit',
-        description: `Saída registrada: ${entry.visitorName} - ${entry.apartment}`,
-        priority: 'low',
-        relatedId: entryId
-      });
-      toast.success(`Saída registrada: ${entry.visitorName}`);
-    }
+    };
+    
+    await saveEntry(updatedEntry);
   };
   return <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">

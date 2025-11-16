@@ -5,8 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Pencil, Trash2, Save, X, Plus, Search, Download } from 'lucide-react';
-import { storage } from '@/lib/storage';
 import { Resident } from '@/types';
+import { useResidents } from '@/hooks/useResidents';
 import { toast } from 'sonner';
 import {
   Pagination,
@@ -30,7 +30,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 export const Residents = () => {
-  const [residents, setResidents] = useState<Resident[]>([]);
+  const { residents, loading, saveResident, deleteResident, refresh } = useResidents();
   const [editingId, setEditingId] = useState<string>('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -53,14 +53,10 @@ export const Residents = () => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  useEffect(() => {
-    loadResidents();
-  }, []);
-
   const filteredResidents = residents.filter(resident =>
     resident.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     resident.apartment.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    resident.cpf.includes(searchTerm)
+    (resident.cpf || '').includes(searchTerm)
   );
   const totalPages = Math.ceil(filteredResidents.length / itemsPerPage);
   const paginatedResidents = filteredResidents.slice(
@@ -68,11 +64,7 @@ export const Residents = () => {
     currentPage * itemsPerPage
   );
 
-  const loadResidents = () => {
-    setResidents(storage.getResidents());
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     const residentData: Resident = {
@@ -83,29 +75,20 @@ export const Residents = () => {
         : new Date().toISOString(),
     };
 
-    let updatedResidents: Resident[];
-    
-    if (editingId) {
-      updatedResidents = residents.map((r) => (r.id === editingId ? residentData : r));
-      toast.success('Morador atualizado com sucesso!');
-    } else {
-      updatedResidents = [...residents, residentData];
-      toast.success('Morador cadastrado com sucesso!');
+    const success = await saveResident(residentData);
+    if (success) {
+      resetForm();
     }
-
-    storage.saveResidents(updatedResidents);
-    setResidents(updatedResidents);
-    resetForm();
   };
 
   const handleEdit = (resident: Resident) => {
     setEditingId(resident.id);
     setFormData({
       name: resident.name,
-      cpf: resident.cpf,
+      cpf: resident.cpf || '',
       apartment: resident.apartment,
-      phone: resident.phone,
-      email: resident.email,
+      phone: resident.phone || '',
+      email: resident.email || '',
       photo: resident.photo || '',
       vehiclePlate: resident.vehiclePlate || '',
       vehicleModel: resident.vehicleModel || '',
@@ -165,17 +148,10 @@ export const Residents = () => {
     }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm('Tem certeza? Isso também removerá correspondências associadas.')) return;
     
-    const updatedResidents = residents.filter((r) => r.id !== id);
-    storage.saveResidents(updatedResidents);
-    
-    const mails = storage.getMails().filter((m) => m.residentId !== id);
-    storage.saveMails(mails);
-    
-    setResidents(updatedResidents);
-    toast.success('Morador excluído com sucesso!');
+    await deleteResident(id);
   };
 
   const exportResidentsToPDF = () => {
@@ -186,7 +162,7 @@ export const Residents = () => {
     const tableData = filteredResidents.map(resident => [
       resident.name,
       resident.apartment,
-      resident.cpf,
+      resident.cpf || '-',
       resident.phone || '-',
       resident.email || '-',
       resident.vehiclePlate ? `${resident.vehiclePlate} - ${resident.vehicleModel || ''}` : '-'

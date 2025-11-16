@@ -3,8 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ScrollText, Search, LogIn, LogOut, Download } from 'lucide-react';
-import { storage } from '@/lib/storage';
 import { AccessEntry } from '@/types';
+import { useAccessEntries } from '@/hooks/useAccessEntries';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -14,21 +14,14 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
 export const Logs = () => {
-  const [entries, setEntries] = useState<AccessEntry[]>([]);
+  const { entries: allEntries } = useAccessEntries();
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  useEffect(() => {
-    loadEntries();
-  }, []);
-
-  const loadEntries = () => {
-    const allEntries = storage.getEntries().sort(
-      (a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()
-    );
-    setEntries(allEntries);
-  };
+  const entries = allEntries.sort(
+    (a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()
+  );
 
   const filteredEntries = entries.filter(
     (entry) =>

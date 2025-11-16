@@ -498,7 +498,7 @@ export const Settings = () => {
               </Button>
               <Button onClick={handleImportCSV} className="w-full" variant="outline">
                 <FileSpreadsheet className="h-4 w-4 mr-2" />
-                Importar CSV
+                Importar CSV/PDF
               </Button>
             </div>
           </CardContent>
@@ -691,7 +691,7 @@ export const Settings = () => {
               </div>
               <div className="p-4 bg-muted rounded-lg">
                 <p className="text-muted-foreground mb-1">Armazenamento</p>
-                <p className="font-semibold">LocalStorage (Navegador)</p>
+                <p className="font-semibold">Lovable Cloud (Supabase)</p>
               </div>
               <div className="p-4 bg-muted rounded-lg">
                 <p className="text-muted-foreground mb-1">Status</p>

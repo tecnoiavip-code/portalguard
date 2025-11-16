@@ -21,8 +21,10 @@ import {
 } from '@/components/ui/dialog';
 import { Combobox } from '@/components/ui/combobox';
 import { Package, CheckCircle, Search, Pencil, Trash2, Download } from 'lucide-react';
-import { storage } from '@/lib/storage';
 import { Mail, Resident } from '@/types';
+import { useMails } from '@/hooks/useMails';
+import { useResidents } from '@/hooks/useResidents';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
@@ -32,8 +34,8 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 export const MailManagement = () => {
-  const [residents, setResidents] = useState<Resident[]>([]);
-  const [mails, setMails] = useState<Mail[]>([]);
+  const { mails, saveMail, deleteMail } = useMails();
+  const { residents } = useResidents();
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -50,16 +52,7 @@ export const MailManagement = () => {
   const [editingMail, setEditingMail] = useState<Mail | null>(null);
   const [withdrawnBy, setWithdrawnBy] = useState('');
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = () => {
-    setResidents(storage.getResidents());
-    setMails(storage.getMails());
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const resident = residents.find((r) => r.id === formData.residentId);
@@ -68,51 +61,56 @@ export const MailManagement = () => {
       return;
     }
 
-    if (editingMail) {
-      const updatedMails = mails.map((m) =>
-        m.id === editingMail.id
-          ? {
-              ...m,
-              residentId: formData.residentId,
-              sender: formData.sender || 'Não identificado',
-              packageType: formData.packageType,
-              notes: formData.notes,
+    const mailData: Mail = editingMail 
+      ? {
+          ...editingMail,
+          residentId: formData.residentId,
+          sender: formData.sender || 'Não identificado',
+          packageType: formData.packageType,
+          notes: formData.notes,
+        }
+      : {
+          id: `mail_${Date.now()}`,
+          residentId: formData.residentId,
+          sender: formData.sender || 'Não identificado',
+          packageType: formData.packageType,
+          notes: formData.notes,
+          receivedAt: new Date().toISOString(),
+          status: 'pending',
+          deliveredAt: null,
+          withdrawnBy: null,
+        };
+
+    const success = await saveMail(mailData);
+    if (success) {
+      if (!editingMail && resident.email) {
+        // Enviar notificação por email
+        try {
+          await supabase.functions.invoke('notify-mail-received', {
+            body: {
+              residentId: resident.id,
+              sender: mailData.sender,
+              packageType: mailData.packageType,
+              receivedAt: mailData.receivedAt,
             }
-          : m
-      );
-      storage.saveMails(updatedMails);
-      setMails(updatedMails);
-      toast.success('Correspondência atualizada!');
+          });
+          toast.success(`Correspondência registrada! ${resident.name} foi notificado por email.`);
+        } catch (error) {
+          console.error('Error sending notification:', error);
+          toast.success(`Correspondência registrada! (Notificação por email falhou)`);
+        }
+      } else if (!editingMail) {
+        toast.success(`Correspondência registrada para ${resident.name}`);
+      }
+      
+      setFormData({
+        residentId: '',
+        sender: '',
+        packageType: 'Carta',
+        notes: '',
+      });
       setEditingMail(null);
-    } else {
-      const mail: Mail = {
-        id: `mail_${Date.now()}`,
-        residentId: formData.residentId,
-        sender: formData.sender || 'Não identificado',
-        packageType: formData.packageType,
-        notes: formData.notes,
-        receivedAt: new Date().toISOString(),
-        status: 'pending',
-        deliveredAt: null,
-        withdrawnBy: null,
-      };
-
-      const updatedMails = [...mails, mail];
-      storage.saveMails(updatedMails);
-      setMails(updatedMails);
-
-      toast.success(
-        `Correspondência registrada! ${resident.name} seria notificado.`,
-        { description: `${mail.packageType} de ${mail.sender}` }
-      );
     }
-
-    setFormData({
-      residentId: '',
-      sender: '',
-      packageType: 'Carta',
-      notes: '',
-    });
   };
 
   const handleDeliverClick = (mailId: string) => {
@@ -120,7 +118,7 @@ export const MailManagement = () => {
     setWithdrawnBy('');
   };
 
-  const handleDeliver = () => {
+  const handleDeliver = async () => {
     if (!withdrawnBy.trim()) {
       toast.error('Por favor, informe quem retirou a correspondência');
       return;
@@ -128,21 +126,21 @@ export const MailManagement = () => {
 
     if (!deliveryDialog.mailId) return;
 
-    const updatedMails = mails.map((mail) =>
-      mail.id === deliveryDialog.mailId
-        ? {
-            ...mail,
-            status: 'delivered' as const,
-            deliveredAt: new Date().toISOString(),
-            withdrawnBy: withdrawnBy.trim(),
-          }
-        : mail
-    );
-    storage.saveMails(updatedMails);
-    setMails(updatedMails);
-    setDeliveryDialog({ open: false, mailId: null });
-    setWithdrawnBy('');
-    toast.success('Correspondência marcada como entregue!');
+    const mail = mails.find(m => m.id === deliveryDialog.mailId);
+    if (!mail) return;
+
+    const updatedMail: Mail = {
+      ...mail,
+      status: 'delivered',
+      deliveredAt: new Date().toISOString(),
+      withdrawnBy: withdrawnBy.trim(),
+    };
+    
+    const success = await saveMail(updatedMail);
+    if (success) {
+      setDeliveryDialog({ open: false, mailId: null });
+      setWithdrawnBy('');
+    }
   };
 
   const pendingMails = mails.filter((m) => m.status === 'pending');
@@ -170,12 +168,9 @@ export const MailManagement = () => {
     });
   };
 
-  const handleDelete = (mailId: string) => {
+  const handleDelete = async (mailId: string) => {
     if (!confirm('Tem certeza que deseja excluir esta correspondência?')) return;
-    const updatedMails = mails.filter((m) => m.id !== mailId);
-    storage.saveMails(updatedMails);
-    setMails(updatedMails);
-    toast.success('Correspondência excluída!');
+    await deleteMail(mailId);
   };
 
   const exportMailsToPDF = () => {

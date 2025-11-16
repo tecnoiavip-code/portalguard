@@ -12,12 +12,12 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Wifi, WifiOff, Camera, Tag, CreditCard, Pencil, Trash2, Plus } from 'lucide-react';
-import { storage } from '@/lib/storage';
 import { Device } from '@/types';
+import { useDevices } from '@/hooks/useDevices';
 import { toast } from 'sonner';
 
 export const Devices = () => {
-  const [devices, setDevices] = useState<Device[]>([]);
+  const { devices, loading, saveDevice, deleteDevice, refresh } = useDevices();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string>('');
   const [formData, setFormData] = useState({
@@ -29,15 +29,7 @@ export const Devices = () => {
     serialNumber: '',
   });
 
-  useEffect(() => {
-    loadDevices();
-  }, []);
-
-  const loadDevices = () => {
-    setDevices(storage.getDevices());
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     const deviceData: Device = {
@@ -46,31 +38,10 @@ export const Devices = () => {
       lastSync: new Date().toISOString(),
     };
 
-    let updatedDevices: Device[];
-    
-    if (editingId) {
-      updatedDevices = devices.map((d) => (d.id === editingId ? deviceData : d));
-      toast.success('Dispositivo atualizado!');
-      
-      storage.addEvent({
-        type: 'device',
-        description: `Dispositivo atualizado: ${formData.name}`,
-        priority: 'low',
-      });
-    } else {
-      updatedDevices = [...devices, deviceData];
-      toast.success('Dispositivo cadastrado!');
-      
-      storage.addEvent({
-        type: 'device',
-        description: `Novo dispositivo cadastrado: ${formData.name}`,
-        priority: 'medium',
-      });
+    const success = await saveDevice(deviceData);
+    if (success) {
+      resetForm();
     }
-
-    storage.saveDevices(updatedDevices);
-    setDevices(updatedDevices);
-    resetForm();
   };
 
   const handleEdit = (device: Device) => {
@@ -86,44 +57,22 @@ export const Devices = () => {
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm('Deseja realmente excluir este dispositivo?')) return;
-    
-    const device = devices.find(d => d.id === id);
-    const updatedDevices = devices.filter((d) => d.id !== id);
-    storage.saveDevices(updatedDevices);
-    setDevices(updatedDevices);
-    
-    if (device) {
-      storage.addEvent({
-        type: 'device',
-        description: `Dispositivo removido: ${device.name}`,
-        priority: 'low',
-      });
-    }
-    
-    toast.success('Dispositivo excluído!');
+    await deleteDevice(id);
   };
 
-  const toggleStatus = (id: string) => {
-    const updatedDevices = devices.map((d) =>
-      d.id === id
-        ? { ...d, status: d.status === 'online' ? 'offline' as const : 'online' as const, lastSync: new Date().toISOString() }
-        : d
-    );
-    storage.saveDevices(updatedDevices);
-    setDevices(updatedDevices);
+  const toggleStatus = async (id: string) => {
+    const device = devices.find(d => d.id === id);
+    if (!device) return;
     
-    const device = updatedDevices.find(d => d.id === id);
-    if (device) {
-      storage.addEvent({
-        type: 'device',
-        description: `Status alterado: ${device.name} - ${device.status === 'online' ? 'Online' : 'Offline'}`,
-        priority: device.status === 'offline' ? 'high' : 'low',
-      });
-      
-      toast.success(`Dispositivo ${device.status === 'online' ? 'ativado' : 'desativado'}!`);
-    }
+    const updatedDevice: Device = {
+      ...device,
+      status: device.status === 'online' ? 'offline' : 'online',
+      lastSync: new Date().toISOString()
+    };
+    
+    await saveDevice(updatedDevice);
   };
 
   const resetForm = () => {

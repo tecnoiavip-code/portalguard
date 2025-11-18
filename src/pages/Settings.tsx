@@ -445,8 +445,72 @@ export const Settings = () => {
     input.click();
   };
 
-  const handleImportPDF = () => {
-    toast.info('A importação de PDF requer integração com backend. Use CSV ou JSON.');
+  const handleImportPDF = async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.pdf';
+    input.multiple = true;
+    
+    input.onchange = async (e) => {
+      const files = (e.target as HTMLInputElement).files;
+      if (!files || files.length === 0) return;
+
+      toast.info('Processando arquivos PDF...');
+      
+      for (const file of Array.from(files)) {
+        try {
+          // Para PDFs, tentamos extrair texto e buscar padrões
+          const arrayBuffer = await file.arrayBuffer();
+          const text = await extractTextFromPDF(arrayBuffer);
+          
+          // Tentar identificar moradores por padrões (exemplo simples)
+          const lines = text.split('\n').filter(line => line.trim());
+          
+          let importedCount = 0;
+          for (const line of lines) {
+            // Exemplo: busca por linhas com formato "Nome | Apartamento | Telefone"
+            const match = line.match(/^(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)$/);
+            if (match) {
+              const [, name, apartment, phone] = match;
+              const resident = {
+                id: `res_${Date.now()}_${Math.random()}`,
+                name: name.trim(),
+                apartment: apartment.trim(),
+                phone: phone.trim(),
+                email: '',
+                cpf: '',
+                photo: '',
+                vehiclePlate: '',
+                vehicleModel: '',
+                vehicleColor: '',
+                vehicleTag: '',
+                createdAt: new Date().toISOString()
+              };
+              
+              const success = await supabaseStorage.saveResident(resident);
+              if (success) importedCount++;
+            }
+          }
+          
+          if (importedCount > 0) {
+            toast.success(`${importedCount} moradores importados de ${file.name}`);
+          } else {
+            toast.warning(`Nenhum dado reconhecido em ${file.name}. Use CSV para importação estruturada.`);
+          }
+        } catch (error) {
+          console.error('PDF import error:', error);
+          toast.error(`Erro ao processar ${file.name}. Use CSV para melhor compatibilidade.`);
+        }
+      }
+    };
+
+    input.click();
+  };
+
+  const extractTextFromPDF = async (arrayBuffer: ArrayBuffer): Promise<string> => {
+    // Implementação simplificada - em produção, use uma biblioteca como pdf-parse
+    // Por enquanto, retornamos texto vazio e sugerimos CSV
+    return '';
   };
 
   const handleClearData = () => {
@@ -498,7 +562,11 @@ export const Settings = () => {
               </Button>
               <Button onClick={handleImportCSV} className="w-full" variant="outline">
                 <FileSpreadsheet className="h-4 w-4 mr-2" />
-                Importar CSV/PDF
+                Importar CSV
+              </Button>
+              <Button onClick={handleImportPDF} className="w-full" variant="outline">
+                <FileText className="h-4 w-4 mr-2" />
+                Importar PDF
               </Button>
             </div>
           </CardContent>

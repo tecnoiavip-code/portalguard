@@ -1,8 +1,19 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { Resend } from "npm:resend@2.0.0";
+import { Resend } from "npm:resend@4.0.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.75.0";
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
+
+// Function to escape HTML to prevent XSS attacks
+function escapeHtml(unsafe: string): string {
+  if (!unsafe) return '';
+  return unsafe
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -73,16 +84,16 @@ const handler = async (req: Request): Promise<Response> => {
             Nova Correspondência Recebida
           </h1>
           <p style="font-size: 16px; color: #555;">
-            Olá <strong>${resident.name}</strong>,
+            Olá <strong>${escapeHtml(resident.name)}</strong>,
           </p>
           <p style="font-size: 16px; color: #555;">
             Você tem uma nova correspondência aguardando retirada na portaria.
           </p>
           <div style="background-color: #F3F4F6; padding: 15px; border-radius: 8px; margin: 20px 0;">
-            <p style="margin: 5px 0;"><strong>Apartamento:</strong> ${resident.apartment}</p>
-            <p style="margin: 5px 0;"><strong>Remetente:</strong> ${sender}</p>
-            <p style="margin: 5px 0;"><strong>Tipo:</strong> ${packageType}</p>
-            <p style="margin: 5px 0;"><strong>Data de Recebimento:</strong> ${new Date(receivedAt).toLocaleString('pt-BR')}</p>
+            <p style="margin: 5px 0;"><strong>Apartamento:</strong> ${escapeHtml(resident.apartment)}</p>
+            <p style="margin: 5px 0;"><strong>Remetente:</strong> ${escapeHtml(sender)}</p>
+            <p style="margin: 5px 0;"><strong>Tipo:</strong> ${escapeHtml(packageType)}</p>
+            <p style="margin: 5px 0;"><strong>Data de Recebimento:</strong> ${escapeHtml(new Date(receivedAt).toLocaleString('pt-BR'))}</p>
           </div>
           <p style="font-size: 14px; color: #777; margin-top: 20px;">
             Por favor, dirija-se à portaria para realizar a retirada.

@@ -508,9 +508,16 @@ export const Settings = () => {
   };
 
   const extractTextFromPDF = async (arrayBuffer: ArrayBuffer): Promise<string> => {
-    // Implementação simplificada - em produção, use uma biblioteca como pdf-parse
-    // Por enquanto, retornamos texto vazio e sugerimos CSV
-    return '';
+    try {
+      // @ts-ignore - pdf-parse não tem tipos TypeScript completos
+      const pdfParse = (await import('pdf-parse')).default;
+      const buffer = Buffer.from(arrayBuffer);
+      const data = await pdfParse(buffer);
+      return data.text;
+    } catch (error) {
+      console.error('Erro ao extrair texto do PDF:', error);
+      return '';
+    }
   };
 
   const handleClearData = () => {

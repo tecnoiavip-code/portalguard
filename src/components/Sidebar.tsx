@@ -24,12 +24,12 @@ export const Sidebar = ({ activeSection, onSectionChange, isOpen }: SidebarProps
   return (
     <aside
       className={cn(
-        'fixed md:relative z-40 w-80 bg-card shadow-card transition-transform duration-300',
+        'fixed md:relative z-40 w-80 bg-card shadow-card transition-transform duration-300 flex flex-col',
         'md:translate-x-0',
         isOpen ? 'translate-x-0' : '-translate-x-full'
       )}
     >
-      <div className="p-6 space-y-6 h-[calc(100vh-88px)] overflow-y-auto">
+      <div className="p-6 space-y-6 flex-1 overflow-y-auto">
         {groups.map((group) => (
           <div key={group}>
             <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
@@ -62,6 +62,23 @@ export const Sidebar = ({ activeSection, onSectionChange, isOpen }: SidebarProps
             </nav>
           </div>
         ))}
+      </div>
+      
+      <div className="border-t border-border p-4 space-y-2 bg-muted/30">
+        <div className="text-xs text-muted-foreground space-y-1">
+          <p className="font-semibold text-foreground">© 2024 PortalGuard</p>
+          <p>Todos os direitos reservados</p>
+          <div className="flex flex-wrap gap-2 pt-2">
+            <a href="#" className="hover:text-primary transition-colors">Política de Privacidade</a>
+            <span>•</span>
+            <a href="#" className="hover:text-primary transition-colors">Termos de Uso</a>
+          </div>
+          <div className="pt-2 space-y-1">
+            <p className="font-semibold text-foreground">Suporte:</p>
+            <p>tecno.iavip@gmail.com</p>
+            <p>(11) 97694-9949</p>
+          </div>
+        </div>
       </div>
     </aside>
   );

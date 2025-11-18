@@ -31,7 +31,7 @@ export const supabaseStorage = {
   },
 
   async saveResident(resident: Resident): Promise<boolean> {
-    const isNew = resident.id.startsWith('res_');
+    const isNew = !resident.id || resident.id.startsWith('res_');
     
     const residentData = {
       name: resident.name,

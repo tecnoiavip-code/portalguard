@@ -9,6 +9,8 @@ import { Devices } from './Devices';
 import { Logs } from './Logs';
 import { Settings } from './Settings';
 import { Reports } from './Reports';
+import StaffChat from './StaffChat';
+import StaffAuthorizations from './StaffAuthorizations';
 
 const Index = () => {
   const [activeSection, setActiveSection] = useState('dashboard');
@@ -16,24 +18,17 @@ const Index = () => {
 
   const renderSection = () => {
     switch (activeSection) {
-      case 'dashboard':
-        return <Dashboard />;
-      case 'residents':
-        return <Residents />;
-      case 'new-registry':
-        return <NewRegistry />;
-      case 'mail':
-        return <MailManagement />;
-      case 'devices':
-        return <Devices />;
-      case 'logs':
-        return <Logs />;
-      case 'reports':
-        return <Reports />;
-      case 'settings':
-        return <Settings />;
-      default:
-        return <Dashboard />;
+      case 'dashboard': return <Dashboard />;
+      case 'residents': return <Residents />;
+      case 'new-registry': return <NewRegistry />;
+      case 'mail': return <MailManagement />;
+      case 'staff-chat': return <StaffChat />;
+      case 'authorizations': return <StaffAuthorizations />;
+      case 'devices': return <Devices />;
+      case 'logs': return <Logs />;
+      case 'reports': return <Reports />;
+      case 'settings': return <Settings />;
+      default: return <Dashboard />;
     }
   };
 

@@ -85,6 +85,44 @@ export type Database = {
           },
         ]
       }
+      chat_messages: {
+        Row: {
+          created_at: string | null
+          id: string
+          message: string
+          read: boolean | null
+          resident_id: string
+          sender_id: string
+          sender_type: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          message: string
+          read?: boolean | null
+          resident_id: string
+          sender_id: string
+          sender_type: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          message?: string
+          read?: boolean | null
+          resident_id?: string
+          sender_id?: string
+          sender_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_messages_resident_id_fkey"
+            columns: ["resident_id"]
+            isOneToOne: false
+            referencedRelation: "residents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       controlid_config: {
         Row: {
           api_path: string | null
@@ -269,6 +307,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      notifications: {
+        Row: {
+          body: string
+          created_at: string | null
+          id: string
+          read: boolean | null
+          related_id: string | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string | null
+          id?: string
+          read?: boolean | null
+          related_id?: string | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string | null
+          id?: string
+          read?: boolean | null
+          related_id?: string | null
+          title?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -463,6 +534,62 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "vehicles_resident_id_fkey"
+            columns: ["resident_id"]
+            isOneToOne: false
+            referencedRelation: "residents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      visitor_authorizations: {
+        Row: {
+          authorized_date: string
+          authorized_until: string | null
+          created_at: string | null
+          id: string
+          purpose: string | null
+          resident_id: string
+          reviewed_by: string | null
+          staff_notes: string | null
+          status: string | null
+          updated_at: string | null
+          vehicle_plate: string | null
+          visitor_document: string | null
+          visitor_name: string
+        }
+        Insert: {
+          authorized_date: string
+          authorized_until?: string | null
+          created_at?: string | null
+          id?: string
+          purpose?: string | null
+          resident_id: string
+          reviewed_by?: string | null
+          staff_notes?: string | null
+          status?: string | null
+          updated_at?: string | null
+          vehicle_plate?: string | null
+          visitor_document?: string | null
+          visitor_name: string
+        }
+        Update: {
+          authorized_date?: string
+          authorized_until?: string | null
+          created_at?: string | null
+          id?: string
+          purpose?: string | null
+          resident_id?: string
+          reviewed_by?: string | null
+          staff_notes?: string | null
+          status?: string | null
+          updated_at?: string | null
+          vehicle_plate?: string | null
+          visitor_document?: string | null
+          visitor_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "visitor_authorizations_resident_id_fkey"
             columns: ["resident_id"]
             isOneToOne: false
             referencedRelation: "residents"

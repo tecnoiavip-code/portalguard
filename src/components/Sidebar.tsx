@@ -1,5 +1,8 @@
+import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { LayoutDashboard, Users, FileText, Mail, ScrollText, Settings, Smartphone, ClipboardList } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { LayoutDashboard, Users, FileText, Mail, ScrollText, Settings, Smartphone, ClipboardList, MessageSquare, Shield, Bell } from 'lucide-react';
 
 interface SidebarProps {
   activeSection: string;
@@ -12,15 +15,55 @@ const navItems = [
   { id: 'residents', label: 'Moradores', icon: Users, group: 'Cadastros' },
   { id: 'new-registry', label: 'Novo Cadastro', icon: FileText, group: 'Cadastros' },
   { id: 'mail', label: 'Correspondências', icon: Mail, group: 'Cadastros' },
+  { id: 'staff-chat', label: 'Chat Moradores', icon: MessageSquare, group: 'Comunicação', badgeKey: 'chat' },
+  { id: 'authorizations', label: 'Autorizações', icon: Shield, group: 'Comunicação', badgeKey: 'auth' },
   { id: 'reports', label: 'Relatórios', icon: ClipboardList, group: 'Operações' },
   { id: 'devices', label: 'Dispositivos', icon: Smartphone, group: 'Sistema' },
   { id: 'logs', label: 'Logs de Acesso', icon: ScrollText, group: 'Sistema' },
   { id: 'settings', label: 'Configurações', icon: Settings, group: 'Sistema' },
 ];
 
-const groups = ['Principal', 'Cadastros', 'Operações', 'Sistema'];
+const groups = ['Principal', 'Cadastros', 'Comunicação', 'Operações', 'Sistema'];
 
 export const Sidebar = ({ activeSection, onSectionChange, isOpen }: SidebarProps) => {
+  const { user } = useAuth();
+  const [badges, setBadges] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    if (!user) return;
+
+    const loadBadges = async () => {
+      // Unread chat messages from residents
+      const { count: chatCount } = await supabase
+        .from('chat_messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('sender_type', 'resident')
+        .eq('read', false);
+
+      // Pending authorizations
+      const { count: authCount } = await supabase
+        .from('visitor_authorizations')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'pending');
+
+      setBadges({
+        chat: chatCount || 0,
+        auth: authCount || 0,
+      });
+    };
+
+    loadBadges();
+
+    // Realtime updates
+    const channel = supabase
+      .channel('staff-badges')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, () => loadBadges())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'visitor_authorizations' }, () => loadBadges())
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
+
   return (
     <aside
       className={cn(
@@ -41,6 +84,7 @@ export const Sidebar = ({ activeSection, onSectionChange, isOpen }: SidebarProps
                 .map((item) => {
                   const Icon = item.icon;
                   const isActive = activeSection === item.id;
+                  const badgeCount = item.badgeKey ? badges[item.badgeKey] || 0 : 0;
                   
                   return (
                     <button
@@ -55,7 +99,15 @@ export const Sidebar = ({ activeSection, onSectionChange, isOpen }: SidebarProps
                       )}
                     >
                       <Icon className="h-5 w-5" />
-                      <span>{item.label}</span>
+                      <span className="flex-1">{item.label}</span>
+                      {badgeCount > 0 && (
+                        <span className={cn(
+                          'text-[10px] font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5',
+                          isActive ? 'bg-primary-foreground text-primary' : 'bg-destructive text-destructive-foreground'
+                        )}>
+                          {badgeCount > 99 ? '99+' : badgeCount}
+                        </span>
+                      )}
                     </button>
                   );
                 })}

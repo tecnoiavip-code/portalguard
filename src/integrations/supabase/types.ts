@@ -324,6 +324,7 @@ export type Database = {
       residents: {
         Row: {
           apartment: string
+          auth_user_id: string | null
           cpf: string | null
           created_at: string | null
           created_by: string | null
@@ -340,6 +341,7 @@ export type Database = {
         }
         Insert: {
           apartment: string
+          auth_user_id?: string | null
           cpf?: string | null
           created_at?: string | null
           created_by?: string | null
@@ -356,6 +358,7 @@ export type Database = {
         }
         Update: {
           apartment?: string
+          auth_user_id?: string | null
           cpf?: string | null
           created_at?: string | null
           created_by?: string | null
@@ -481,7 +484,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "security_guard" | "receptionist"
+      app_role: "admin" | "security_guard" | "receptionist" | "resident"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -609,7 +612,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "security_guard", "receptionist"],
+      app_role: ["admin", "security_guard", "receptionist", "resident"],
     },
   },
 } as const

@@ -15,6 +15,8 @@ interface MailItem {
   received_at: string | null;
   delivered_at: string | null;
   notes: string | null;
+  tracking_code: string | null;
+  photo_url: string | null;
 }
 
 const ResidentMails = () => {
@@ -34,7 +36,7 @@ const ResidentMails = () => {
 
       const { data } = await supabase
         .from('mails')
-        .select('id, sender, package_type, status, received_at, delivered_at, notes')
+        .select('id, sender, package_type, status, received_at, delivered_at, notes, tracking_code, photo_url')
         .eq('resident_id', res.id)
         .order('received_at', { ascending: false })
         .limit(50);
@@ -55,9 +57,13 @@ const ResidentMails = () => {
         mails.map((m) => (
           <Card key={m.id}>
             <CardContent className="p-4 flex items-start gap-3">
-              <div className="p-2 rounded-lg bg-muted">
-                {m.package_type?.includes('Pacote') ? <Package className="h-5 w-5 text-accent" /> : <Mail className="h-5 w-5 text-accent" />}
-              </div>
+              {m.photo_url ? (
+                <img src={m.photo_url} alt="Foto" className="w-14 h-14 rounded-lg object-cover border flex-shrink-0" />
+              ) : (
+                <div className="p-2 rounded-lg bg-muted flex-shrink-0">
+                  {m.package_type?.includes('Pacote') ? <Package className="h-5 w-5 text-accent" /> : <Mail className="h-5 w-5 text-accent" />}
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-medium truncate">{m.sender}</p>
@@ -66,6 +72,11 @@ const ResidentMails = () => {
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">{m.package_type || 'Carta'}</p>
+                {m.tracking_code && (
+                  <p className="text-xs font-mono bg-muted px-2 py-0.5 rounded mt-1 inline-block">
+                    🔍 {m.tracking_code}
+                  </p>
+                )}
                 {m.received_at && (
                   <p className="text-xs text-muted-foreground mt-1">
                     Recebido: {format(new Date(m.received_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}

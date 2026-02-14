@@ -79,9 +79,9 @@ Deno.serve(async (req) => {
     const rawPayload = await req.text();
     const signature = req.headers.get('x-webhook-signature');
     
-    // Verify HMAC signature (optional: disable if Control iD doesn't support it yet)
+    // Verify HMAC signature only when signature header is provided
     const webhookSecret = Deno.env.get('CONTROLID_WEBHOOK_SECRET');
-    if (webhookSecret && !verifyWebhookSignature(rawPayload, signature)) {
+    if (webhookSecret && signature && !verifyWebhookSignature(rawPayload, signature)) {
       console.error('Invalid webhook signature');
       return new Response(
         JSON.stringify({ error: 'Unauthorized - invalid signature' }),

@@ -33,7 +33,7 @@ export const Devices = () => {
     e.preventDefault();
     
     const deviceData: Device = {
-      id: editingId || `device_${Date.now()}`,
+      id: editingId || `dev_${Date.now()}`,
       ...formData,
       lastSync: new Date().toISOString(),
     };

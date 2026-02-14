@@ -46,23 +46,31 @@ export const supabaseStorage = {
       vehicle_tag: resident.vehicleTag || null,
     };
 
+    console.log('[DEBUG] saveResident isNew:', isNew, 'id:', resident.id, 'data:', residentData);
+    
     if (isNew) {
-      const { error } = await supabase
+      const { error, data, status } = await supabase
         .from('residents')
-        .insert(residentData);
+        .insert(residentData)
+        .select();
+      
+      console.log('[DEBUG] insert result - status:', status, 'data:', data, 'error:', error);
       
       if (error) {
-        console.error('Error inserting resident:', error);
+        console.error('Error inserting resident:', error.message, error.code, error.details, error.hint);
         return false;
       }
     } else {
-      const { error } = await supabase
+      const { error, data, status } = await supabase
         .from('residents')
         .update(residentData)
-        .eq('id', resident.id);
+        .eq('id', resident.id)
+        .select();
+      
+      console.log('[DEBUG] update result - status:', status, 'data:', data, 'error:', error);
       
       if (error) {
-        console.error('Error updating resident:', error);
+        console.error('Error updating resident:', error.message, error.code, error.details, error.hint);
         return false;
       }
     }

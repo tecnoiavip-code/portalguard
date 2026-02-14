@@ -1,8 +1,9 @@
-import { useState, ReactNode } from 'react';
-import { Menu, Building2, User, LogOut } from 'lucide-react';
+import { useState, useEffect, ReactNode } from 'react';
+import { Menu, Building2, User, LogOut, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface LayoutProps {
   children: ReactNode;
@@ -19,6 +21,39 @@ interface LayoutProps {
 export const Layout = ({ children }: LayoutProps) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, signOut } = useAuth();
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifCount, setNotifCount] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const loadNotifs = async () => {
+      const { data, count } = await supabase
+        .from('notifications')
+        .select('*', { count: 'exact' })
+        .eq('user_id', user.id)
+        .eq('read', false)
+        .order('created_at', { ascending: false })
+        .limit(10);
+      setNotifications(data || []);
+      setNotifCount(count || 0);
+    };
+    loadNotifs();
+
+    const channel = supabase
+      .channel('staff-header-notifs')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => loadNotifs())
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
+
+  const markAllRead = async () => {
+    if (!user) return;
+    await supabase.from('notifications').update({ read: true }).eq('user_id', user.id).eq('read', false);
+    setNotifications([]);
+    setNotifCount(0);
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -38,7 +73,7 @@ export const Layout = ({ children }: LayoutProps) => {
                 <Building2 className="h-8 w-8" />
                 <div>
                   <h1 className="text-2xl md:text-3xl font-bold">PortalGuard Pro</h1>
-                  <p className="text-slate-50 text-sm hidden md:block">
+                  <p className="text-primary-foreground/80 text-sm hidden md:block">
                     Sistema Profissional de Controle de Acesso
                   </p>
                 </div>
@@ -46,13 +81,56 @@ export const Layout = ({ children }: LayoutProps) => {
             </div>
             <div className="flex items-center gap-2">
               <ThemeToggle />
-              <div className="flex items-center space-x-2 bg-white/20 px-4 py-2 rounded-full backdrop-blur-sm">
+              
+              {/* Notification Bell */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="relative text-primary-foreground hover:bg-primary-foreground/10">
+                    <Bell className="h-5 w-5" />
+                    {notifCount > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 font-bold animate-pulse">
+                        {notifCount > 99 ? '99+' : notifCount}
+                      </span>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-80">
+                  <DropdownMenuLabel className="flex items-center justify-between">
+                    <span>Notificações</span>
+                    {notifCount > 0 && (
+                      <button onClick={markAllRead} className="text-xs text-primary hover:underline font-normal">
+                        Marcar todas como lidas
+                      </button>
+                    )}
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <ScrollArea className="max-h-64">
+                    {notifications.length === 0 ? (
+                      <div className="p-4 text-sm text-muted-foreground text-center">
+                        Nenhuma notificação
+                      </div>
+                    ) : (
+                      notifications.map((n) => (
+                        <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-1 p-3 cursor-default">
+                          <p className="text-sm font-medium leading-tight">{n.title}</p>
+                          <p className="text-xs text-muted-foreground leading-tight">{n.body}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {new Date(n.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </DropdownMenuItem>
+                      ))
+                    )}
+                  </ScrollArea>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <div className="flex items-center space-x-2 bg-primary-foreground/10 px-4 py-2 rounded-full backdrop-blur-sm">
                 <div className="w-2.5 h-2.5 rounded-full bg-success animate-pulse" />
                 <span className="text-sm font-medium">Sistema Online</span>
               </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="gap-2 text-white hover:bg-white/20">
+                  <Button variant="ghost" size="sm" className="gap-2 text-primary-foreground hover:bg-primary-foreground/10">
                     <User className="h-4 w-4" />
                     <span className="text-sm hidden md:inline">{user?.email}</span>
                   </Button>

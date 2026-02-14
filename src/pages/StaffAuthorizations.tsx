@@ -64,10 +64,27 @@ const StaffAuthorizations = () => {
   useEffect(() => { loadAuths(); }, []);
 
   const handleReview = async (id: string, status: 'approved' | 'rejected') => {
+    const auth = auths.find(a => a.id === id);
     await supabase
       .from('visitor_authorizations')
       .update({ status, staff_notes: staffNotes || null, reviewed_by: user?.id } as any)
       .eq('id', id);
+
+    // Notify resident about authorization review
+    if (auth) {
+      const { data: res } = await (supabase.from('residents').select('auth_user_id') as any)
+        .eq('id', auth.resident_id)
+        .maybeSingle();
+      if (res?.auth_user_id) {
+        await supabase.from('notifications').insert({
+          user_id: res.auth_user_id,
+          title: status === 'approved' ? '✅ Autorização aprovada' : '❌ Autorização rejeitada',
+          body: `Visitante: ${auth.visitor_name}${staffNotes ? ` — ${staffNotes}` : ''}`,
+          type: 'authorization',
+          related_id: id,
+        });
+      }
+    }
 
     toast.success(status === 'approved' ? 'Autorização aprovada!' : 'Autorização rejeitada');
     setReviewId(null);

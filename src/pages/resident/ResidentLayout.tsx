@@ -81,6 +81,9 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
 
     let currentResidentId: string | null = null;
 
+    let isActive = true;
+    let pollTimeout: ReturnType<typeof setTimeout>;
+
     const loadCounts = async () => {
       const { data: res } = await (supabase
         .from('residents')
@@ -110,33 +113,38 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
     const channel = supabase
       .channel('resident-notifs')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (payload) => {
-        setNotifCount((c) => c + 1);
+        loadCounts(); // Full refresh to stay in sync
         const notif = payload.new as any;
         showBrowserNotification(notif.title || 'Nova notificação', notif.body || '');
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (payload) => {
-        const updated = payload.new as any;
-        if (updated.read) {
-          setNotifCount((c) => Math.max(0, c - 1));
-        }
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => {
+        loadCounts();
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
         const msg = payload.new as any;
         if (msg.sender_type === 'staff') {
-          setUnreadCount((c) => c + 1);
+          loadCounts();
           showBrowserNotification('Nova mensagem da portaria', msg.message?.substring(0, 100) || '');
         }
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, (payload) => {
-        const msg = payload.new as any;
-        const old = payload.old as any;
-        if (msg.sender_type === 'staff' && !old.read && msg.read) {
-          setUnreadCount((c) => Math.max(0, c - 1));
-        }
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, () => {
+        loadCounts();
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    // Polling fallback every 10s
+    const poll = () => {
+      if (!isActive) return;
+      loadCounts();
+      pollTimeout = setTimeout(poll, 10000);
+    };
+    pollTimeout = setTimeout(poll, 10000);
+
+    return () => {
+      isActive = false;
+      clearTimeout(pollTimeout);
+      supabase.removeChannel(channel);
+    };
   }, [user, isLoading, navigate, showBrowserNotification]);
 
   if (isLoading) {

@@ -182,6 +182,36 @@ export type Database = {
         }
         Relationships: []
       }
+      blocked_visitors: {
+        Row: {
+          blocked_at: string
+          blocked_by: string | null
+          id: string
+          is_active: boolean
+          reason: string | null
+          visitor_document: string
+          visitor_name: string
+        }
+        Insert: {
+          blocked_at?: string
+          blocked_by?: string | null
+          id?: string
+          is_active?: boolean
+          reason?: string | null
+          visitor_document: string
+          visitor_name: string
+        }
+        Update: {
+          blocked_at?: string
+          blocked_by?: string | null
+          id?: string
+          is_active?: boolean
+          reason?: string | null
+          visitor_document?: string
+          visitor_name?: string
+        }
+        Relationships: []
+      }
       chat_messages: {
         Row: {
           created_at: string | null

@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Users, Mail, UserCheck, Clock, Activity, Radio } from 'lucide-react';
+import { Users, Mail, UserCheck, Clock, Activity, Radio, CheckCheck, User } from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { StatsCard } from '@/components/StatsCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -266,55 +267,75 @@ export const Dashboard = () => {
               </Badge>
             </CardTitle>
           </CardHeader>
-          <CardContent className="pt-4">
-            <div className="space-y-2 max-h-[320px] overflow-y-auto">
+          <CardContent className="pt-4 px-2">
+            <div className="space-y-0 max-h-[400px] overflow-y-auto relative">
+              {/* Timeline vertical line */}
+              <div className="absolute left-[52px] top-0 bottom-0 w-0.5 bg-border z-0" />
+              
               {controlidLogs.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-8">
                   Aguardando dados dos dispositivos...
                 </p>
               ) : (
-                controlidLogs.map((log) => (
-                  <div
-                    key={log.id}
-                    className="flex items-start gap-2.5 p-3 rounded-lg border-l-[3px] shadow-sm hover:shadow transition-all bg-muted/50 border-primary/40 hover:bg-muted"
-                  >
-                    <div className="flex-shrink-0 mt-0.5 text-base">
-                      {log.event_type === 'dao' && '🚪'}
-                      {log.event_type === 'device_is_alive' && '💚'}
-                      {log.event_type === 'access_photo' && '📸'}
-                      {log.event_type === 'door' && '🔓'}
-                      {log.event_type === 'catra_event' && '🔄'}
-                      {log.event_type === 'operation_mode' && '⚙️'}
-                      {log.event_type === 'unknown' && '❓'}
+                controlidLogs.map((log) => {
+                  const p = log.payload || {};
+                  const changes = p.object_changes?.[0]?.values || {};
+                  
+                  // Extract person info from payload
+                  const userName = changes.user_name || p.user_name || p.name || '';
+                  const apartment = changes.apartment || changes.user_id || p.apartment || p.house || '';
+                  const photoUrl = changes.photo_url || p.photo_url || p.photo || '';
+                  const location = changes.portal_name || p.portal_name || p.location || 'area interna condomínio';
+                  
+                  const eventTime = new Date(log.received_at);
+                  const timeStr = eventTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                  const fullTimeStr = eventTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                  const dateStr = eventTime.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                  
+                  const displayName = userName || (log.event_type === 'device_is_alive' ? 'Dispositivo online' : log.event_type === 'door' ? 'Evento de porta' : 'Acesso pela interface web');
+                  const displayLabel = apartment && userName ? `${apartment} - ${userName.toUpperCase()}` : displayName.toUpperCase();
+                  const isAccess = log.event_type === 'dao' || log.event_type === 'access_photo';
+
+                  return (
+                    <div
+                      key={log.id}
+                      className="flex items-center gap-3 py-3 px-2 relative z-10 group hover:bg-muted/40 rounded-lg transition-colors"
+                    >
+                      {/* Date & Time */}
+                      <div className="flex-shrink-0 w-[40px] text-right">
+                        <p className="text-[10px] text-muted-foreground leading-none">{dateStr}</p>
+                        <p className={`text-lg font-bold leading-tight ${isAccess ? 'text-primary' : 'text-muted-foreground'}`}>
+                          {timeStr}
+                        </p>
+                      </div>
+
+                      {/* Avatar */}
+                      <div className="flex-shrink-0 z-10">
+                        <Avatar className={`h-10 w-10 border-2 ${isAccess ? 'border-primary' : 'border-muted'}`}>
+                          {photoUrl ? (
+                            <AvatarImage src={photoUrl} alt={displayName} />
+                          ) : null}
+                          <AvatarFallback className={`text-xs font-bold ${isAccess ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                            {userName ? userName.substring(0, 2).toUpperCase() : <User className="h-4 w-4" />}
+                          </AvatarFallback>
+                        </Avatar>
+                      </div>
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-bold truncate leading-tight ${isAccess ? 'text-foreground' : 'text-muted-foreground'}`}>
+                          {displayLabel}
+                        </p>
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <CheckCheck className="h-3 w-3 text-success flex-shrink-0" />
+                          <p className="text-[11px] text-muted-foreground truncate">
+                            {location} - {fullTimeStr}
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-foreground leading-tight">
-                        {log.event_type === 'dao' ? 'Acesso registrado' :
-                         log.event_type === 'device_is_alive' ? 'Dispositivo online' :
-                         log.event_type === 'access_photo' ? 'Foto de acesso' :
-                         log.event_type === 'door' ? 'Evento de porta' :
-                         log.event_type === 'catra_event' ? 'Evento de catraca' :
-                         log.event_type === 'operation_mode' ? 'Modo de operação' :
-                         'Evento desconhecido'}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Dispositivo: {log.device_id}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(log.received_at).toLocaleString('pt-BR', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit'
-                        })}
-                      </p>
-                    </div>
-                    <Badge variant="secondary" className="flex-shrink-0 text-xs">
-                      {log.event_type}
-                    </Badge>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </CardContent>

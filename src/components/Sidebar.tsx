@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { LayoutDashboard, Users, FileText, Mail, ScrollText, Settings, Smartphone, ClipboardList, MessageSquare, Shield, Bell } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Mail, ScrollText, Settings, Smartphone, ClipboardList, MessageSquare, Shield, Bell, MailSearch } from 'lucide-react';
 
 interface SidebarProps {
   activeSection: string;
@@ -15,6 +15,7 @@ const navItems = [
   { id: 'residents', label: 'Moradores', icon: Users, group: 'Cadastros' },
   { id: 'new-registry', label: 'Novo Cadastro', icon: FileText, group: 'Cadastros' },
   { id: 'mail', label: 'Correspondências', icon: Mail, group: 'Cadastros' },
+  { id: 'mail-logs', label: 'Log Correspondências', icon: MailSearch, group: 'Cadastros' },
   { id: 'staff-chat', label: 'Chat Moradores', icon: MessageSquare, group: 'Comunicação', badgeKey: 'chat' },
   { id: 'authorizations', label: 'Autorizações', icon: Shield, group: 'Comunicação', badgeKey: 'auth' },
   { id: 'reports', label: 'Relatórios', icon: ClipboardList, group: 'Operações' },

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabaseStorage } from '@/lib/supabase-storage';
+import { supabase } from '@/integrations/supabase/client';
 import { Device } from '@/types';
 import { toast } from 'sonner';
 
@@ -16,6 +17,16 @@ export const useDevices = () => {
 
   useEffect(() => {
     loadDevices();
+
+    // Realtime subscription for device status updates
+    const channel = supabase
+      .channel('devices-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'devices' }, () => {
+        loadDevices();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const saveDevice = async (device: Device) => {

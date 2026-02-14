@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,7 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Combobox } from '@/components/ui/combobox';
-import { Package, CheckCircle, Search, Pencil, Trash2, Download, Camera, X } from 'lucide-react';
+import { Package, CheckCircle, Search, Pencil, Trash2, Download, Camera, X, Upload, Video } from 'lucide-react';
 import { Mail, Resident } from '@/types';
 import { useMails } from '@/hooks/useMails';
 import { useResidents } from '@/hooks/useResidents';
@@ -49,6 +49,9 @@ export const MailManagement = () => {
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [webcamActive, setWebcamActive] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const [deliveryDialog, setDeliveryDialog] = useState<{
     open: boolean;
     mailId: string | null;
@@ -63,6 +66,48 @@ export const MailManagement = () => {
       setPhotoPreview(URL.createObjectURL(file));
     }
   };
+
+  const startWebcam = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      setWebcamActive(true);
+    } catch (err) {
+      toast.error('Não foi possível acessar a câmera');
+      console.error('Webcam error:', err);
+    }
+  };
+
+  const stopWebcam = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    setWebcamActive(false);
+  }, []);
+
+  const capturePhoto = () => {
+    if (!videoRef.current) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
+    canvas.toBlob((blob) => {
+      if (blob) {
+        const file = new File([blob], `webcam_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        setPhotoFile(file);
+        setPhotoPreview(URL.createObjectURL(blob));
+        stopWebcam();
+      }
+    }, 'image/jpeg', 0.85);
+  };
+
+  useEffect(() => {
+    return () => { stopWebcam(); };
+  }, [stopWebcam]);
 
   const uploadPhoto = async (): Promise<string | null> => {
     if (!photoFile) return null;
@@ -352,12 +397,28 @@ export const MailManagement = () => {
                       <X className="h-3 w-3" />
                     </button>
                   </div>
+                ) : webcamActive ? (
+                  <div className="space-y-2">
+                    <video ref={videoRef} autoPlay playsInline muted className="w-full max-w-[240px] rounded-lg border" />
+                    <div className="flex gap-2">
+                      <Button type="button" size="sm" onClick={capturePhoto}>
+                        <Camera className="h-4 w-4 mr-1" /> Capturar
+                      </Button>
+                      <Button type="button" size="sm" variant="outline" onClick={stopWebcam}>
+                        Cancelar
+                      </Button>
+                    </div>
+                  </div>
                 ) : (
-                  <label className="flex items-center gap-2 cursor-pointer border border-dashed rounded-lg p-3 hover:bg-muted transition-colors">
-                    <Camera className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">Tirar foto / Anexar</span>
-                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
-                  </label>
+                  <div className="flex gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={startWebcam} className="flex items-center gap-1">
+                      <Video className="h-4 w-4" /> Webcam
+                    </Button>
+                    <label className="flex items-center gap-1 cursor-pointer border rounded-lg px-3 py-1.5 text-sm hover:bg-muted transition-colors">
+                      <Upload className="h-4 w-4" /> Arquivo
+                      <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
+                    </label>
+                  </div>
                 )}
               </div>
 

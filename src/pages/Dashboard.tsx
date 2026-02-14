@@ -148,49 +148,7 @@ export const Dashboard = () => {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-1">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center space-x-2 text-base">
-              <Clock className="h-4 w-4 text-primary" />
-              <span>Últimos Acessos</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-1.5 max-h-[320px] overflow-y-auto">
-              {recentEntries.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  Nenhum acesso registrado ainda
-                </p>
-              ) : (
-                recentEntries.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="flex items-center justify-between p-2 bg-muted/50 rounded-md hover:bg-muted transition-colors"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-sm truncate">{entry.visitorName}</p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {entry.apartment} • {new Date(entry.entryTime).toLocaleString('pt-BR', { 
-                          day: '2-digit', 
-                          month: '2-digit', 
-                          hour: '2-digit', 
-                          minute: '2-digit' 
-                        })}
-                      </p>
-                    </div>
-                    <Badge 
-                      variant={entry.exitTime ? "secondary" : "default"}
-                      className="flex-shrink-0 ml-2 text-xs"
-                    >
-                      {entry.exitTime ? 'Saiu' : 'Ativo'}
-                    </Badge>
-                  </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         <Card className="lg:col-span-1">
           <CardHeader className="pb-3">

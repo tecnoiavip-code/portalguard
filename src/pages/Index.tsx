@@ -12,6 +12,7 @@ import { Settings } from './Settings';
 import { Reports } from './Reports';
 import StaffChat from './StaffChat';
 import StaffAuthorizations from './StaffAuthorizations';
+import StaffAnnouncements from './StaffAnnouncements';
 
 const Index = () => {
   const [activeSection, setActiveSection] = useState('dashboard');
@@ -26,6 +27,7 @@ const Index = () => {
       case 'mail-logs': return <MailLogs />;
       case 'staff-chat': return <StaffChat />;
       case 'authorizations': return <StaffAuthorizations />;
+      case 'announcements': return <StaffAnnouncements />;
       case 'devices': return <Devices />;
       case 'logs': return <Logs />;
       case 'reports': return <Reports />;

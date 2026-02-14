@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
-import { Home, Mail, Users, Shield, MessageSquare, LogOut, Bell } from 'lucide-react';
+import { Home, Mail, Users, Shield, MessageSquare, LogOut, Bell, Megaphone } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
@@ -96,6 +96,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
   const tabs = [
     { id: 'home', label: 'Início', icon: Home },
     { id: 'mails', label: 'Correio', icon: Mail },
+    { id: 'announcements', label: 'Avisos', icon: Megaphone },
     { id: 'visitors', label: 'Visitas', icon: Users },
     { id: 'authorizations', label: 'Autorizar', icon: Shield },
     { id: 'chat', label: 'Chat', icon: MessageSquare, badge: unreadCount },

@@ -1,9 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { ScrollText, Search, LogIn, LogOut, Download } from 'lucide-react';
-import { AccessEntry } from '@/types';
+import { ScrollText, Search, LogIn, LogOut, Download, ShieldBan } from 'lucide-react';
 import { useAccessEntries } from '@/hooks/useAccessEntries';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import jsPDF from 'jspdf';
@@ -12,11 +11,19 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { useAuth } from '@/contexts/AuthContext';
 
 export const Logs = () => {
   const { entries: allEntries } = useAccessEntries();
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [blockDialog, setBlockDialog] = useState<{ open: boolean; name: string; document: string }>({ open: false, name: '', document: '' });
+  const [blockReason, setBlockReason] = useState('');
+  const [blocking, setBlocking] = useState(false);
   const itemsPerPage = 10;
 
   const entries = allEntries.sort(
@@ -36,6 +43,28 @@ export const Logs = () => {
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
+
+  const handleBlockVisitor = async () => {
+    if (!blockDialog.name || !blockDialog.document) return;
+    setBlocking(true);
+    try {
+      const { error } = await supabase.from('blocked_visitors').insert({
+        visitor_name: blockDialog.name,
+        visitor_document: blockDialog.document,
+        reason: blockReason || null,
+        blocked_by: user?.id || null,
+      });
+      if (error) throw error;
+      toast.success(`Visitante "${blockDialog.name}" bloqueado com sucesso`);
+      setBlockDialog({ open: false, name: '', document: '' });
+      setBlockReason('');
+    } catch (err: any) {
+      console.error('Error blocking visitor:', err);
+      toast.error('Erro ao bloquear visitante');
+    } finally {
+      setBlocking(false);
+    }
+  };
 
   const exportLogsToPDF = () => {
     const doc = new jsPDF();
@@ -120,12 +149,22 @@ export const Logs = () => {
                         Doc: {entry.visitorDocument}
                       </p>
                     </div>
-                    <Badge
-                      variant={entry.exitTime ? 'secondary' : 'default'}
-                      className={entry.exitTime ? '' : 'bg-success'}
-                    >
-                      {entry.exitTime ? 'Finalizado' : 'Ativo'}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setBlockDialog({ open: true, name: entry.visitorName, document: entry.visitorDocument })}
+                      >
+                        <ShieldBan className="h-4 w-4 mr-1" />
+                        Bloquear
+                      </Button>
+                      <Badge
+                        variant={entry.exitTime ? 'secondary' : 'default'}
+                        className={entry.exitTime ? '' : 'bg-success'}
+                      >
+                        {entry.exitTime ? 'Finalizado' : 'Ativo'}
+                      </Badge>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
@@ -211,6 +250,40 @@ export const Logs = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Dialog de bloqueio */}
+      <Dialog open={blockDialog.open} onOpenChange={(open) => { if (!open) setBlockDialog({ open: false, name: '', document: '' }); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldBan className="h-5 w-5 text-destructive" />
+              Bloquear Visitante
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Deseja bloquear o visitante <strong>{blockDialog.name}</strong> (Doc: {blockDialog.document})?
+            </p>
+            <div>
+              <label className="text-sm font-medium">Motivo do bloqueio (opcional)</label>
+              <Textarea
+                placeholder="Informe o motivo do bloqueio..."
+                value={blockReason}
+                onChange={(e) => setBlockReason(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBlockDialog({ open: false, name: '', document: '' })}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleBlockVisitor} disabled={blocking}>
+              {blocking ? 'Bloqueando...' : 'Confirmar Bloqueio'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

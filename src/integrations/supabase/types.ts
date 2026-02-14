@@ -394,11 +394,13 @@ export type Database = {
           id: string
           notes: string | null
           package_type: string | null
+          photo_url: string | null
           received_at: string | null
           registered_by: string | null
           resident_id: string
           sender: string
           status: string | null
+          tracking_code: string | null
           withdrawn_by: string | null
         }
         Insert: {
@@ -406,11 +408,13 @@ export type Database = {
           id?: string
           notes?: string | null
           package_type?: string | null
+          photo_url?: string | null
           received_at?: string | null
           registered_by?: string | null
           resident_id: string
           sender: string
           status?: string | null
+          tracking_code?: string | null
           withdrawn_by?: string | null
         }
         Update: {
@@ -418,11 +422,13 @@ export type Database = {
           id?: string
           notes?: string | null
           package_type?: string | null
+          photo_url?: string | null
           received_at?: string | null
           registered_by?: string | null
           resident_id?: string
           sender?: string
           status?: string | null
+          tracking_code?: string | null
           withdrawn_by?: string | null
         }
         Relationships: [

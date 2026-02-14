@@ -27,6 +27,9 @@ export const Layout = ({ children }: LayoutProps) => {
 
   useEffect(() => {
     if (!user) return;
+    let isActive = true;
+    let pollTimeout: ReturnType<typeof setTimeout>;
+    let lastCount = 0;
 
     const loadNotifs = async () => {
       const { data, count } = await supabase
@@ -36,8 +39,14 @@ export const Layout = ({ children }: LayoutProps) => {
         .eq('read', false)
         .order('created_at', { ascending: false })
         .limit(10);
+      const newCount = count || 0;
+      // Play sound if count increased (new notification arrived)
+      if (newCount > lastCount && lastCount >= 0) {
+        playNotificationSound();
+      }
+      lastCount = newCount;
       setNotifications(data || []);
-      setNotifCount(count || 0);
+      setNotifCount(newCount);
     };
     loadNotifs();
 
@@ -47,9 +56,24 @@ export const Layout = ({ children }: LayoutProps) => {
         playNotificationSound();
         loadNotifs();
       })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => {
+        loadNotifs();
+      })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    // Polling fallback every 10s to catch missed realtime events
+    const poll = () => {
+      if (!isActive) return;
+      loadNotifs();
+      pollTimeout = setTimeout(poll, 10000);
+    };
+    pollTimeout = setTimeout(poll, 10000);
+
+    return () => {
+      isActive = false;
+      clearTimeout(pollTimeout);
+      supabase.removeChannel(channel);
+    };
   }, [user]);
 
   const markAllRead = async () => {

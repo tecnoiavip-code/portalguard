@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
+import PWAInstallPrompt from '@/components/PWAInstallPrompt';
+import { setAppBadge } from '@/lib/pwa-badge';
 
 interface ResidentLayoutProps {
   children: ReactNode;
@@ -45,13 +47,16 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
   }, []);
 
   useEffect(() => {
-    setTotalBadge(unreadCount + notifCount);
+    const total = unreadCount + notifCount;
+    setTotalBadge(total);
     // Update page title with badge
-    if (unreadCount + notifCount > 0) {
-      document.title = `(${unreadCount + notifCount}) Portal do Morador`;
+    if (total > 0) {
+      document.title = `(${total}) Portal do Morador`;
     } else {
       document.title = 'Portal do Morador';
     }
+    // Update PWA app icon badge
+    setAppBadge(total);
   }, [unreadCount, notifCount]);
 
   useEffect(() => {
@@ -201,6 +206,8 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
           ))}
         </div>
       </nav>
+
+      <PWAInstallPrompt />
     </div>
   );
 };

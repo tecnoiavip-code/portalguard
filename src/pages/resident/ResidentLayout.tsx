@@ -114,11 +114,24 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
         const notif = payload.new as any;
         showBrowserNotification(notif.title || 'Nova notificação', notif.body || '');
       })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (payload) => {
+        const updated = payload.new as any;
+        if (updated.read) {
+          setNotifCount((c) => Math.max(0, c - 1));
+        }
+      })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
         const msg = payload.new as any;
         if (msg.sender_type === 'staff') {
           setUnreadCount((c) => c + 1);
           showBrowserNotification('Nova mensagem da portaria', msg.message?.substring(0, 100) || '');
+        }
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, (payload) => {
+        const msg = payload.new as any;
+        const old = payload.old as any;
+        if (msg.sender_type === 'staff' && !old.read && msg.read) {
+          setUnreadCount((c) => Math.max(0, c - 1));
         }
       })
       .subscribe();
@@ -129,6 +142,16 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
   if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
+
+  const markNotifsRead = async () => {
+    if (!user) return;
+    await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('user_id', user.id)
+      .eq('read', false);
+    setNotifCount(0);
+  };
 
   const handleSignOut = async () => {
     document.title = 'Portal do Morador';
@@ -161,7 +184,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <div className="relative cursor-pointer" onClick={() => onTabChange('chat')}>
+            <div className="relative cursor-pointer" onClick={() => { markNotifsRead(); onTabChange('home'); }}>
               <Bell className="h-5 w-5" />
               {notifCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">

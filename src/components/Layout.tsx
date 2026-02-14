@@ -70,7 +70,7 @@ export const Layout = ({ children }: LayoutProps) => {
                 <Menu className="h-6 w-6" />
               </Button>
               <div className="flex items-center space-x-3">
-                <Building2 className="h-8 w-8" />
+                <Building2 className="h-10 w-10" />
                 <div>
                   <h1 className="text-2xl md:text-3xl font-bold">PortalGuard Pro</h1>
                   <p className="text-primary-foreground/80 text-sm hidden md:block">

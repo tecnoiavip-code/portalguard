@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { playNotificationSound } from '@/lib/notification-sound';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,7 +43,10 @@ export const Layout = ({ children }: LayoutProps) => {
 
     const channel = supabase
       .channel('staff-header-notifs')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => loadNotifs())
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => {
+        playNotificationSound();
+        loadNotifs();
+      })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };

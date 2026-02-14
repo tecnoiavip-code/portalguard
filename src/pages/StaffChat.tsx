@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Send, MessageSquare, ArrowLeft } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Send, MessageSquare, ArrowLeft, Plus, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -27,16 +28,24 @@ interface ChatMsg {
   read: boolean;
 }
 
+interface ResidentOption {
+  id: string;
+  name: string;
+  apartment: string;
+}
+
 const StaffChat = () => {
   const { user } = useAuth();
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [selectedThread, setSelectedThread] = useState<ChatThread | null>(null);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [newMsg, setNewMsg] = useState('');
+  const [showNewChatDialog, setShowNewChatDialog] = useState(false);
+  const [allResidents, setAllResidents] = useState<ResidentOption[]>([]);
+  const [residentSearch, setResidentSearch] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const loadThreads = async () => {
-    // Get all residents who have chat messages
     const { data: chatResidents } = await supabase
       .from('chat_messages')
       .select('resident_id')
@@ -45,11 +54,10 @@ const StaffChat = () => {
     if (!chatResidents) return;
 
     const uniqueIds = [...new Set(chatResidents.map(c => c.resident_id))];
-    if (uniqueIds.length === 0) return;
+    if (uniqueIds.length === 0) { setThreads([]); return; }
 
     const threadList: ChatThread[] = [];
     for (const rid of uniqueIds) {
-      // Get resident info
       const { data: res } = await supabase
         .from('residents')
         .select('name, apartment')
@@ -57,7 +65,6 @@ const StaffChat = () => {
         .maybeSingle();
       if (!res) continue;
 
-      // Get unread count
       const { count } = await supabase
         .from('chat_messages')
         .select('*', { count: 'exact', head: true })
@@ -65,7 +72,6 @@ const StaffChat = () => {
         .eq('sender_type', 'resident')
         .eq('read', false);
 
-      // Get last message
       const { data: lastMsg } = await supabase
         .from('chat_messages')
         .select('message, created_at')
@@ -95,13 +101,20 @@ const StaffChat = () => {
       .order('created_at', { ascending: true });
     setMessages((data as any) || []);
 
-    // Mark resident messages as read
     await supabase
       .from('chat_messages')
       .update({ read: true })
       .eq('resident_id', rid)
       .eq('sender_type', 'resident')
       .eq('read', false);
+  };
+
+  const loadResidents = async () => {
+    const { data } = await supabase
+      .from('residents')
+      .select('id, name, apartment')
+      .order('name');
+    if (data) setAllResidents(data as ResidentOption[]);
   };
 
   useEffect(() => { loadThreads(); }, []);
@@ -143,7 +156,6 @@ const StaffChat = () => {
       message: msg,
     } as any);
 
-    // Notify resident
     const { data: res } = await (supabase.from('residents').select('auth_user_id') as any)
       .eq('id', selectedThread.resident_id)
       .maybeSingle();
@@ -158,12 +170,41 @@ const StaffChat = () => {
     }
   };
 
+  const startNewChat = (resident: ResidentOption) => {
+    const existingThread = threads.find(t => t.resident_id === resident.id);
+    if (existingThread) {
+      setSelectedThread(existingThread);
+    } else {
+      setSelectedThread({
+        resident_id: resident.id,
+        resident_name: resident.name,
+        apartment: resident.apartment,
+        unread_count: 0,
+        last_message: '',
+        last_time: '',
+      });
+    }
+    setShowNewChatDialog(false);
+    setResidentSearch('');
+  };
+
+  const filteredResidents = allResidents.filter(r =>
+    r.name.toLowerCase().includes(residentSearch.toLowerCase()) ||
+    r.apartment.toLowerCase().includes(residentSearch.toLowerCase())
+  );
+
   if (!selectedThread) {
     return (
       <div className="space-y-4">
-        <h2 className="text-2xl font-bold">Chat com Moradores</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold">Chat com Moradores</h2>
+          <Button onClick={() => { loadResidents(); setShowNewChatDialog(true); }} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Nova Conversa
+          </Button>
+        </div>
         {threads.length === 0 ? (
-          <Card><CardContent className="p-6 text-center text-muted-foreground">Nenhuma conversa iniciada</CardContent></Card>
+          <Card><CardContent className="p-6 text-center text-muted-foreground">Nenhuma conversa iniciada. Clique em "Nova Conversa" para enviar uma mensagem a um morador.</CardContent></Card>
         ) : (
           threads.map((t) => (
             <Card key={t.resident_id} className="cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setSelectedThread(t)}>
@@ -189,6 +230,41 @@ const StaffChat = () => {
             </Card>
           ))
         )}
+
+        <Dialog open={showNewChatDialog} onOpenChange={setShowNewChatDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Selecionar Morador</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar morador ou apartamento..."
+                  value={residentSearch}
+                  onChange={e => setResidentSearch(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <div className="max-h-64 overflow-y-auto space-y-1">
+                {filteredResidents.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-4">Nenhum morador encontrado</p>
+                ) : (
+                  filteredResidents.map(r => (
+                    <button
+                      key={r.id}
+                      onClick={() => startNewChat(r)}
+                      className="w-full text-left px-4 py-3 rounded-lg hover:bg-muted transition-colors"
+                    >
+                      <p className="font-medium">{r.name}</p>
+                      <p className="text-sm text-muted-foreground">Apto {r.apartment}</p>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
@@ -207,6 +283,9 @@ const StaffChat = () => {
 
       <Card className="flex-1 overflow-hidden">
         <div ref={scrollRef} className="h-full overflow-y-auto p-4 space-y-3">
+          {messages.length === 0 && (
+            <p className="text-center text-muted-foreground py-8">Envie a primeira mensagem para {selectedThread.resident_name}</p>
+          )}
           {messages.map((m) => (
             <div key={m.id} className={cn('flex', m.sender_type === 'staff' ? 'justify-end' : 'justify-start')}>
               <div className={cn(

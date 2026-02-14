@@ -1,4 +1,4 @@
-import { useState, useEffect, ReactNode } from 'react';
+import { useState, useEffect, useCallback, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -20,6 +20,39 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
   const navigate = useNavigate();
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifCount, setNotifCount] = useState(0);
+  const [totalBadge, setTotalBadge] = useState(0);
+
+  // Request browser notification permission
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  const showBrowserNotification = useCallback((title: string, body: string) => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      try {
+        new Notification(title, {
+          body,
+          icon: '/favicon.ico',
+          badge: '/favicon.ico',
+          tag: 'portalguard-chat',
+        });
+      } catch {
+        // Silent fail on unsupported environments
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    setTotalBadge(unreadCount + notifCount);
+    // Update page title with badge
+    if (unreadCount + notifCount > 0) {
+      document.title = `(${unreadCount + notifCount}) Portal do Morador`;
+    } else {
+      document.title = 'Portal do Morador';
+    }
+  }, [unreadCount, notifCount]);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -28,7 +61,6 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
     }
     if (!user) return;
 
-    // Check if resident role
     const checkRole = async () => {
       const { data: role } = await supabase
         .from('user_roles')
@@ -42,7 +74,8 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
     };
     checkRole();
 
-    // Load unread counts
+    let currentResidentId: string | null = null;
+
     const loadCounts = async () => {
       const { data: res } = await (supabase
         .from('residents')
@@ -50,6 +83,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
         .eq('auth_user_id', user.id)
         .maybeSingle();
       if (!res) return;
+      currentResidentId = res.id;
 
       const { count: chatCount } = await supabase
         .from('chat_messages')
@@ -68,27 +102,31 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
     };
     loadCounts();
 
-    // Realtime for notifications
     const channel = supabase
       .channel('resident-notifs')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (payload) => {
         setNotifCount((c) => c + 1);
+        const notif = payload.new as any;
+        showBrowserNotification(notif.title || 'Nova notificação', notif.body || '');
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
-        if ((payload.new as any).sender_type === 'staff') {
+        const msg = payload.new as any;
+        if (msg.sender_type === 'staff') {
           setUnreadCount((c) => c + 1);
+          showBrowserNotification('Nova mensagem da portaria', msg.message?.substring(0, 100) || '');
         }
       })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user, isLoading, navigate]);
+  }, [user, isLoading, navigate, showBrowserNotification]);
 
   if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
 
   const handleSignOut = async () => {
+    document.title = 'Portal do Morador';
     await supabase.auth.signOut();
     navigate('/morador/login');
   };
@@ -107,13 +145,18 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
       {/* Header */}
       <header className="bg-primary text-primary-foreground sticky top-0 z-30 px-4 py-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 relative">
             <Home className="h-5 w-5" />
             <span className="font-bold">Portal do Morador</span>
+            {totalBadge > 0 && (
+              <span className="absolute -top-2 -left-1 bg-destructive text-destructive-foreground text-[10px] rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 font-bold animate-pulse">
+                {totalBadge > 99 ? '99+' : totalBadge}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <div className="relative">
+            <div className="relative cursor-pointer" onClick={() => onTabChange('chat')}>
               <Bell className="h-5 w-5" />
               {notifCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">

@@ -5,6 +5,7 @@ import { Dashboard } from './Dashboard';
 import { Residents } from './Residents';
 import { NewRegistry } from './NewRegistry';
 import { MailManagement } from './MailManagement';
+import { MailLogs } from './MailLogs';
 import { Devices } from './Devices';
 import { Logs } from './Logs';
 import { Settings } from './Settings';
@@ -22,6 +23,7 @@ const Index = () => {
       case 'residents': return <Residents />;
       case 'new-registry': return <NewRegistry />;
       case 'mail': return <MailManagement />;
+      case 'mail-logs': return <MailLogs />;
       case 'staff-chat': return <StaffChat />;
       case 'authorizations': return <StaffAuthorizations />;
       case 'devices': return <Devices />;

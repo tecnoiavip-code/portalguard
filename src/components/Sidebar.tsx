@@ -67,7 +67,7 @@ export const Sidebar = ({ activeSection, onSectionChange, isOpen }: SidebarProps
   return (
     <aside
       className={cn(
-        'fixed md:relative z-40 w-80 bg-card shadow-card transition-transform duration-300 flex flex-col',
+        'fixed md:sticky top-[88px] z-20 w-80 h-[calc(100vh-88px)] bg-card shadow-card transition-transform duration-300 flex flex-col',
         'md:translate-x-0',
         isOpen ? 'translate-x-0' : '-translate-x-full'
       )}

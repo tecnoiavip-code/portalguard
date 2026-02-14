@@ -20,7 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Combobox } from '@/components/ui/combobox';
-import { Package, CheckCircle, Search, Pencil, Trash2, Download } from 'lucide-react';
+import { Package, CheckCircle, Search, Pencil, Trash2, Download, Camera, X } from 'lucide-react';
 import { Mail, Resident } from '@/types';
 import { useMails } from '@/hooks/useMails';
 import { useResidents } from '@/hooks/useResidents';
@@ -44,13 +44,35 @@ export const MailManagement = () => {
     sender: '',
     packageType: 'Carta' as Mail['packageType'],
     notes: '',
+    trackingCode: '',
   });
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [deliveryDialog, setDeliveryDialog] = useState<{
     open: boolean;
     mailId: string | null;
   }>({ open: false, mailId: null });
   const [editingMail, setEditingMail] = useState<Mail | null>(null);
   const [withdrawnBy, setWithdrawnBy] = useState('');
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setPhotoFile(file);
+      setPhotoPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const uploadPhoto = async (): Promise<string | null> => {
+    if (!photoFile) return null;
+    const ext = photoFile.name.split('.').pop();
+    const path = `${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from('mail-photos').upload(path, photoFile);
+    if (error) { console.error('Upload error:', error); return null; }
+    const { data } = supabase.storage.from('mail-photos').getPublicUrl(path);
+    return data.publicUrl;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,6 +83,13 @@ export const MailManagement = () => {
       return;
     }
 
+    setUploading(true);
+    let photoUrl: string | undefined;
+    if (photoFile) {
+      const url = await uploadPhoto();
+      if (url) photoUrl = url;
+    }
+
     const mailData: Mail = editingMail 
       ? {
           ...editingMail,
@@ -68,6 +97,8 @@ export const MailManagement = () => {
           sender: formData.sender || 'Não identificado',
           packageType: formData.packageType,
           notes: formData.notes,
+          trackingCode: formData.trackingCode || undefined,
+          photoUrl: photoUrl || editingMail.photoUrl,
         }
       : {
           id: `mail_${Date.now()}`,
@@ -75,6 +106,8 @@ export const MailManagement = () => {
           sender: formData.sender || 'Não identificado',
           packageType: formData.packageType,
           notes: formData.notes,
+          trackingCode: formData.trackingCode || undefined,
+          photoUrl: photoUrl,
           receivedAt: new Date().toISOString(),
           status: 'pending',
           deliveredAt: null,
@@ -83,8 +116,30 @@ export const MailManagement = () => {
 
     const success = await saveMail(mailData);
     if (success) {
+      // Notificar morador no app (in-app notification)
+      if (!editingMail && resident) {
+        try {
+          // Get resident auth_user_id for notification
+          const { data: resData } = await (supabase
+            .from('residents')
+            .select('auth_user_id') as any)
+            .eq('id', resident.id)
+            .maybeSingle();
+
+          if (resData?.auth_user_id) {
+            await supabase.from('notifications').insert({
+              user_id: resData.auth_user_id,
+              title: '📦 Nova correspondência!',
+              body: `Você recebeu ${mailData.packageType.toLowerCase()} de ${mailData.sender}${mailData.trackingCode ? ` (Rastreio: ${mailData.trackingCode})` : ''}`,
+              type: 'mail',
+            });
+          }
+        } catch (err) {
+          console.error('Error creating notification:', err);
+        }
+      }
+
       if (!editingMail && resident.email) {
-        // Enviar notificação por email
         try {
           await supabase.functions.invoke('notify-mail-received', {
             body: {
@@ -92,9 +147,10 @@ export const MailManagement = () => {
               sender: mailData.sender,
               packageType: mailData.packageType,
               receivedAt: mailData.receivedAt,
+              trackingCode: mailData.trackingCode,
             }
           });
-          toast.success(`Correspondência registrada! ${resident.name} foi notificado por email.`);
+          toast.success(`Correspondência registrada! ${resident.name} foi notificado.`);
         } catch (error) {
           console.error('Error sending notification:', error);
           toast.success(`Correspondência registrada! (Notificação por email falhou)`);
@@ -108,9 +164,13 @@ export const MailManagement = () => {
         sender: '',
         packageType: 'Carta',
         notes: '',
+        trackingCode: '',
       });
+      setPhotoFile(null);
+      setPhotoPreview(null);
       setEditingMail(null);
     }
+    setUploading(false);
   };
 
   const handleDeliverClick = (mailId: string) => {
@@ -165,6 +225,7 @@ export const MailManagement = () => {
       sender: mail.sender,
       packageType: mail.packageType,
       notes: mail.notes,
+      trackingCode: mail.trackingCode || '',
     });
   };
 
@@ -258,19 +319,51 @@ export const MailManagement = () => {
               </div>
 
               <div className="space-y-2">
+                <Label htmlFor="trackingCode">Código de Rastreio</Label>
+                <Input
+                  id="trackingCode"
+                  value={formData.trackingCode}
+                  onChange={(e) => setFormData({ ...formData, trackingCode: e.target.value })}
+                  placeholder="Ex: BR123456789XX"
+                />
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="notes">Observações</Label>
                 <Textarea
                   id="notes"
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   placeholder="Ex: Caixa avariada, frágil..."
-                  rows={3}
+                  rows={2}
                 />
               </div>
 
-              <Button type="submit" className="w-full">
+              <div className="space-y-2">
+                <Label>Foto (opcional)</Label>
+                {photoPreview ? (
+                  <div className="relative w-20 h-20">
+                    <img src={photoPreview} alt="Preview" className="w-20 h-20 object-cover rounded-lg border" />
+                    <button
+                      type="button"
+                      onClick={() => { setPhotoFile(null); setPhotoPreview(null); }}
+                      className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-0.5"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex items-center gap-2 cursor-pointer border border-dashed rounded-lg p-3 hover:bg-muted transition-colors">
+                    <Camera className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">Tirar foto / Anexar</span>
+                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
+                  </label>
+                )}
+              </div>
+
+              <Button type="submit" className="w-full" disabled={uploading}>
                 <Package className="h-4 w-4 mr-2" />
-                {editingMail ? 'Atualizar' : 'Registrar e Notificar'}
+                {uploading ? 'Enviando...' : editingMail ? 'Atualizar' : 'Registrar e Notificar'}
               </Button>
               {editingMail && (
                 <Button
@@ -283,6 +376,7 @@ export const MailManagement = () => {
                       sender: '',
                       packageType: 'Carta',
                       notes: '',
+                      trackingCode: '',
                     });
                   }}
                   className="w-full"

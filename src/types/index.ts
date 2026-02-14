@@ -19,6 +19,8 @@ export interface Mail {
   sender: string;
   packageType: 'Carta' | 'Pacote Pequeno' | 'Pacote Médio' | 'Pacote Grande';
   notes: string;
+  trackingCode?: string;
+  photoUrl?: string;
   receivedAt: string;
   status: 'pending' | 'delivered';
   deliveredAt: string | null;

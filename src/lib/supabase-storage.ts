@@ -110,6 +110,8 @@ export const supabaseStorage = {
       sender: m.sender,
       packageType: m.package_type as any,
       notes: m.notes || '',
+      trackingCode: (m as any).tracking_code || '',
+      photoUrl: (m as any).photo_url || '',
       receivedAt: m.received_at,
       status: m.status as any,
       deliveredAt: m.delivered_at,
@@ -120,11 +122,13 @@ export const supabaseStorage = {
   async saveMail(mail: Mail): Promise<boolean> {
     const isNew = mail.id.startsWith('mail_');
     
-    const mailData = {
+    const mailData: any = {
       resident_id: mail.residentId,
       sender: mail.sender,
       package_type: mail.packageType,
       notes: mail.notes || null,
+      tracking_code: mail.trackingCode || null,
+      photo_url: mail.photoUrl || null,
       status: mail.status,
       delivered_at: mail.deliveredAt,
       withdrawn_by: mail.withdrawnBy,

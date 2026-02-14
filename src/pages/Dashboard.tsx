@@ -1,11 +1,21 @@
-import { useEffect, useState, useMemo } from 'react';
-import { Users, Mail, UserCheck, Clock, Activity } from 'lucide-react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { Users, Mail, UserCheck, Clock, Activity, Radio } from 'lucide-react';
 import { StatsCard } from '@/components/StatsCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabaseStorage } from '@/lib/supabase-storage';
+import { supabase } from '@/integrations/supabase/client';
 import { DashboardStats, AccessEntry, Mail as MailType, RealtimeEvent, Resident } from '@/types';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+
+interface ControlidLog {
+  id: string;
+  device_id: string;
+  event_type: string;
+  payload: any;
+  processed: boolean;
+  received_at: string;
+}
 
 export const Dashboard = () => {
   const [stats, setStats] = useState<DashboardStats>({
@@ -18,13 +28,38 @@ export const Dashboard = () => {
   const [recentEntries, setRecentEntries] = useState<AccessEntry[]>([]);
   const [allEntries, setAllEntries] = useState<AccessEntry[]>([]);
   const [realtimeEvents, setRealtimeEvents] = useState<RealtimeEvent[]>([]);
+  const [controlidLogs, setControlidLogs] = useState<ControlidLog[]>([]);
   const [residents, setResidents] = useState<Resident[]>([]);
+
+  const loadControlidLogs = useCallback(async () => {
+    const { data } = await supabase
+      .from('controlid_logs')
+      .select('*')
+      .order('received_at', { ascending: false })
+      .limit(50);
+    if (data) setControlidLogs(data as ControlidLog[]);
+  }, []);
 
   useEffect(() => {
     loadStats();
+    loadControlidLogs();
     const interval = setInterval(loadStats, 5000);
-    return () => clearInterval(interval);
-  }, []);
+    const channel = supabase
+      .channel('controlid-realtime')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'controlid_logs',
+      }, (payload) => {
+        setControlidLogs(prev => [payload.new as ControlidLog, ...prev].slice(0, 50));
+      })
+      .subscribe();
+
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
+  }, [loadControlidLogs]);
 
   const loadStats = async () => {
     const [residentsData, mailsData, entriesData, eventsData] = await Promise.all([
@@ -224,63 +259,59 @@ export const Dashboard = () => {
         <Card className="lg:col-span-1 border-2 border-primary/20 shadow-lg">
           <CardHeader className="pb-3 bg-gradient-to-br from-primary/5 to-primary/10">
             <CardTitle className="flex items-center space-x-2 text-base">
-              <Activity className="h-5 w-5 text-primary animate-pulse" />
-              <span className="text-primary">Eventos em Tempo Real</span>
+              <Radio className="h-5 w-5 text-primary animate-pulse" />
+              <span className="text-primary">Acessos</span>
               <Badge variant="default" className="ml-auto text-xs animate-pulse">
-                Live 5s
+                Live
               </Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-4">
             <div className="space-y-2 max-h-[320px] overflow-y-auto">
-              {realtimeEvents.length === 0 ? (
+              {controlidLogs.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-8">
-                  Nenhum evento registrado
+                  Aguardando dados dos dispositivos...
                 </p>
               ) : (
-                realtimeEvents.map((event) => (
+                controlidLogs.map((log) => (
                   <div
-                    key={event.id}
-                    className={`flex items-start gap-2.5 p-3 rounded-lg border-l-[3px] shadow-sm hover:shadow transition-all ${
-                      event.priority === 'high'
-                        ? 'bg-destructive/5 border-destructive hover:bg-destructive/10'
-                        : event.priority === 'medium'
-                        ? 'bg-warning/5 border-warning hover:bg-warning/10'
-                        : 'bg-muted/50 border-muted-foreground/40 hover:bg-muted'
-                    }`}
+                    key={log.id}
+                    className="flex items-start gap-2.5 p-3 rounded-lg border-l-[3px] shadow-sm hover:shadow transition-all bg-muted/50 border-primary/40 hover:bg-muted"
                   >
                     <div className="flex-shrink-0 mt-0.5 text-base">
-                      {event.type === 'entry' && '🚪'}
-                      {event.type === 'exit' && '👋'}
-                      {event.type === 'mail' && '📬'}
-                      {event.type === 'alert' && '⚠️'}
-                      {event.type === 'device' && '🔧'}
+                      {log.event_type === 'dao' && '🚪'}
+                      {log.event_type === 'device_is_alive' && '💚'}
+                      {log.event_type === 'access_photo' && '📸'}
+                      {log.event_type === 'door' && '🔓'}
+                      {log.event_type === 'catra_event' && '🔄'}
+                      {log.event_type === 'operation_mode' && '⚙️'}
+                      {log.event_type === 'unknown' && '❓'}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-foreground leading-tight">
-                        {event.description}
+                        {log.event_type === 'dao' ? 'Acesso registrado' :
+                         log.event_type === 'device_is_alive' ? 'Dispositivo online' :
+                         log.event_type === 'access_photo' ? 'Foto de acesso' :
+                         log.event_type === 'door' ? 'Evento de porta' :
+                         log.event_type === 'catra_event' ? 'Evento de catraca' :
+                         log.event_type === 'operation_mode' ? 'Modo de operação' :
+                         'Evento desconhecido'}
                       </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {new Date(event.timestamp).toLocaleString('pt-BR', { 
-                          day: '2-digit', 
-                          month: '2-digit', 
-                          hour: '2-digit', 
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Dispositivo: {log.device_id}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(log.received_at).toLocaleString('pt-BR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          hour: '2-digit',
                           minute: '2-digit',
                           second: '2-digit'
                         })}
                       </p>
                     </div>
-                    <Badge
-                      variant={
-                        event.priority === 'high'
-                          ? 'destructive'
-                          : event.priority === 'medium'
-                          ? 'default'
-                          : 'secondary'
-                      }
-                      className="flex-shrink-0 text-xs font-bold"
-                    >
-                      {event.priority === 'high' ? '⚠ Alta' : event.priority === 'medium' ? '▶ Média' : '• Baixa'}
+                    <Badge variant="secondary" className="flex-shrink-0 text-xs">
+                      {log.event_type}
                     </Badge>
                   </div>
                 ))

@@ -270,15 +270,43 @@ async function processAccessLogs(supabaseClient: any, objectChanges: any[], devi
 async function updateDeviceStatus(supabaseClient: any, deviceId: string) {
   console.log('Updating device status - device is alive:', deviceId);
   
-  // Atualizar last_sync do dispositivo
-  const { error } = await supabaseClient
-    .from('devices')
-    .update({ last_sync: new Date().toISOString(), status: 'online' })
-    .eq('serial_number', deviceId);
+  const now = new Date().toISOString();
 
-  if (error && error.code !== 'PGRST116') { // Ignore not found error
-    console.error('Error updating device status:', error);
+  // Try matching by serial_number first, then by name
+  const { data: deviceBySerial } = await supabaseClient
+    .from('devices')
+    .select('id')
+    .eq('serial_number', deviceId)
+    .maybeSingle();
+
+  if (deviceBySerial) {
+    await supabaseClient
+      .from('devices')
+      .update({ last_sync: now, status: 'online' })
+      .eq('id', deviceBySerial.id);
+  } else {
+    // Fallback: try matching by name (case-insensitive partial match)
+    const { data: deviceByName } = await supabaseClient
+      .from('devices')
+      .select('id')
+      .ilike('name', `%${deviceId}%`)
+      .maybeSingle();
+
+    if (deviceByName) {
+      await supabaseClient
+        .from('devices')
+        .update({ last_sync: now, status: 'online' })
+        .eq('id', deviceByName.id);
+    } else {
+      console.log('No matching device found for:', deviceId);
+    }
   }
+
+  // Also update controlid_config if exists
+  await supabaseClient
+    .from('controlid_config')
+    .update({ last_sync: now, is_active: true })
+    .eq('device_id', deviceId);
 }
 
 async function processAccessPhoto(supabaseClient: any, payload: any, deviceId: string) {

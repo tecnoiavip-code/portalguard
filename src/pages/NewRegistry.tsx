@@ -272,6 +272,28 @@ export const NewRegistry = () => {
         };
     
     await saveEntry(entryData);
+    
+    // Notify resident about visitor arrival (only for new entries)
+    if (!editingId && resident) {
+      try {
+        const { data: resData } = await supabase
+          .from('residents')
+          .select('auth_user_id')
+          .eq('id', formData.residentId)
+          .maybeSingle();
+        if (resData?.auth_user_id) {
+          await supabase.from('notifications').insert({
+            user_id: resData.auth_user_id,
+            title: '🚪 Visita registrada',
+            body: `${formData.visitorName} chegou ao seu endereço`,
+            type: 'entry',
+          });
+        }
+      } catch (err) {
+        console.error('Error notifying resident:', err);
+      }
+    }
+    
     resetForm();
   };
   const handleEdit = (entry: AccessEntry) => {

@@ -48,9 +48,17 @@ export const Sidebar = ({ activeSection, onSectionChange, isOpen }: SidebarProps
         .select('*', { count: 'exact', head: true })
         .eq('status', 'pending');
 
+      // Unread staff notifications
+      const { count: notifCount } = await supabase
+        .from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('read', false);
+
       setBadges({
         chat: chatCount || 0,
         auth: authCount || 0,
+        notif: notifCount || 0,
       });
     };
 
@@ -61,6 +69,7 @@ export const Sidebar = ({ activeSection, onSectionChange, isOpen }: SidebarProps
       .channel('staff-badges')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, () => loadBadges())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'visitor_authorizations' }, () => loadBadges())
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => loadBadges())
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };

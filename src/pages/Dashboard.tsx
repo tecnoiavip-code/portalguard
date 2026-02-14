@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Users, Mail, UserCheck, Clock, Activity } from 'lucide-react';
 import { StatsCard } from '@/components/StatsCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabaseStorage } from '@/lib/supabase-storage';
 import { DashboardStats, AccessEntry, Mail as MailType, RealtimeEvent, Resident } from '@/types';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 export const Dashboard = () => {
   const [stats, setStats] = useState<DashboardStats>({
@@ -15,7 +16,7 @@ export const Dashboard = () => {
   });
   
   const [recentEntries, setRecentEntries] = useState<AccessEntry[]>([]);
-  const [recentMails, setRecentMails] = useState<MailType[]>([]);
+  const [allEntries, setAllEntries] = useState<AccessEntry[]>([]);
   const [realtimeEvents, setRealtimeEvents] = useState<RealtimeEvent[]>([]);
   const [residents, setResidents] = useState<Resident[]>([]);
 
@@ -50,9 +51,32 @@ export const Dashboard = () => {
     });
 
     setRecentEntries(entriesData.slice(0, 5));
-    setRecentMails(mailsData.slice(0, 5));
+    setAllEntries(entriesData);
     setRealtimeEvents(eventsData.slice(0, 5));
   };
+
+  const chartData = useMemo(() => {
+    const now = new Date();
+    const hours: { hour: string; entradas: number; saidas: number }[] = [];
+    for (let i = 23; i >= 0; i--) {
+      const h = new Date(now);
+      h.setHours(now.getHours() - i, 0, 0, 0);
+      const hEnd = new Date(h);
+      hEnd.setHours(h.getHours() + 1);
+      const label = h.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const entradas = allEntries.filter(e => {
+        const t = new Date(e.entryTime);
+        return t >= h && t < hEnd;
+      }).length;
+      const saidas = allEntries.filter(e => {
+        if (!e.exitTime) return false;
+        const t = new Date(e.exitTime);
+        return t >= h && t < hEnd;
+      }).length;
+      hours.push({ hour: label, entradas, saidas });
+    }
+    return hours;
+  }, [allEntries]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -135,41 +159,65 @@ export const Dashboard = () => {
         <Card className="lg:col-span-1">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center space-x-2 text-base">
-              <Mail className="h-4 w-4 text-primary" />
-              <span>Correspondências</span>
+              <Activity className="h-4 w-4 text-primary" />
+              <span>Monitoramento de Acessos</span>
+              <Badge variant="default" className="ml-auto text-xs animate-pulse">
+                Live
+              </Badge>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-1.5 max-h-[320px] overflow-y-auto">
-              {recentMails.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  Nenhuma correspondência registrada
-                </p>
-              ) : (
-                recentMails.map((mail) => {
-                  const resident = residents.find((r) => r.id === mail.residentId);
-                  return (
-                    <div
-                      key={mail.id}
-                      className="flex items-center justify-between p-2 bg-muted/50 rounded-md hover:bg-muted transition-colors"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-sm truncate">{resident?.name || 'Desconhecido'}</p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {mail.packageType} • {mail.sender}
-                        </p>
-                      </div>
-                      <Badge 
-                        variant={mail.status === 'delivered' ? "default" : "outline"}
-                        className="flex-shrink-0 ml-2 text-xs"
-                      >
-                        {mail.status === 'delivered' ? 'Entregue' : 'Pendente'}
-                      </Badge>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+            <ResponsiveContainer width="100%" height={280}>
+              <AreaChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorEntradas" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="colorSaidas" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(var(--destructive))" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="hsl(var(--destructive))" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis
+                  dataKey="hour"
+                  tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+                  interval="preserveStartEnd"
+                  tickCount={6}
+                />
+                <YAxis
+                  tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+                  allowDecimals={false}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'hsl(var(--card))',
+                    border: '1px solid hsl(var(--border))',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="entradas"
+                  name="Entradas"
+                  stroke="hsl(var(--primary))"
+                  fillOpacity={1}
+                  fill="url(#colorEntradas)"
+                  strokeWidth={2}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="saidas"
+                  name="Saídas"
+                  stroke="hsl(var(--destructive))"
+                  fillOpacity={1}
+                  fill="url(#colorSaidas)"
+                  strokeWidth={2}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
 

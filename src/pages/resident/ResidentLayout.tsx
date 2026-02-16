@@ -153,12 +153,29 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
 
   const markNotifsRead = async () => {
     if (!user) return;
+    setNotifCount(0);
     await supabase
       .from('notifications')
       .update({ read: true })
       .eq('user_id', user.id)
       .eq('read', false);
-    setNotifCount(0);
+  };
+
+  const markChatRead = async () => {
+    if (!user) return;
+    setUnreadCount(0);
+    const { data: res } = await supabase
+      .from('residents')
+      .select('id')
+      .eq('auth_user_id', user.id)
+      .maybeSingle();
+    if (!res) return;
+    await supabase
+      .from('chat_messages')
+      .update({ read: true })
+      .eq('resident_id', res.id)
+      .eq('sender_type', 'staff')
+      .eq('read', false);
   };
 
   const handleSignOut = async () => {
@@ -218,7 +235,10 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
           {tabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => onTabChange(tab.id)}
+              onClick={() => {
+                if (tab.id === 'chat') markChatRead();
+                onTabChange(tab.id);
+              }}
               className={cn(
                 'flex flex-col items-center py-2 px-3 text-xs transition-colors relative',
                 activeTab === tab.id ? 'text-primary' : 'text-muted-foreground'

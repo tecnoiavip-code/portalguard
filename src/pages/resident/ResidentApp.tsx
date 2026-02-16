@@ -12,9 +12,6 @@ const ResidentApp = () => {
   const [counts, setCounts] = useState<Counts>({ chat: 0, notif: 0, mails: 0, announcements: 0 });
 
   const handleTabChange = (tab: string) => {
-    if (tab === 'chat') setCounts(prev => ({ ...prev, chat: 0 }));
-    if (tab === 'mails') setCounts(prev => ({ ...prev, mails: 0 }));
-    if (tab === 'announcements') setCounts(prev => ({ ...prev, announcements: 0 }));
     setActiveTab(tab);
   };
 

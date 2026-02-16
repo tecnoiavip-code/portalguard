@@ -42,8 +42,57 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
   const prevCountsRef = useRef<Counts>({ chat: 0, notif: 0, mails: 0, announcements: 0 });
   const residentIdRef = useRef<string | null>(null);
   const isFirstLoad = useRef(true);
+  const suppressedKeysRef = useRef<Set<keyof Counts>>(new Set());
 
   const totalBadge = counts.chat + counts.notif + counts.mails + counts.announcements;
+
+  // Suppress counts and mark as read when navigating to a tab
+  useEffect(() => {
+    if (!user) return;
+    const tabToCountKey: Record<string, keyof Counts> = {
+      chat: 'chat',
+      mails: 'mails',
+      announcements: 'announcements',
+    };
+    const countKey = tabToCountKey[activeTab];
+    if (!countKey) return;
+
+    suppressedKeysRef.current.add(countKey);
+    setCounts(prev => ({ ...prev, [countKey]: 0 }));
+
+    // Mark as read in DB
+    const markRead = async () => {
+      const rid = residentIdRef.current;
+      if (countKey === 'chat' && rid) {
+        await supabase
+          .from('chat_messages')
+          .update({ read: true })
+          .eq('resident_id', rid)
+          .eq('sender_type', 'staff')
+          .eq('read', false);
+      }
+      if (countKey === 'announcements') {
+        const [{ data: allAnns }, { data: reads }] = await Promise.all([
+          supabase.from('announcements').select('id'),
+          supabase.from('announcement_reads').select('announcement_id').eq('user_id', user.id),
+        ]);
+        const readSet = new Set((reads || []).map((r: any) => r.announcement_id));
+        const unread = (allAnns || []).filter((a: any) => !readSet.has(a.id));
+        if (unread.length > 0) {
+          await supabase.from('announcement_reads').insert(
+            unread.map((a: any) => ({ announcement_id: a.id, user_id: user.id }))
+          );
+        }
+      }
+      // mails: count is status-based (pending), viewing doesn't change status - just suppress locally
+    };
+    markRead();
+
+    return () => {
+      // When leaving the tab, remove suppression so polling resumes normally
+      suppressedKeysRef.current.delete(countKey);
+    };
+  }, [activeTab, user]);
 
   useEffect(() => {
     const handler = () => {
@@ -163,7 +212,18 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
 
       isFirstLoad.current = false;
       prevCountsRef.current = newCounts;
-      setCounts(newCounts);
+
+      // Respect suppressed keys: if a count dropped to 0 in DB, clear suppression; otherwise keep it suppressed
+      const suppressed = suppressedKeysRef.current;
+      const finalCounts = { ...newCounts };
+      for (const key of suppressed) {
+        if (newCounts[key] === 0) {
+          suppressed.delete(key);
+        } else {
+          finalCounts[key] = 0;
+        }
+      }
+      setCounts(finalCounts);
     };
 
     loadCounts();

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Users, Clock } from 'lucide-react';
+import { Users, Clock, MapPin, ArrowRight } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { cn } from '@/lib/utils';
 
 interface VisitorEntry {
   id: string;
@@ -44,41 +44,103 @@ const ResidentVisitors = () => {
     load();
   }, [user]);
 
-  if (loading) return <div className="flex justify-center p-8"><Clock className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  if (loading) return (
+    <div className="flex justify-center py-12">
+      <Clock className="h-6 w-6 animate-spin text-primary" />
+    </div>
+  );
+
+  const activeVisitors = entries.filter(e => !e.exit_time);
+  const pastVisitors = entries.filter(e => e.exit_time);
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-bold">Visitas Registradas</h2>
+    <div className="space-y-5 animate-in fade-in duration-500">
+      <div>
+        <h2 className="text-xl font-bold text-foreground">Visitas</h2>
+        <p className="text-sm text-muted-foreground">Registro de visitantes do seu apartamento</p>
+      </div>
+
       {entries.length === 0 ? (
-        <Card><CardContent className="p-6 text-center text-muted-foreground">Nenhuma visita registrada</CardContent></Card>
+        <div className="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl p-8 text-center">
+          <Users className="h-12 w-12 mx-auto mb-3 text-muted-foreground/30" />
+          <p className="text-muted-foreground">Nenhuma visita registrada</p>
+        </div>
       ) : (
-        entries.map((e) => (
-          <Card key={e.id}>
-            <CardContent className="p-4 flex items-start gap-3">
-              <div className="p-2 rounded-lg bg-muted">
-                <Users className="h-5 w-5 text-accent" />
+        <>
+          {activeVisitors.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-sm font-semibold text-foreground">No local agora</span>
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-medium truncate">{e.visitor_name}</p>
-                  <Badge variant={e.exit_time ? 'secondary' : 'default'}>
-                    {e.exit_time ? 'Saiu' : 'No local'}
-                  </Badge>
-                </div>
-                {e.company && <p className="text-sm text-muted-foreground">{e.company}</p>}
-                {e.purpose && <p className="text-sm text-muted-foreground">{e.purpose}</p>}
-                {e.entry_time && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Entrada: {format(new Date(e.entry_time), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                  </p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        ))
+              {activeVisitors.map((e) => (
+                <VisitorCard key={e.id} entry={e} active />
+              ))}
+            </div>
+          )}
+
+          {pastVisitors.length > 0 && (
+            <div className="space-y-3">
+              {activeVisitors.length > 0 && (
+                <span className="text-sm font-semibold text-muted-foreground">Anteriores</span>
+              )}
+              {pastVisitors.map((e) => (
+                <VisitorCard key={e.id} entry={e} />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
 };
+
+const VisitorCard = ({ entry: e, active }: { entry: VisitorEntry; active?: boolean }) => (
+  <div className={cn(
+    "bg-card/80 backdrop-blur-sm border rounded-2xl p-4 transition-all",
+    active ? "border-emerald-500/30 shadow-[0_0_15px_-5px] shadow-emerald-500/20" : "border-border/50"
+  )}>
+    <div className="flex items-start gap-3">
+      <div className={cn(
+        "p-2.5 rounded-xl flex-shrink-0",
+        active ? "bg-emerald-500/10" : "bg-muted/80"
+      )}>
+        <Users className={cn("h-5 w-5", active ? "text-emerald-500" : "text-muted-foreground")} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-2">
+          <p className="font-semibold text-foreground truncate">{e.visitor_name}</p>
+          <Badge
+            variant={active ? 'default' : 'secondary'}
+            className={cn(
+              "text-xs shrink-0",
+              active && "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/15"
+            )}
+          >
+            {active ? 'No local' : 'Saiu'}
+          </Badge>
+        </div>
+        {e.company && (
+          <p className="text-sm text-muted-foreground mt-0.5">{e.company}</p>
+        )}
+        {e.purpose && (
+          <p className="text-sm text-muted-foreground">{e.purpose}</p>
+        )}
+        {e.entry_time && (
+          <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
+            <ArrowRight className="h-3 w-3" />
+            <span>Entrada: {format(new Date(e.entry_time), "dd/MM 'às' HH:mm", { locale: ptBR })}</span>
+            {e.exit_time && (
+              <>
+                <span className="mx-1">•</span>
+                <span>Saída: {format(new Date(e.exit_time), "HH:mm", { locale: ptBR })}</span>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+);
 
 export default ResidentVisitors;

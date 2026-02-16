@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import {
   Dialog,
@@ -15,6 +14,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { cn } from '@/lib/utils';
 
 interface Announcement {
   id: string;
@@ -72,7 +72,6 @@ const ResidentAnnouncements = () => {
       .eq('announcement_id', ann.id);
     setAttachments((att as any) || []);
 
-    // Mark as read
     if (user && !readIds.has(ann.id)) {
       const { error } = await supabase
         .from('announcement_reads')
@@ -83,12 +82,10 @@ const ResidentAnnouncements = () => {
     }
   };
 
-  const priorityBadge = (p: string) => {
-    switch (p) {
-      case 'urgent': return <Badge variant="destructive">Urgente</Badge>;
-      case 'important': return <Badge variant="secondary">Importante</Badge>;
-      default: return <Badge variant="outline">Normal</Badge>;
-    }
+  const priorityConfig: Record<string, { label: string; className: string }> = {
+    urgent: { label: 'Urgente', className: 'bg-destructive/15 text-destructive border-destructive/30 hover:bg-destructive/15' },
+    important: { label: 'Importante', className: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/15' },
+    normal: { label: 'Normal', className: 'bg-muted text-muted-foreground border-border hover:bg-muted' },
   };
 
   const formatSize = (bytes: number | null) => {
@@ -105,60 +102,65 @@ const ResidentAnnouncements = () => {
   }
 
   return (
-    <div className="space-y-4 animate-in fade-in duration-500">
+    <div className="space-y-5 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-foreground">Comunicados</h2>
           <p className="text-sm text-muted-foreground">Avisos e comunicados do condomínio</p>
         </div>
         {unreadCount > 0 && (
-          <Badge variant="destructive">{unreadCount} não lido{unreadCount > 1 ? 's' : ''}</Badge>
+          <Badge variant="destructive" className="rounded-full">{unreadCount} novo{unreadCount > 1 ? 's' : ''}</Badge>
         )}
       </div>
 
       {announcements.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            <Megaphone className="h-12 w-12 mx-auto mb-3 opacity-30" />
-            <p>Nenhum comunicado ainda</p>
-          </CardContent>
-        </Card>
+        <div className="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl p-8 text-center">
+          <Megaphone className="h-12 w-12 mx-auto mb-3 text-muted-foreground/30" />
+          <p className="text-muted-foreground">Nenhum comunicado ainda</p>
+        </div>
       ) : (
         announcements.map((ann) => {
           const isRead = readIds.has(ann.id);
+          const pCfg = priorityConfig[ann.priority] || priorityConfig.normal;
           return (
-            <Card
+            <div
               key={ann.id}
-              className={`cursor-pointer transition-all hover:shadow-md ${!isRead ? 'border-primary/50 bg-primary/5' : ''}`}
+              className={cn(
+                "bg-card/80 backdrop-blur-sm border rounded-2xl p-4 cursor-pointer transition-all active:scale-[0.98]",
+                !isRead ? "border-primary/30 shadow-[0_0_15px_-5px] shadow-primary/20" : "border-border/50"
+              )}
               onClick={() => openDetail(ann)}
             >
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      {priorityBadge(ann.priority)}
-                      {!isRead && <span className="w-2 h-2 rounded-full bg-primary" />}
-                    </div>
-                    <h3 className="font-semibold">{ann.title}</h3>
-                    <p className="text-sm text-muted-foreground line-clamp-2 mt-1">{ann.body}</p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      {format(new Date(ann.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                    </p>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <Badge variant="outline" className={cn("text-xs", pCfg.className)}>
+                      {pCfg.label}
+                    </Badge>
+                    {!isRead && <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />}
                   </div>
-                  {isRead && <CheckCircle className="h-5 w-5 text-primary shrink-0 mt-1" />}
+                  <h3 className="font-semibold text-foreground">{ann.title}</h3>
+                  <p className="text-sm text-muted-foreground line-clamp-2 mt-1">{ann.body}</p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {format(new Date(ann.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                  </p>
                 </div>
-              </CardContent>
-            </Card>
+                {isRead && <CheckCircle className="h-5 w-5 text-primary shrink-0 mt-1" />}
+              </div>
+            </div>
           );
         })
       )}
 
-      {/* Detail dialog */}
       <Dialog open={detailDialog.open} onOpenChange={(open) => setDetailDialog({ open, announcement: open ? detailDialog.announcement : null })}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {detailDialog.announcement && priorityBadge(detailDialog.announcement.priority)}
+            <DialogTitle className="flex items-center gap-2 flex-wrap">
+              {detailDialog.announcement && (
+                <Badge variant="outline" className={cn("text-xs", (priorityConfig[detailDialog.announcement.priority] || priorityConfig.normal).className)}>
+                  {(priorityConfig[detailDialog.announcement.priority] || priorityConfig.normal).label}
+                </Badge>
+              )}
               {detailDialog.announcement?.title}
             </DialogTitle>
           </DialogHeader>
@@ -169,7 +171,7 @@ const ResidentAnnouncements = () => {
                 {format(new Date(detailDialog.announcement.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
               </p>
 
-              <div className="bg-muted/50 rounded-lg p-4 whitespace-pre-wrap text-sm">
+              <div className="bg-muted/50 rounded-xl p-4 whitespace-pre-wrap text-sm">
                 {detailDialog.announcement.body}
               </div>
 

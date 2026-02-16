@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Mail, Package, Clock } from 'lucide-react';
+import { Mail, Package, Clock, Hash } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { cn } from '@/lib/utils';
 
 interface MailItem {
   id: string;
@@ -46,48 +46,108 @@ const ResidentMails = () => {
     load();
   }, [user]);
 
-  if (loading) return <div className="flex justify-center p-8"><Clock className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  if (loading) return (
+    <div className="flex justify-center py-12">
+      <Clock className="h-6 w-6 animate-spin text-primary" />
+    </div>
+  );
+
+  const pending = mails.filter(m => m.status === 'pending');
+  const delivered = mails.filter(m => m.status !== 'pending');
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-bold">Correspondências</h2>
+    <div className="space-y-5 animate-in fade-in duration-500">
+      <div>
+        <h2 className="text-xl font-bold text-foreground">Correspondências</h2>
+        <p className="text-sm text-muted-foreground">Encomendas e cartas recebidas</p>
+      </div>
+
       {mails.length === 0 ? (
-        <Card><CardContent className="p-6 text-center text-muted-foreground">Nenhuma correspondência registrada</CardContent></Card>
+        <div className="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl p-8 text-center">
+          <Mail className="h-12 w-12 mx-auto mb-3 text-muted-foreground/30" />
+          <p className="text-muted-foreground">Nenhuma correspondência registrada</p>
+        </div>
       ) : (
-        mails.map((m) => (
-          <Card key={m.id}>
-            <CardContent className="p-4 flex items-start gap-3">
-              {m.photo_url ? (
-                <img src={m.photo_url} alt="Foto" className="w-14 h-14 rounded-lg object-cover border flex-shrink-0" />
-              ) : (
-                <div className="p-2 rounded-lg bg-muted flex-shrink-0">
-                  {m.package_type?.includes('Pacote') ? <Package className="h-5 w-5 text-accent" /> : <Mail className="h-5 w-5 text-accent" />}
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-medium truncate">{m.sender}</p>
-                  <Badge variant={m.status === 'pending' ? 'destructive' : 'default'}>
-                    {m.status === 'pending' ? 'Pendente' : 'Entregue'}
-                  </Badge>
-                </div>
-                <p className="text-sm text-muted-foreground">{m.package_type || 'Carta'}</p>
-                {m.tracking_code && (
-                  <p className="text-xs font-mono bg-muted px-2 py-0.5 rounded mt-1 inline-block">
-                    🔍 {m.tracking_code}
-                  </p>
-                )}
-                {m.received_at && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Recebido: {format(new Date(m.received_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                  </p>
-                )}
-                {m.notes && <p className="text-xs text-muted-foreground mt-1">{m.notes}</p>}
+        <>
+          {pending.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                <span className="text-sm font-semibold text-foreground">Aguardando retirada</span>
+                <Badge variant="secondary" className="text-xs">{pending.length}</Badge>
               </div>
-            </CardContent>
-          </Card>
-        ))
+              {pending.map((m) => (
+                <MailCard key={m.id} mail={m} isPending />
+              ))}
+            </div>
+          )}
+
+          {delivered.length > 0 && (
+            <div className="space-y-3">
+              {pending.length > 0 && (
+                <span className="text-sm font-semibold text-muted-foreground">Entregues</span>
+              )}
+              {delivered.map((m) => (
+                <MailCard key={m.id} mail={m} />
+              ))}
+            </div>
+          )}
+        </>
       )}
+    </div>
+  );
+};
+
+const MailCard = ({ mail: m, isPending }: { mail: MailItem; isPending?: boolean }) => {
+  const isPackage = m.package_type?.includes('Pacote');
+  
+  return (
+    <div className={cn(
+      "bg-card/80 backdrop-blur-sm border rounded-2xl p-4 transition-all",
+      isPending ? "border-amber-500/30 shadow-[0_0_15px_-5px] shadow-amber-500/20" : "border-border/50"
+    )}>
+      <div className="flex items-start gap-3">
+        {m.photo_url ? (
+          <img src={m.photo_url} alt="Foto" className="w-14 h-14 rounded-xl object-cover border border-border/50 flex-shrink-0" />
+        ) : (
+          <div className={cn(
+            "p-2.5 rounded-xl flex-shrink-0",
+            isPending ? "bg-amber-500/10" : "bg-muted/80"
+          )}>
+            {isPackage
+              ? <Package className={cn("h-5 w-5", isPending ? "text-amber-500" : "text-muted-foreground")} />
+              : <Mail className={cn("h-5 w-5", isPending ? "text-amber-500" : "text-muted-foreground")} />
+            }
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-semibold text-foreground truncate">{m.sender}</p>
+            <Badge
+              variant={isPending ? 'destructive' : 'secondary'}
+              className={cn(
+                "text-xs shrink-0",
+                isPending && "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/15"
+              )}
+            >
+              {isPending ? 'Pendente' : 'Entregue'}
+            </Badge>
+          </div>
+          <p className="text-sm text-muted-foreground">{m.package_type || 'Carta'}</p>
+          {m.tracking_code && (
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <Hash className="h-3 w-3 text-muted-foreground" />
+              <span className="text-xs font-mono bg-muted/80 px-2 py-0.5 rounded-lg">{m.tracking_code}</span>
+            </div>
+          )}
+          {m.received_at && (
+            <p className="text-xs text-muted-foreground mt-2">
+              Recebido: {format(new Date(m.received_at), "dd/MM 'às' HH:mm", { locale: ptBR })}
+            </p>
+          )}
+          {m.notes && <p className="text-xs text-muted-foreground mt-1">{m.notes}</p>}
+        </div>
+      </div>
     </div>
   );
 };

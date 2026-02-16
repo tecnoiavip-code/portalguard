@@ -44,7 +44,6 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
       window.removeEventListener('click', handler);
     };
     window.addEventListener('click', handler, { once: true });
-    // Also try immediately
     requestNotificationPermission().then(() => {
       if (user) subscribeToPush(user.id);
     });
@@ -79,7 +78,6 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
     let pollTimeout: ReturnType<typeof setTimeout>;
 
     const loadCounts = async () => {
-      // Get resident ID
       if (!residentIdRef.current) {
         const { data: res } = await (supabase
           .from('residents')
@@ -126,7 +124,6 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
 
       const prev = prevCountsRef.current;
 
-      // Only notify on increases (not on first load to avoid spam)
       if (!isFirstLoad.current) {
         const total = newCounts.chat + newCounts.notif + newCounts.mails + newCounts.announcements;
 
@@ -163,12 +160,10 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
 
     loadCounts();
 
-    // Realtime: immediate refresh + dedicated notifications
     const channel = supabase
       .channel('resident-notifs')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (payload) => {
         const notif = payload.new as any;
-        // Immediate UI update
         setCounts(prev => {
           const next = { ...prev, notif: prev.notif + 1 };
           const total = next.chat + next.notif + next.mails + next.announcements;
@@ -212,7 +207,6 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
       })
       .subscribe();
 
-    // Polling fallback every 8s
     const poll = () => {
       if (!isActive) return;
       loadCounts();
@@ -228,7 +222,14 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
   }, [user, isLoading, navigate]);
 
   if (isLoading) {
-    return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <span className="text-sm text-muted-foreground">Carregando...</span>
+        </div>
+      </div>
+    );
   }
 
   const markNotifsRead = async () => {
@@ -268,63 +269,106 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
     { id: 'chat', label: 'Chat', icon: MessageSquare },
   ];
 
+  const tabBadge = (id: string) => {
+    if (id === 'chat' && counts.chat > 0) return counts.chat;
+    if (id === 'mails' && counts.mails > 0) return counts.mails;
+    if (id === 'announcements' && counts.announcements > 0) return counts.announcements;
+    return 0;
+  };
+
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <header className="bg-primary text-primary-foreground sticky top-0 z-30 px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 relative">
-            <Home className="h-5 w-5" />
-            <span className="font-bold">Portal do Morador</span>
+    <div className="min-h-screen bg-muted/30 flex flex-col">
+      {/* Modern Header */}
+      <header className="sticky top-0 z-30 backdrop-blur-xl bg-background/80 border-b border-border/50">
+        <div className="px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-xl bg-primary flex items-center justify-center shadow-lg" style={{ boxShadow: 'var(--shadow-elegant)' }}>
+              <Home className="h-5 w-5 text-primary-foreground" />
+            </div>
+            <div>
+              <h1 className="text-base font-bold tracking-tight text-foreground leading-tight">Portal do Morador</h1>
+              <p className="text-[11px] text-muted-foreground leading-tight">PortalGuard Pro</p>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <ThemeToggle />
-            <div className="relative cursor-pointer" onClick={() => { markNotifsRead(); onTabChange('home'); }}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="relative h-9 w-9 rounded-xl"
+              onClick={() => { markNotifsRead(); onTabChange('home'); }}
+            >
               <Bell className="h-5 w-5" />
               {totalBadge > 0 && (
-                <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 font-bold animate-pulse">
+                <span className="absolute -top-0.5 -right-0.5 bg-destructive text-destructive-foreground text-[10px] rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 font-bold shadow-lg animate-pulse">
                   {totalBadge > 99 ? '99+' : totalBadge}
                 </span>
               )}
-            </div>
-            <Button variant="ghost" size="icon" className="text-primary-foreground hover:bg-primary-foreground/10" onClick={handleSignOut}>
-              <LogOut className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-xl text-muted-foreground hover:text-destructive"
+              onClick={handleSignOut}
+            >
+              <LogOut className="h-4 w-4" />
             </Button>
           </div>
         </div>
       </header>
 
       {/* Content */}
-      <main className="flex-1 p-4 pb-20 overflow-y-auto">
+      <main className="flex-1 px-4 py-5 pb-24 overflow-y-auto">
         {children}
       </main>
 
-      {/* Bottom Nav */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border z-30">
-        <div className="flex justify-around">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => {
-                if (tab.id === 'chat') markChatRead();
-                if (tab.id === 'mails') setCounts(prev => ({ ...prev, mails: 0 }));
-                if (tab.id === 'announcements') setCounts(prev => ({ ...prev, announcements: 0 }));
-                if (tab.id === 'home') markNotifsRead();
-                onTabChange(tab.id);
-              }}
-              className={cn(
-                'flex flex-col items-center py-2 px-3 text-xs transition-colors relative',
-                activeTab === tab.id ? 'text-primary' : 'text-muted-foreground'
-              )}
-            >
-              <div className="relative">
-                <tab.icon className="h-5 w-5" />
-              </div>
-              <span className="mt-1">{tab.label}</span>
-            </button>
-          ))}
-        </div>
-      </nav>
+      {/* Modern Floating Bottom Nav */}
+      <div className="fixed bottom-0 left-0 right-0 z-30 px-3 pb-3 pt-1 pointer-events-none">
+        <nav className="pointer-events-auto bg-card/95 backdrop-blur-xl border border-border/50 rounded-2xl shadow-xl mx-auto max-w-md"
+          style={{ boxShadow: '0 -4px 30px -4px hsl(var(--foreground) / 0.1)' }}
+        >
+          <div className="flex justify-around items-center py-1.5">
+            {tabs.map((tab) => {
+              const isActive = activeTab === tab.id;
+              const badge = tabBadge(tab.id);
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    if (tab.id === 'chat') markChatRead();
+                    if (tab.id === 'mails') setCounts(prev => ({ ...prev, mails: 0 }));
+                    if (tab.id === 'announcements') setCounts(prev => ({ ...prev, announcements: 0 }));
+                    if (tab.id === 'home') markNotifsRead();
+                    onTabChange(tab.id);
+                  }}
+                  className={cn(
+                    'flex flex-col items-center py-1.5 px-2 rounded-xl transition-all duration-200 relative min-w-[48px]',
+                    isActive
+                      ? 'text-primary bg-primary/10 scale-105'
+                      : 'text-muted-foreground hover:text-foreground active:scale-95'
+                  )}
+                >
+                  <div className="relative">
+                    <tab.icon className={cn("h-5 w-5 transition-all", isActive && "stroke-[2.5px]")} />
+                    {badge > 0 && (
+                      <span className="absolute -top-1.5 -right-2 bg-destructive text-destructive-foreground text-[9px] rounded-full min-w-[15px] h-[15px] flex items-center justify-center px-0.5 font-bold">
+                        {badge > 9 ? '9+' : badge}
+                      </span>
+                    )}
+                  </div>
+                  <span className={cn(
+                    "text-[10px] mt-0.5 transition-all leading-tight",
+                    isActive ? "font-semibold" : "font-medium"
+                  )}>{tab.label}</span>
+                  {isActive && (
+                    <div className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-4 h-0.5 rounded-full bg-primary" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      </div>
 
       <PWAInstallPrompt />
     </div>

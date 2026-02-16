@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
-import { Home, Mail, Users, Shield, MessageSquare, LogOut, Bell, Megaphone } from 'lucide-react';
+import { Home, LogOut, Bell, ArrowLeft } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
@@ -16,26 +16,35 @@ interface ResidentLayoutProps {
   children: ReactNode;
   activeTab: string;
   onTabChange: (tab: string) => void;
+  counts: Counts;
+  setCounts: React.Dispatch<React.SetStateAction<Counts>>;
 }
 
-interface Counts {
+export interface Counts {
   chat: number;
   notif: number;
   mails: number;
   announcements: number;
 }
 
-const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProps) => {
+const tabTitles: Record<string, string> = {
+  home: 'Portal do Morador',
+  mails: 'Correspondências',
+  announcements: 'Comunicados',
+  visitors: 'Visitas',
+  authorizations: 'Autorizações',
+  chat: 'Chat com Portaria',
+};
+
+const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }: ResidentLayoutProps) => {
   const { user, isLoading } = useAuth();
   const navigate = useNavigate();
-  const [counts, setCounts] = useState<Counts>({ chat: 0, notif: 0, mails: 0, announcements: 0 });
   const prevCountsRef = useRef<Counts>({ chat: 0, notif: 0, mails: 0, announcements: 0 });
   const residentIdRef = useRef<string | null>(null);
   const isFirstLoad = useRef(true);
 
   const totalBadge = counts.chat + counts.notif + counts.mails + counts.announcements;
 
-  // Request notification permission and subscribe to push on first interaction
   useEffect(() => {
     const handler = () => {
       requestNotificationPermission().then(() => {
@@ -50,7 +59,6 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
     return () => window.removeEventListener('click', handler);
   }, [user]);
 
-  // Update title and PWA badge
   useEffect(() => {
     document.title = totalBadge > 0 ? `(${totalBadge}) Portal do Morador` : 'Portal do Morador';
     setAppBadge(totalBadge);
@@ -242,17 +250,6 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
       .eq('read', false);
   };
 
-  const markChatRead = async () => {
-    if (!user || !residentIdRef.current) return;
-    setCounts(prev => ({ ...prev, chat: 0 }));
-    await supabase
-      .from('chat_messages')
-      .update({ read: true })
-      .eq('resident_id', residentIdRef.current!)
-      .eq('sender_type', 'staff')
-      .eq('read', false);
-  };
-
   const handleSignOut = async () => {
     document.title = 'Portal do Morador';
     setAppBadge(0);
@@ -260,34 +257,33 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
     navigate('/morador/login');
   };
 
-  const tabs = [
-    { id: 'home', label: 'Início', icon: Home },
-    { id: 'mails', label: 'Correio', icon: Mail },
-    { id: 'announcements', label: 'Avisos', icon: Megaphone },
-    { id: 'visitors', label: 'Visitas', icon: Users },
-    { id: 'authorizations', label: 'Autorizar', icon: Shield },
-    { id: 'chat', label: 'Chat', icon: MessageSquare },
-  ];
-
-  const tabBadge = (id: string) => {
-    if (id === 'chat' && counts.chat > 0) return counts.chat;
-    if (id === 'mails' && counts.mails > 0) return counts.mails;
-    if (id === 'announcements' && counts.announcements > 0) return counts.announcements;
-    return 0;
-  };
+  const isHome = activeTab === 'home';
 
   return (
     <div className="min-h-screen bg-muted/30 flex flex-col">
-      {/* Modern Header */}
+      {/* Header */}
       <header className="sticky top-0 z-30 backdrop-blur-xl bg-background/80 border-b border-border/50">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-primary flex items-center justify-center shadow-lg" style={{ boxShadow: 'var(--shadow-elegant)' }}>
-              <Home className="h-5 w-5 text-primary-foreground" />
-            </div>
+            {!isHome ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-xl"
+                onClick={() => onTabChange('home')}
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+            ) : (
+              <div className="h-9 w-9 rounded-xl bg-primary flex items-center justify-center shadow-lg" style={{ boxShadow: 'var(--shadow-elegant)' }}>
+                <Home className="h-5 w-5 text-primary-foreground" />
+              </div>
+            )}
             <div>
-              <h1 className="text-base font-bold tracking-tight text-foreground leading-tight">Portal do Morador</h1>
-              <p className="text-[11px] text-muted-foreground leading-tight">PortalGuard Pro</p>
+              <h1 className="text-base font-bold tracking-tight text-foreground leading-tight">
+                {tabTitles[activeTab] || 'Portal do Morador'}
+              </h1>
+              {isHome && <p className="text-[11px] text-muted-foreground leading-tight">PortalGuard Pro</p>}
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -296,7 +292,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
               variant="ghost"
               size="icon"
               className="relative h-9 w-9 rounded-xl"
-              onClick={() => { markNotifsRead(); onTabChange('home'); }}
+              onClick={() => { markNotifsRead(); }}
             >
               <Bell className="h-5 w-5" />
               {totalBadge > 0 && (
@@ -318,57 +314,9 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
       </header>
 
       {/* Content */}
-      <main className="flex-1 px-4 py-5 pb-24 overflow-y-auto">
+      <main className="flex-1 px-4 py-5 overflow-y-auto">
         {children}
       </main>
-
-      {/* Modern Floating Bottom Nav */}
-      <div className="fixed bottom-0 left-0 right-0 z-30 px-3 pb-3 pt-1 pointer-events-none">
-        <nav className="pointer-events-auto bg-card/95 backdrop-blur-xl border border-border/50 rounded-2xl shadow-xl mx-auto max-w-md"
-          style={{ boxShadow: '0 -4px 30px -4px hsl(var(--foreground) / 0.1)' }}
-        >
-          <div className="flex justify-around items-center py-1.5">
-            {tabs.map((tab) => {
-              const isActive = activeTab === tab.id;
-              const badge = tabBadge(tab.id);
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    if (tab.id === 'chat') markChatRead();
-                    if (tab.id === 'mails') setCounts(prev => ({ ...prev, mails: 0 }));
-                    if (tab.id === 'announcements') setCounts(prev => ({ ...prev, announcements: 0 }));
-                    if (tab.id === 'home') markNotifsRead();
-                    onTabChange(tab.id);
-                  }}
-                  className={cn(
-                    'flex flex-col items-center py-1.5 px-2 rounded-xl transition-all duration-200 relative min-w-[48px]',
-                    isActive
-                      ? 'text-primary bg-primary/10 scale-105'
-                      : 'text-muted-foreground hover:text-foreground active:scale-95'
-                  )}
-                >
-                  <div className="relative">
-                    <tab.icon className={cn("h-5 w-5 transition-all", isActive && "stroke-[2.5px]")} />
-                    {badge > 0 && (
-                      <span className="absolute -top-1.5 -right-2 bg-destructive text-destructive-foreground text-[9px] rounded-full min-w-[15px] h-[15px] flex items-center justify-center px-0.5 font-bold">
-                        {badge > 9 ? '9+' : badge}
-                      </span>
-                    )}
-                  </div>
-                  <span className={cn(
-                    "text-[10px] mt-0.5 transition-all leading-tight",
-                    isActive ? "font-semibold" : "font-medium"
-                  )}>{tab.label}</span>
-                  {isActive && (
-                    <div className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-4 h-0.5 rounded-full bg-primary" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </nav>
-      </div>
 
       <PWAInstallPrompt />
     </div>

@@ -75,6 +75,22 @@ const ResidentAuthorizations = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!residentId) return;
+
+    // Check for duplicate pending authorization
+    const { data: existing } = await supabase
+      .from('visitor_authorizations')
+      .select('id')
+      .eq('resident_id', residentId)
+      .ilike('visitor_name', form.visitor_name.trim())
+      .eq('authorized_date', form.authorized_date)
+      .in('status', ['pending', 'approved'] as any)
+      .limit(1);
+    
+    if (existing && existing.length > 0) {
+      toast.error(`Já existe uma autorização ativa para ${form.visitor_name} nesta data.`);
+      return;
+    }
+
     const { error } = await supabase.from('visitor_authorizations').insert({
       resident_id: residentId,
       visitor_name: form.visitor_name,

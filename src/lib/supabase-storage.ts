@@ -30,9 +30,63 @@ export const supabaseStorage = {
     }));
   },
 
+  async checkResidentDuplicate(resident: Resident, excludeId?: string): Promise<string | null> {
+    // Check by CPF if provided
+    if (resident.cpf) {
+      const query = supabase
+        .from('residents')
+        .select('id, name, apartment')
+        .eq('cpf', resident.cpf)
+        .limit(1);
+      if (excludeId) query.neq('id', excludeId);
+      const { data } = await query;
+      if (data && data.length > 0) {
+        return `Já existe um morador com este CPF: ${data[0].name} (${data[0].apartment})`;
+      }
+    }
+
+    // Check by name + apartment (same person same unit)
+    const query2 = supabase
+      .from('residents')
+      .select('id, name, apartment')
+      .ilike('name', resident.name.trim())
+      .ilike('apartment', resident.apartment.trim())
+      .limit(1);
+    if (excludeId) query2.neq('id', excludeId);
+    const { data: data2 } = await query2;
+    if (data2 && data2.length > 0) {
+      return `Já existe um morador com este nome neste apartamento: ${data2[0].name} (${data2[0].apartment})`;
+    }
+
+    // Check by email if provided
+    if (resident.email) {
+      const query3 = supabase
+        .from('residents')
+        .select('id, name, apartment')
+        .ilike('email', resident.email.trim())
+        .limit(1);
+      if (excludeId) query3.neq('id', excludeId);
+      const { data: data3 } = await query3;
+      if (data3 && data3.length > 0) {
+        return `Já existe um morador com este e-mail: ${data3[0].name} (${data3[0].apartment})`;
+      }
+    }
+
+    return null;
+  },
+
   async saveResident(resident: Resident): Promise<boolean> {
     const isNew = !resident.id || resident.id.startsWith('res_');
-    
+    const excludeId = isNew ? undefined : resident.id;
+
+    // Check for duplicates
+    const duplicateMsg = await supabaseStorage.checkResidentDuplicate(resident, excludeId);
+    if (duplicateMsg) {
+      const { toast } = await import('sonner');
+      toast.error(duplicateMsg);
+      return false;
+    }
+
     const residentData = {
       name: resident.name,
       cpf: resident.cpf || null,
@@ -46,31 +100,23 @@ export const supabaseStorage = {
       vehicle_tag: resident.vehicleTag || null,
     };
 
-    console.log('[DEBUG] saveResident isNew:', isNew, 'id:', resident.id, 'data:', residentData);
-    
     if (isNew) {
-      const { error, data, status } = await supabase
+      const { error } = await supabase
         .from('residents')
         .insert(residentData)
         .select();
-      
-      console.log('[DEBUG] insert result - status:', status, 'data:', data, 'error:', error);
-      
       if (error) {
-        console.error('Error inserting resident:', error.message, error.code, error.details, error.hint);
+        console.error('Error inserting resident:', error.message);
         return false;
       }
     } else {
-      const { error, data, status } = await supabase
+      const { error } = await supabase
         .from('residents')
         .update(residentData)
         .eq('id', resident.id)
         .select();
-      
-      console.log('[DEBUG] update result - status:', status, 'data:', data, 'error:', error);
-      
       if (error) {
-        console.error('Error updating resident:', error.message, error.code, error.details, error.hint);
+        console.error('Error updating resident:', error.message);
         return false;
       }
     }
@@ -204,8 +250,37 @@ export const supabaseStorage = {
     }));
   },
 
+  async checkEntryDuplicate(entry: AccessEntry, excludeId?: string): Promise<string | null> {
+    // Check if same visitor (by document) is currently active (no exit) in the building
+    if (entry.visitorDocument) {
+      const query = supabase
+        .from('access_entries')
+        .select('id, visitor_name, apartment')
+        .eq('visitor_document', entry.visitorDocument)
+        .is('exit_time', null)
+        .limit(1);
+      if (excludeId) query.neq('id', excludeId);
+      const { data } = await query;
+      if (data && data.length > 0) {
+        return `Este visitante (${data[0].visitor_name}) já está com entrada ativa no ${data[0].apartment}. Registre a saída antes de uma nova entrada.`;
+      }
+    }
+    return null;
+  },
+
   async saveEntry(entry: AccessEntry): Promise<boolean> {
     const isNew = entry.id.startsWith('entry_');
+    const excludeId = isNew ? undefined : entry.id;
+
+    // Only check duplicates for new entries (not exits/updates)
+    if (isNew) {
+      const duplicateMsg = await supabaseStorage.checkEntryDuplicate(entry, excludeId);
+      if (duplicateMsg) {
+        const { toast } = await import('sonner');
+        toast.error(duplicateMsg);
+        return false;
+      }
+    }
     
     const entryData = {
       visitor_name: entry.visitorName,

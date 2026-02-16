@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { exportToCSV } from '@/lib/export-csv';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -26,7 +27,7 @@ import {
   PaginationPrevious,
 } from '@/components/ui/pagination';
 import { Badge } from '@/components/ui/badge';
-import { Search, Download, ScrollText, CalendarIcon } from 'lucide-react';
+import { Search, Download, ScrollText, CalendarIcon, FileSpreadsheet } from 'lucide-react';
 import { useMails } from '@/hooks/useMails';
 import { useResidents } from '@/hooks/useResidents';
 import { format } from 'date-fns';
@@ -122,6 +123,19 @@ export const MailLogs = () => {
     doc.save(`log-correspondencias-${format(new Date(), 'dd-MM-yyyy')}.pdf`);
   };
 
+  const exportLogsToCSV = () => {
+    const headers = ['Morador', 'Apto', 'Remetente', 'Tipo', 'Status', 'Recebido', 'Entregue', 'Retirado por'];
+    const rows = sorted.map((mail) => {
+      const resident = residents.find((r) => r.id === mail.residentId);
+      return [resident?.name || 'Desconhecido', resident?.apartment || '-', mail.sender, mail.packageType,
+        mail.status === 'delivered' ? 'Entregue' : 'Pendente',
+        format(new Date(mail.receivedAt), 'dd/MM/yyyy HH:mm', { locale: ptBR }),
+        mail.deliveredAt ? format(new Date(mail.deliveredAt), 'dd/MM/yyyy HH:mm', { locale: ptBR }) : '-',
+        mail.withdrawnBy || '-'];
+    });
+    exportToCSV(`log-correspondencias-${format(new Date(), 'dd-MM-yyyy')}`, headers, rows);
+  };
+
   const statusLabel = (status: string) => {
     if (status === 'delivered') {
       return <Badge variant="default" className="bg-primary hover:bg-primary/90">Entregue</Badge>;
@@ -149,7 +163,11 @@ export const MailLogs = () => {
               </Button>
               <Button variant="outline" size="sm" onClick={exportPDF}>
                 <Download className="h-4 w-4 mr-2" />
-                Exportar PDF
+                PDF
+              </Button>
+              <Button variant="outline" size="sm" onClick={exportLogsToCSV}>
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                CSV
               </Button>
             </div>
           </CardTitle>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { exportToCSV } from '@/lib/export-csv';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { ClipboardList, Users, AlertTriangle, Activity, Plus, Wrench, Download, Search, X } from 'lucide-react';
+import { ClipboardList, Users, AlertTriangle, Activity, Plus, Wrench, Download, Search, X, FileSpreadsheet } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
@@ -328,6 +329,18 @@ export const Reports = () => {
     toast.success('PDF gerado com sucesso');
   };
 
+  const exportShiftsToCSV = (selectedDate?: Date) => {
+    const filteredShifts = selectedDate ? shifts.filter(s => new Date(s.shift_start).toDateString() === selectedDate.toDateString()) : shifts;
+    const headers = ['Início', 'Fim', 'Equipe', 'Observações'];
+    const rows = filteredShifts.map(shift => [
+      format(new Date(shift.shift_start), 'dd/MM/yyyy HH:mm', { locale: ptBR }),
+      shift.shift_end ? format(new Date(shift.shift_end), 'dd/MM/yyyy HH:mm', { locale: ptBR }) : 'Em andamento',
+      shift.team_members.join(', '), shift.notes || '-',
+    ]);
+    exportToCSV(`plantoes-${selectedDate ? format(selectedDate, 'dd-MM-yyyy') : 'todos'}`, headers, rows);
+    toast.success('CSV gerado com sucesso');
+  };
+
   // Filtered and paginated data
   const filteredShifts = shifts.filter(shift => shift.team_members.some(member => member.toLowerCase().includes(shiftSearch.toLowerCase())) || shift.notes && shift.notes.toLowerCase().includes(shiftSearch.toLowerCase()));
   const paginatedShifts = filteredShifts.slice((shiftPage - 1) * ITEMS_PER_PAGE, shiftPage * ITEMS_PER_PAGE);
@@ -426,7 +439,11 @@ export const Reports = () => {
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={() => exportShiftsToPDF()}>
                     <Download className="h-4 w-4 mr-2" />
-                    Exportar PDF
+                    PDF
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => exportShiftsToCSV()}>
+                    <FileSpreadsheet className="h-4 w-4 mr-2" />
+                    CSV
                   </Button>
                 </div>
               </div>

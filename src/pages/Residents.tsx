@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
+import { exportToCSV } from '@/lib/export-csv';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Pencil, Trash2, Save, X, Plus, Search, Download } from 'lucide-react';
+import { Pencil, Trash2, Save, X, Plus, Search, Download, FileSpreadsheet } from 'lucide-react';
 import { Resident } from '@/types';
 import { useResidents } from '@/hooks/useResidents';
 import { toast } from 'sonner';
@@ -178,6 +179,16 @@ export const Residents = () => {
     toast.success('PDF gerado com sucesso');
   };
 
+  const exportResidentsToCSV = () => {
+    const headers = ['Nome', 'Apt', 'CPF', 'Telefone', 'E-mail', 'Veículo'];
+    const rows = filteredResidents.map(resident => [
+      resident.name, resident.apartment, resident.cpf || '-', resident.phone || '-',
+      resident.email || '-', resident.vehiclePlate ? `${resident.vehiclePlate} - ${resident.vehicleModel || ''}` : '-',
+    ]);
+    exportToCSV(`moradores-${format(new Date(), 'dd-MM-yyyy')}`, headers, rows);
+    toast.success('CSV gerado com sucesso');
+  };
+
   const resetForm = () => {
     setEditingId('');
     setFormData({
@@ -218,10 +229,16 @@ export const Residents = () => {
                 Total: {residents.length}
               </span>
             </div>
-            <Button variant="outline" size="sm" onClick={exportResidentsToPDF}>
-              <Download className="h-4 w-4 mr-2" />
-              Exportar PDF
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={exportResidentsToPDF}>
+                <Download className="h-4 w-4 mr-2" />
+                PDF
+              </Button>
+              <Button variant="outline" size="sm" onClick={exportResidentsToCSV}>
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                CSV
+              </Button>
+            </div>
           </CardTitle>
         </CardHeader>
         <CardContent>

@@ -111,6 +111,7 @@ const ResidentDashboard = ({ onNavigate, counts }: Props) => {
       iconBg: 'bg-blue-500/10',
       iconColor: 'text-blue-600 dark:text-blue-400',
       borderColor: 'border-blue-500/20',
+      cardBg: 'bg-blue-50/60 dark:bg-blue-950/20',
       badge: counts.mails,
       badgeLabel: 'pendente',
       items: previewMails.length > 0 ? [{
@@ -126,6 +127,7 @@ const ResidentDashboard = ({ onNavigate, counts }: Props) => {
       iconBg: 'bg-emerald-500/10',
       iconColor: 'text-emerald-600 dark:text-emerald-400',
       borderColor: 'border-emerald-500/20',
+      cardBg: 'bg-emerald-50/60 dark:bg-emerald-950/20',
       badge: previewVisitors.filter(v => !v.exit_time).length,
       badgeLabel: 'no local',
       items: previewVisitors.length > 0 ? [{
@@ -142,6 +144,7 @@ const ResidentDashboard = ({ onNavigate, counts }: Props) => {
       iconBg: 'bg-amber-500/10',
       iconColor: 'text-amber-600 dark:text-amber-400',
       borderColor: 'border-amber-500/20',
+      cardBg: 'bg-amber-50/60 dark:bg-amber-950/20',
       badge: counts.announcements,
       badgeLabel: 'novo',
       items: previewAnnouncements.length > 0 ? [{
@@ -157,6 +160,7 @@ const ResidentDashboard = ({ onNavigate, counts }: Props) => {
       iconBg: 'bg-violet-500/10',
       iconColor: 'text-violet-600 dark:text-violet-400',
       borderColor: 'border-violet-500/20',
+      cardBg: 'bg-violet-50/60 dark:bg-violet-950/20',
       badge: 0,
       badgeLabel: '',
       items: previewAuths.length > 0 ? [{
@@ -172,6 +176,7 @@ const ResidentDashboard = ({ onNavigate, counts }: Props) => {
       iconBg: 'bg-rose-500/10',
       iconColor: 'text-rose-600 dark:text-rose-400',
       borderColor: 'border-rose-500/20',
+      cardBg: 'bg-rose-50/60 dark:bg-rose-950/20',
       badge: counts.chat,
       badgeLabel: 'não lida',
       items: previewMsgs.length > 0 ? [{
@@ -207,9 +212,10 @@ const ResidentDashboard = ({ onNavigate, counts }: Props) => {
           <div
             key={section.id}
             className={cn(
-              "bg-card/80 backdrop-blur-sm border rounded-2xl overflow-hidden cursor-pointer transition-all duration-200",
+              "backdrop-blur-sm border rounded-2xl overflow-hidden cursor-pointer transition-all duration-200",
               "hover:shadow-lg active:scale-[0.98]",
-              section.borderColor
+              section.borderColor,
+              section.cardBg
             )}
             onClick={() => onNavigate(section.id)}
           >

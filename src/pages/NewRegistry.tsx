@@ -56,7 +56,8 @@ export const NewRegistry = () => {
     vehiclePlate: '',
     vehicleModel: '',
     vehicleColor: '',
-    photo: ''
+    photo: '',
+    badgeNumber: '',
   });
   const [showCamera, setShowCamera] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -165,7 +166,8 @@ export const NewRegistry = () => {
       vehiclePlate: entry.vehiclePlate || '',
       vehicleModel: entry.vehicleModel || '',
       vehicleColor: entry.vehicleColor || '',
-      photo: entry.photo || ''
+      photo: entry.photo || '',
+      badgeNumber: entry.badgeNumber || '',
     });
     setShowSuggestions(false);
     toast.success('Dados preenchidos automaticamente!');
@@ -250,7 +252,8 @@ export const NewRegistry = () => {
           vehicleModel: formData.vehicleModel,
           vehicleColor: formData.vehicleColor,
           photo: formData.photo,
-          company: formData.company
+          company: formData.company,
+          badgeNumber: formData.badgeNumber,
         }
       : {
           id: `entry_${Date.now()}`,
@@ -268,6 +271,7 @@ export const NewRegistry = () => {
           vehicleColor: formData.vehicleColor,
           photo: formData.photo,
           company: formData.company,
+          badgeNumber: formData.badgeNumber,
           autoRecognized: showSuggestions && suggestions.length > 0
         };
     
@@ -308,7 +312,8 @@ export const NewRegistry = () => {
       vehiclePlate: entry.vehiclePlate || '',
       vehicleModel: entry.vehicleModel || '',
       vehicleColor: entry.vehicleColor || '',
-      photo: entry.photo || ''
+      photo: entry.photo || '',
+      badgeNumber: entry.badgeNumber || '',
     });
     const resident = residents.find(r => r.id === entry.residentId);
     if (resident) {
@@ -374,7 +379,8 @@ export const NewRegistry = () => {
       vehiclePlate: '',
       vehicleModel: '',
       vehicleColor: '',
-      photo: ''
+      photo: '',
+      badgeNumber: '',
     });
     setVisitedLocationSearch('');
     setSuggestions([]);
@@ -447,9 +453,10 @@ export const NewRegistry = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[80px]">Foto</TableHead>
+                  <TableHead className="w-[60px]">Foto</TableHead>
                   <TableHead>Visitante</TableHead>
                   <TableHead>Apartamento</TableHead>
+                  <TableHead>Crachá</TableHead>
                   <TableHead>Entrada</TableHead>
                   <TableHead>Veículo</TableHead>
                   <TableHead className="text-right w-[180px]">Ações</TableHead>
@@ -457,7 +464,7 @@ export const NewRegistry = () => {
               </TableHeader>
               <TableBody>
                 {paginatedEntries.length === 0 ? <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                       {searchTerm ? 'Nenhum registro encontrado' : 'Nenhuma pessoa no momento'}
                     </TableCell>
                   </TableRow> : paginatedEntries.map(entry => <TableRow key={entry.id} className={entry.visitorType === 'service_provider' ? 'bg-warning/5' : 'bg-success/5'}>
@@ -478,6 +485,9 @@ export const NewRegistry = () => {
                           <p className="font-medium">{entry.apartment}</p>
                           <p className="text-xs text-muted-foreground">{entry.residentName}</p>
                         </div>
+                      </TableCell>
+                      <TableCell className="text-sm font-mono">
+                        {entry.badgeNumber || '-'}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {new Date(entry.entryTime).toLocaleString('pt-BR', {
@@ -545,31 +555,32 @@ export const NewRegistry = () => {
       if (!open) resetForm();
       setIsDialogOpen(open);
     }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingId ? 'Editar Cadastro' : 'Registrar Nova Entrada'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleEntry} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="visitorType">Tipo *</Label>
+          <form onSubmit={handleEntry} className="space-y-3">
+              {/* Row 1: Tipo + Nome + Documento */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="visitorType" className="text-xs">Tipo *</Label>
                   <Select value={formData.visitorType} onValueChange={(value: 'visitor' | 'service_provider') => setFormData({
                 ...formData,
                 visitorType: value
               })}>
-                    <SelectTrigger>
+                    <SelectTrigger className="h-9">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="visitor">👥 Visitante</SelectItem>
-                      <SelectItem value="service_provider">🔧 Prestador de Serviço</SelectItem>
+                      <SelectItem value="service_provider">🔧 Prestador</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="visitorName">Nome Completo *</Label>
-                  <Input id="visitorName" value={formData.visitorName} onChange={e => {
+                <div className="space-y-1">
+                  <Label htmlFor="visitorName" className="text-xs">Nome Completo *</Label>
+                  <Input id="visitorName" className="h-9" value={formData.visitorName} onChange={e => {
                 setFormData({
                   ...formData,
                   visitorName: e.target.value
@@ -578,9 +589,9 @@ export const NewRegistry = () => {
               }} placeholder="Nome completo" required />
                 </div>
                 
-                <div className="space-y-2">
-                  <Label htmlFor="visitorDocument">RG/CPF *</Label>
-                  <Input id="visitorDocument" value={formData.visitorDocument} onChange={e => {
+                <div className="space-y-1">
+                  <Label htmlFor="visitorDocument" className="text-xs">RG/CPF *</Label>
+                  <Input id="visitorDocument" className="h-9" value={formData.visitorDocument} onChange={e => {
                 setFormData({
                   ...formData,
                   visitorDocument: e.target.value
@@ -588,106 +599,119 @@ export const NewRegistry = () => {
                 findSimilarEntries(formData.visitorName, e.target.value);
               }} placeholder="Número do documento" required />
                 </div>
+              </div>
 
-                {showSuggestions && suggestions.length > 0 && <div className="md:col-span-2 p-3 bg-primary/10 border border-primary rounded-lg">
-                    <p className="text-sm font-semibold text-primary mb-2">✨ Cadastros encontrados:</p>
-                    <div className="space-y-2">
-                      {suggestions.map(suggestion => <button key={suggestion.id} type="button" onClick={() => applySuggestion(suggestion)} className="w-full text-left p-2 bg-background rounded hover:bg-muted transition-colors text-sm">
-                          <p className="font-medium">{suggestion.visitorName}</p>
-                          <p className="text-xs text-muted-foreground">
-                            Doc: {suggestion.visitorDocument} • Última visita: {new Date(suggestion.entryTime).toLocaleDateString('pt-BR')}
-                          </p>
-                        </button>)}
-                    </div>
-                  </div>}
+              {showSuggestions && suggestions.length > 0 && <div className="p-2 bg-primary/10 border border-primary rounded-lg">
+                  <p className="text-xs font-semibold text-primary mb-1">✨ Cadastros encontrados:</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {suggestions.map(suggestion => <button key={suggestion.id} type="button" onClick={() => applySuggestion(suggestion)} className="text-left p-2 bg-background rounded hover:bg-muted transition-colors text-xs flex-1 min-w-[150px]">
+                        <p className="font-medium">{suggestion.visitorName}</p>
+                        <p className="text-muted-foreground">
+                          Doc: {suggestion.visitorDocument}
+                        </p>
+                      </button>)}
+                  </div>
+                </div>}
 
-                {formData.visitorType === 'service_provider' && <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="company">Empresa</Label>
-                    <Input id="company" value={formData.company} onChange={e => setFormData({
-                ...formData,
-                company: e.target.value
-              })} placeholder="Nome da empresa" />
-                  </div>}
-
-                <div className="space-y-2 md:col-span-2 relative">
-                  <Label htmlFor="residentId">Visitando *</Label>
-                  <Input id="visitedLocation" value={visitedLocationSearch} onChange={e => {
+              {/* Row 2: Visitando + Empresa (if service provider) + Crachá */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-1 relative md:col-span-1">
+                  <Label htmlFor="residentId" className="text-xs">Visitando *</Label>
+                  <Input id="visitedLocation" className="h-9" value={visitedLocationSearch} onChange={e => {
                 setVisitedLocationSearch(e.target.value);
                 setShowResidentSuggestions(e.target.value.length > 0);
-              }} onFocus={() => setShowResidentSuggestions(visitedLocationSearch.length > 0)} placeholder="Digite o nome ou apartamento do morador" required />
-                  {showResidentSuggestions && filteredResidents.length > 0 && <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg max-h-48 overflow-y-auto">
-                      {filteredResidents.slice(0, 5).map(resident => <button key={resident.id} type="button" className="w-full text-left px-4 py-2 hover:bg-accent transition-colors" onClick={() => handleVisitedLocationSelect(resident.id, resident.name, resident.apartment)}>
-                          <div className="font-medium">{resident.name}</div>
-                          <div className="text-sm text-muted-foreground">{resident.apartment}</div>
+              }} onFocus={() => setShowResidentSuggestions(visitedLocationSearch.length > 0)} placeholder="Morador ou apt" required />
+                  {showResidentSuggestions && filteredResidents.length > 0 && <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                      {filteredResidents.slice(0, 5).map(resident => <button key={resident.id} type="button" className="w-full text-left px-3 py-1.5 hover:bg-accent transition-colors text-sm" onClick={() => handleVisitedLocationSelect(resident.id, resident.name, resident.apartment)}>
+                          <span className="font-medium">{resident.name}</span>
+                          <span className="text-muted-foreground ml-2">{resident.apartment}</span>
                         </button>)}
                     </div>}
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="vehiclePlate">Placa do Veículo</Label>
-                  <Input id="vehiclePlate" value={formData.vehiclePlate} onChange={e => setFormData({
+                <div className="space-y-1">
+                  <Label htmlFor="company" className="text-xs">{formData.visitorType === 'service_provider' ? 'Empresa' : 'Empresa (opcional)'}</Label>
+                  <Input id="company" className="h-9" value={formData.company} onChange={e => setFormData({
+                ...formData,
+                company: e.target.value
+              })} placeholder="Nome da empresa" />
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="badgeNumber" className="text-xs">Nº Crachá</Label>
+                  <Input id="badgeNumber" className="h-9" value={formData.badgeNumber} onChange={e => setFormData({
+                ...formData,
+                badgeNumber: e.target.value
+              })} placeholder="Ex: 001" />
+                </div>
+              </div>
+
+              {/* Row 3: Veículo + Motivo */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="vehiclePlate" className="text-xs">Placa</Label>
+                  <Input id="vehiclePlate" className="h-9" value={formData.vehiclePlate} onChange={e => setFormData({
                 ...formData,
                 vehiclePlate: e.target.value
               })} placeholder="ABC-1234" />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="vehicleModel">Modelo</Label>
-                  <Input id="vehicleModel" value={formData.vehicleModel} onChange={e => setFormData({
+                <div className="space-y-1">
+                  <Label htmlFor="vehicleModel" className="text-xs">Modelo</Label>
+                  <Input id="vehicleModel" className="h-9" value={formData.vehicleModel} onChange={e => setFormData({
                 ...formData,
                 vehicleModel: e.target.value
-              })} placeholder="Ex: Honda Civic" />
+              })} placeholder="Honda Civic" />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="vehicleColor">Cor do Veículo</Label>
-                  <Input id="vehicleColor" value={formData.vehicleColor} onChange={e => setFormData({
+                <div className="space-y-1">
+                  <Label htmlFor="vehicleColor" className="text-xs">Cor</Label>
+                  <Input id="vehicleColor" className="h-9" value={formData.vehicleColor} onChange={e => setFormData({
                 ...formData,
                 vehicleColor: e.target.value
-              })} placeholder="Ex: Preto" />
+              })} placeholder="Preto" />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="purpose">Motivo da Visita</Label>
-                  <Textarea id="purpose" value={formData.purpose} onChange={e => setFormData({
+                <div className="space-y-1">
+                  <Label htmlFor="purpose" className="text-xs">Motivo</Label>
+                  <Input id="purpose" className="h-9" value={formData.purpose} onChange={e => setFormData({
                 ...formData,
                 purpose: e.target.value
-              })} placeholder="Ex: Visita social, manutenção..." rows={2} />
-                </div>
-
-                <div className="space-y-2 md:col-span-2">
-                  <Label>Foto</Label>
-                  <div className="flex gap-2">
-                    <Button type="button" variant="outline" onClick={startCamera} className="flex-1">
-                      <Camera className="h-4 w-4 mr-2" />
-                      Webcam
-                    </Button>
-                    <Button type="button" variant="outline" className="flex-1" onClick={() => document.getElementById('photoUpload')?.click()}>
-                      <Upload className="h-4 w-4 mr-2" />
-                      Carregar
-                    </Button>
-                    <input id="photoUpload" type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
-                  </div>
-                  {formData.photo && <div className="relative inline-block">
-                      <img src={formData.photo} alt="Foto" className="w-24 h-24 object-cover rounded-lg border" />
-                      <button type="button" onClick={() => setFormData({
-                  ...formData,
-                  photo: ''
-                })} className="absolute -top-2 -right-2 bg-destructive text-white rounded-full p-1">
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>}
+              })} placeholder="Visita, manutenção..." />
                 </div>
               </div>
 
+              {/* Row 4: Foto */}
+              <div className="flex items-center gap-3">
+                <Label className="text-xs shrink-0">Foto:</Label>
+                <Button type="button" variant="outline" size="sm" onClick={startCamera} className="h-8">
+                  <Camera className="h-3 w-3 mr-1" />
+                  Webcam
+                </Button>
+                <Button type="button" variant="outline" size="sm" className="h-8" onClick={() => document.getElementById('photoUpload')?.click()}>
+                  <Upload className="h-3 w-3 mr-1" />
+                  Arquivo
+                </Button>
+                <input id="photoUpload" type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+                {formData.photo && <div className="relative inline-block">
+                    <img src={formData.photo} alt="Foto" className="w-10 h-10 object-cover rounded border" />
+                    <button type="button" onClick={() => setFormData({
+                ...formData,
+                photo: ''
+              })} className="absolute -top-1 -right-1 bg-destructive text-white rounded-full p-0.5">
+                      <X className="h-2 w-2" />
+                    </button>
+                  </div>}
+              </div>
+
               {showCamera && <div className="space-y-2">
-                  <video ref={videoRef} autoPlay className="w-full rounded-lg border" />
+                  <video ref={videoRef} autoPlay className="w-full rounded-lg border max-h-48" />
                   <canvas ref={canvasRef} className="hidden" />
                   <div className="flex gap-2">
-                    <Button type="button" onClick={capturePhoto} className="flex-1">
-                      Capturar Foto
+                    <Button type="button" size="sm" onClick={capturePhoto} className="flex-1">
+                      Capturar
                     </Button>
-                    <Button type="button" variant="secondary" onClick={stopCamera}>
+                    <Button type="button" size="sm" variant="secondary" onClick={stopCamera}>
                       Cancelar
                     </Button>
                   </div>

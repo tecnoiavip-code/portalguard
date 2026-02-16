@@ -44,6 +44,7 @@ export interface AccessEntry {
   photo?: string;
   company?: string;
   autoRecognized?: boolean;
+  badgeNumber?: string;
 }
 
 export interface Device {

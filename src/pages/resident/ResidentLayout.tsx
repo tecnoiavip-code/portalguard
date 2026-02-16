@@ -261,11 +261,11 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
 
   const tabs = [
     { id: 'home', label: 'Início', icon: Home },
-    { id: 'mails', label: 'Correio', icon: Mail, badge: counts.mails },
-    { id: 'announcements', label: 'Avisos', icon: Megaphone, badge: counts.announcements },
+    { id: 'mails', label: 'Correio', icon: Mail },
+    { id: 'announcements', label: 'Avisos', icon: Megaphone },
     { id: 'visitors', label: 'Visitas', icon: Users },
     { id: 'authorizations', label: 'Autorizar', icon: Shield },
-    { id: 'chat', label: 'Chat', icon: MessageSquare, badge: counts.chat },
+    { id: 'chat', label: 'Chat', icon: MessageSquare },
   ];
 
   return (
@@ -276,19 +276,14 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
           <div className="flex items-center gap-2 relative">
             <Home className="h-5 w-5" />
             <span className="font-bold">Portal do Morador</span>
-            {totalBadge > 0 && (
-              <span className="absolute -top-2 -left-1 bg-destructive text-destructive-foreground text-[10px] rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 font-bold animate-pulse">
-                {totalBadge > 99 ? '99+' : totalBadge}
-              </span>
-            )}
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
             <div className="relative cursor-pointer" onClick={() => { markNotifsRead(); onTabChange('home'); }}>
               <Bell className="h-5 w-5" />
-              {counts.notif > 0 && (
-                <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
-                  {counts.notif > 9 ? '9+' : counts.notif}
+              {totalBadge > 0 && (
+                <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 font-bold animate-pulse">
+                  {totalBadge > 99 ? '99+' : totalBadge}
                 </span>
               )}
             </div>
@@ -321,11 +316,6 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
             >
               <div className="relative">
                 <tab.icon className="h-5 w-5" />
-                {tab.badge != null && tab.badge > 0 && (
-                  <span className="absolute -top-1 -right-2 bg-destructive text-destructive-foreground text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
-                    {tab.badge > 9 ? '9+' : tab.badge}
-                  </span>
-                )}
               </div>
               <span className="mt-1">{tab.label}</span>
             </button>

@@ -398,33 +398,35 @@ export const Settings = () => {
             }
 
             let successCount = 0;
-            let errorCount = 0;
+            let skippedCount = 0;
             
             // Identifica o tipo de arquivo pelo nome
             if (file.name.includes('morador')) {
               for (const resident of data) {
                 const success = await supabaseStorage.saveResident(resident);
-                success ? successCount++ : errorCount++;
+                success ? successCount++ : skippedCount++;
               }
-              toast.success(`${successCount} moradores importados!`);
+              let msg = `${successCount} moradores importados!`;
+              if (skippedCount > 0) msg += ` (${skippedCount} duplicados ignorados)`;
+              successCount > 0 ? toast.success(msg) : toast.warning(msg);
             } else if (file.name.includes('correspondencia')) {
               for (const mail of data) {
                 const success = await supabaseStorage.saveMail(mail);
-                success ? successCount++ : errorCount++;
+                success ? successCount++ : skippedCount++;
               }
-              toast.success(`${successCount} correspondências importadas!`);
+              let msg = `${successCount} correspondências importadas!`;
+              if (skippedCount > 0) msg += ` (${skippedCount} duplicados ignorados)`;
+              successCount > 0 ? toast.success(msg) : toast.warning(msg);
             } else if (file.name.includes('acesso')) {
               for (const entry of data) {
                 const success = await supabaseStorage.saveEntry(entry);
-                success ? successCount++ : errorCount++;
+                success ? successCount++ : skippedCount++;
               }
-              toast.success(`${successCount} acessos importados!`);
+              let msg = `${successCount} acessos importados!`;
+              if (skippedCount > 0) msg += ` (${skippedCount} duplicados ignorados)`;
+              successCount > 0 ? toast.success(msg) : toast.warning(msg);
             } else {
               toast.warning(`Arquivo ${file.name} não reconhecido. Use: moradores-*.csv, correspondencias-*.csv ou acessos-*.csv`);
-            }
-            
-            if (errorCount > 0) {
-              toast.error(`${errorCount} registros falharam na importação de ${file.name}.`);
             }
             
             processedFiles++;

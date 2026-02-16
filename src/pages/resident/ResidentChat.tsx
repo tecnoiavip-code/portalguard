@@ -93,22 +93,8 @@ const ResidentChat = () => {
       message: msg,
     } as any);
 
+    // Push notification to staff (DB trigger handles in-app notifications)
     sendPushToStaff('Nova mensagem de morador', msg.substring(0, 100), `chat-${residentId}`);
-
-    const { data: staffRoles } = await supabase
-      .from('user_roles')
-      .select('user_id')
-      .in('role', ['admin', 'receptionist', 'security_guard'] as any);
-    if (staffRoles) {
-      const notifications = staffRoles.map((r: any) => ({
-        user_id: r.user_id,
-        title: 'Nova mensagem de morador',
-        body: msg.substring(0, 100),
-        type: 'chat',
-        related_id: residentId,
-      }));
-      await supabase.from('notifications').insert(notifications);
-    }
   };
 
   if (loading) return (

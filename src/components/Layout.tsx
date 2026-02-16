@@ -78,9 +78,15 @@ export const Layout = ({ children }: LayoutProps) => {
 
   const markAllRead = async () => {
     if (!user) return;
-    await supabase.from('notifications').update({ read: true }).eq('user_id', user.id).eq('read', false);
     setNotifications([]);
     setNotifCount(0);
+    await supabase.from('notifications').update({ read: true }).eq('user_id', user.id).eq('read', false);
+  };
+
+  const markOneRead = async (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+    setNotifCount(prev => Math.max(0, prev - 1));
+    await supabase.from('notifications').update({ read: true }).eq('id', id);
   };
 
   return (
@@ -139,7 +145,7 @@ export const Layout = ({ children }: LayoutProps) => {
                       </div>
                     ) : (
                       notifications.map((n) => (
-                        <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-1 p-3 cursor-default">
+                        <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-1 p-3 cursor-pointer" onClick={() => markOneRead(n.id)}>
                           <p className="text-sm font-medium leading-tight">{n.title}</p>
                           <p className="text-xs text-muted-foreground leading-tight">{n.body}</p>
                           <p className="text-[10px] text-muted-foreground">

@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           apartment: string
           auto_recognized: boolean | null
+          badge_number: string | null
           company: string | null
           entry_time: string | null
           exit_time: string | null
@@ -38,6 +39,7 @@ export type Database = {
         Insert: {
           apartment: string
           auto_recognized?: boolean | null
+          badge_number?: string | null
           company?: string | null
           entry_time?: string | null
           exit_time?: string | null
@@ -58,6 +60,7 @@ export type Database = {
         Update: {
           apartment?: string
           auto_recognized?: boolean | null
+          badge_number?: string | null
           company?: string | null
           entry_time?: string | null
           exit_time?: string | null

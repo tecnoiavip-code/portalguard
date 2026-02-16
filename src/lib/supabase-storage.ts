@@ -247,6 +247,7 @@ export const supabaseStorage = {
       photo: e.photo_url || '',
       company: e.company || '',
       autoRecognized: e.auto_recognized || false,
+      badgeNumber: (e as any).badge_number || '',
     }));
   },
 
@@ -282,7 +283,7 @@ export const supabaseStorage = {
       }
     }
     
-    const entryData = {
+    const entryData: any = {
       visitor_name: entry.visitorName,
       visitor_document: entry.visitorDocument,
       visitor_type: entry.visitorType,
@@ -297,6 +298,7 @@ export const supabaseStorage = {
       photo_url: entry.photo || null,
       company: entry.company || null,
       auto_recognized: entry.autoRecognized || false,
+      badge_number: entry.badgeNumber || null,
     };
 
     if (isNew) {

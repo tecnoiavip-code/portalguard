@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { ScrollText, Search, LogIn, LogOut, Download, ShieldBan, FileSpreadsheet } from 'lucide-react';
+import { ScrollText, Search, LogIn, LogOut, Download, ShieldBan, FileSpreadsheet, User, Building, Car, Clock, FileText, Hash, Camera } from 'lucide-react';
 import { useAccessEntries } from '@/hooks/useAccessEntries';
+import { AccessEntry } from '@/types';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -25,6 +26,7 @@ export const Logs = () => {
   const [blockDialog, setBlockDialog] = useState<{ open: boolean; name: string; document: string }>({ open: false, name: '', document: '' });
   const [blockReason, setBlockReason] = useState('');
   const [blocking, setBlocking] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState<AccessEntry | null>(null);
   const itemsPerPage = 10;
 
   const entries = allEntries.sort(
@@ -154,22 +156,32 @@ export const Logs = () => {
               paginatedEntries.map((entry) => (
                 <div
                   key={entry.id}
-                  className="p-4 bg-card rounded-lg border border-border hover:shadow-md transition-shadow"
+                  className="p-4 bg-card rounded-lg border border-border hover:shadow-md hover:border-primary/30 transition-all cursor-pointer"
+                  onClick={() => setSelectedEntry(entry)}
                 >
                   <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <p className="font-semibold text-foreground text-lg">
-                        {entry.visitorName}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        Doc: {entry.visitorDocument}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      {entry.photo ? (
+                        <img src={entry.photo} alt={entry.visitorName} className="w-12 h-12 rounded-full object-cover border-2 border-primary/20" />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-xl">
+                          {entry.visitorType === 'service_provider' ? '🔧' : '👤'}
+                        </div>
+                      )}
+                      <div>
+                        <p className="font-semibold text-foreground text-lg">
+                          {entry.visitorName}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          Doc: {entry.visitorDocument}
+                        </p>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={() => setBlockDialog({ open: true, name: entry.visitorName, document: entry.visitorDocument })}
+                        onClick={(e) => { e.stopPropagation(); setBlockDialog({ open: true, name: entry.visitorName, document: entry.visitorDocument }); }}
                       >
                         <ShieldBan className="h-4 w-4 mr-1" />
                         Bloquear
@@ -298,6 +310,141 @@ export const Logs = () => {
               {blocking ? 'Bloqueando...' : 'Confirmar Bloqueio'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Detail Dialog */}
+      <Dialog open={!!selectedEntry} onOpenChange={(open) => { if (!open) setSelectedEntry(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <User className="h-5 w-5 text-primary" />
+              Detalhes do Acesso
+            </DialogTitle>
+          </DialogHeader>
+          {selectedEntry && (
+            <div className="space-y-5">
+              {/* Photo + Name header */}
+              <div className="flex items-center gap-4">
+                {selectedEntry.photo ? (
+                  <img src={selectedEntry.photo} alt={selectedEntry.visitorName} className="w-20 h-20 rounded-full object-cover border-2 border-primary" />
+                ) : (
+                  <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-3xl">
+                    {selectedEntry.visitorType === 'service_provider' ? '🔧' : '👤'}
+                  </div>
+                )}
+                <div>
+                  <h3 className="text-xl font-bold text-foreground">{selectedEntry.visitorName}</h3>
+                  <Badge variant={selectedEntry.visitorType === 'service_provider' ? 'outline' : 'secondary'}>
+                    {selectedEntry.visitorType === 'service_provider' ? 'Prestador de Serviço' : 'Visitante'}
+                  </Badge>
+                  <Badge variant={selectedEntry.exitTime ? 'secondary' : 'default'} className={`ml-2 ${selectedEntry.exitTime ? '' : 'bg-success'}`}>
+                    {selectedEntry.exitTime ? 'Finalizado' : 'Ativo'}
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Info grid */}
+              <div className="grid grid-cols-1 gap-3 text-sm">
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+                  <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Documento</p>
+                    <p className="font-medium">{selectedEntry.visitorDocument}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+                    <Building className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Visitando</p>
+                      <p className="font-medium">{selectedEntry.residentName}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+                    <Building className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Apartamento</p>
+                      <p className="font-medium">{selectedEntry.apartment}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {selectedEntry.company && (
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+                    <Building className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Empresa</p>
+                      <p className="font-medium">{selectedEntry.company}</p>
+                    </div>
+                  </div>
+                )}
+
+                {selectedEntry.badgeNumber && (
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+                    <Hash className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Nº Crachá</p>
+                      <p className="font-medium">{selectedEntry.badgeNumber}</p>
+                    </div>
+                  </div>
+                )}
+
+                {selectedEntry.purpose && (
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+                    <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Motivo</p>
+                      <p className="font-medium">{selectedEntry.purpose}</p>
+                    </div>
+                  </div>
+                )}
+
+                {(selectedEntry.vehiclePlate || selectedEntry.vehicleModel || selectedEntry.vehicleColor) && (
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+                    <Car className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Veículo</p>
+                      <p className="font-medium">
+                        {[selectedEntry.vehiclePlate, selectedEntry.vehicleModel, selectedEntry.vehicleColor].filter(Boolean).join(' · ')}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-success/10 border border-success/20">
+                    <LogIn className="h-4 w-4 text-success shrink-0" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Entrada</p>
+                      <p className="font-medium text-success">
+                        {format(new Date(selectedEntry.entryTime), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                      </p>
+                    </div>
+                  </div>
+                  <div className={`flex items-center gap-2 p-3 rounded-lg ${selectedEntry.exitTime ? 'bg-muted/50' : 'bg-warning/10 border border-warning/20'}`}>
+                    <LogOut className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Saída</p>
+                      <p className="font-medium">
+                        {selectedEntry.exitTime
+                          ? format(new Date(selectedEntry.exitTime), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
+                          : 'Ainda no local'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {selectedEntry.autoRecognized && (
+                  <div className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Camera className="h-3 w-3" />
+                    Reconhecido automaticamente
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

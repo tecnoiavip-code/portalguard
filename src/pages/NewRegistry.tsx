@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { LogIn, LogOut, Camera, Upload, X, Plus, Pencil, Trash2, Search, Download, ShieldBan, ShieldCheck, Ban } from 'lucide-react';
+import { LogIn, LogOut, Camera, Upload, X, Plus, Pencil, Trash2, Search, Download, ShieldBan, ShieldCheck, Ban, AlertTriangle } from 'lucide-react';
 import { AccessEntry, Resident } from '@/types';
 import { useAccessEntries } from '@/hooks/useAccessEntries';
 import { useResidents } from '@/hooks/useResidents';
@@ -560,6 +560,26 @@ export const NewRegistry = () => {
             <DialogTitle>{editingId ? 'Editar Cadastro' : 'Registrar Nova Entrada'}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleEntry} className="space-y-3">
+              {/* Blocked visitor alert */}
+              {formData.visitorDocument && isVisitorBlocked(formData.visitorDocument) && (
+                <div className="rounded-lg border-2 border-destructive bg-destructive/10 p-4 flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="rounded-full bg-destructive p-2 shrink-0">
+                    <AlertTriangle className="h-5 w-5 text-destructive-foreground" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-destructive text-base">⚠️ VISITANTE BLOQUEADO</h4>
+                    <p className="text-sm text-destructive/90 mt-1">
+                      Este documento consta na lista de bloqueio. A entrada <strong>não será permitida</strong>.
+                    </p>
+                    {blockedVisitors.find(b => b.visitor_document === formData.visitorDocument)?.reason && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Motivo: {blockedVisitors.find(b => b.visitor_document === formData.visitorDocument)?.reason}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Row 1: Tipo + Nome + Documento */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="space-y-1">

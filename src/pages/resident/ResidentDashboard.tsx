@@ -174,11 +174,11 @@ const ResidentDashboard = ({ onNavigate, counts }: Props) => {
       borderColor: 'border-rose-500/20',
       badge: counts.chat,
       badgeLabel: 'não lida',
-      items: previewMsgs.map(m => ({
-        primary: m.sender_type === 'resident' ? 'Você' : 'Portaria',
-        secondary: m.message.length > 60 ? m.message.substring(0, 60) + '…' : m.message,
-        time: format(new Date(m.created_at), "HH:mm", { locale: ptBR }),
-      })),
+      items: previewMsgs.length > 0 ? [{
+        primary: previewMsgs[0].sender_type === 'resident' ? 'Você' : 'Portaria',
+        secondary: previewMsgs[0].message.length > 60 ? previewMsgs[0].message.substring(0, 60) + '…' : previewMsgs[0].message,
+        time: format(new Date(previewMsgs[0].created_at), "HH:mm", { locale: ptBR }),
+      }] : [],
     },
   ];
 

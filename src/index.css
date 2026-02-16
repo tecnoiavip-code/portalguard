@@ -102,4 +102,15 @@ All colors MUST be HSL.
   body {
     @apply bg-background text-foreground;
   }
+
+  input:not([type="password"]):not([type="email"]),
+  textarea,
+  select {
+    text-transform: uppercase;
+  }
+
+  input:not([type="password"]):not([type="email"])::placeholder,
+  textarea::placeholder {
+    text-transform: none;
+  }
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -35,6 +36,23 @@ export const Auth = () => {
           toast.error(error.message);
         }
         return;
+      }
+
+      // Check if user is a resident
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: residentRole } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', user.id)
+          .eq('role', 'resident')
+          .maybeSingle();
+
+        if (residentRole) {
+          toast.success('Login realizado! Redirecionando para o Portal do Morador.');
+          navigate('/morador');
+          return;
+        }
       }
 
       toast.success('Login realizado com sucesso!');

@@ -378,6 +378,14 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
         {children}
       </main>
 
+      {/* Footer */}
+      <footer className="border-t border-border/50 bg-background/80 backdrop-blur-sm px-4 py-3">
+        <div className="text-[11px] text-muted-foreground text-center space-y-0.5">
+          <p className="font-medium text-foreground/70">Suporte</p>
+          <p>tecno.iavip@gmail.com • (11) 97694-9949</p>
+        </div>
+      </footer>
+
       <PWAInstallPrompt />
     </div>
   );

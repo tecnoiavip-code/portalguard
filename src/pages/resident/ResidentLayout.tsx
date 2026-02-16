@@ -1,16 +1,15 @@
-import { useState, useEffect, useCallback, ReactNode } from 'react';
+import { useState, useEffect, useRef, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { playNotificationSound } from '@/lib/notification-sound';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { Home, Mail, Users, Shield, MessageSquare, LogOut, Bell, Megaphone } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 import { setAppBadge } from '@/lib/pwa-badge';
+import { notifyResident, requestNotificationPermission } from '@/lib/pwa-notify';
 
 interface ResidentLayoutProps {
   children: ReactNode;
@@ -18,56 +17,40 @@ interface ResidentLayoutProps {
   onTabChange: (tab: string) => void;
 }
 
+interface Counts {
+  chat: number;
+  notif: number;
+  mails: number;
+  announcements: number;
+}
+
 const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProps) => {
   const { user, isLoading } = useAuth();
   const navigate = useNavigate();
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [notifCount, setNotifCount] = useState(0);
-  const [totalBadge, setTotalBadge] = useState(0);
+  const [counts, setCounts] = useState<Counts>({ chat: 0, notif: 0, mails: 0, announcements: 0 });
+  const prevCountsRef = useRef<Counts>({ chat: 0, notif: 0, mails: 0, announcements: 0 });
+  const residentIdRef = useRef<string | null>(null);
+  const isFirstLoad = useRef(true);
 
-  // Request browser notification permission
+  const totalBadge = counts.chat + counts.notif + counts.mails + counts.announcements;
+
+  // Request notification permission on first user interaction
   useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
+    const handler = () => {
+      requestNotificationPermission();
+      window.removeEventListener('click', handler);
+    };
+    window.addEventListener('click', handler, { once: true });
+    // Also try immediately
+    requestNotificationPermission();
+    return () => window.removeEventListener('click', handler);
   }, []);
 
-  const vibrate = useCallback(() => {
-    try {
-      if ('vibrate' in navigator) {
-        navigator.vibrate([200, 100, 200]);
-      }
-    } catch { /* silent */ }
-  }, []);
-
-  const showBrowserNotification = useCallback((title: string, body: string) => {
-    vibrate();
-    if ('Notification' in window && Notification.permission === 'granted') {
-      try {
-        new Notification(title, {
-          body,
-          icon: '/favicon.ico',
-          badge: '/favicon.ico',
-          tag: 'portalguard-chat',
-        });
-      } catch {
-        // Silent fail on unsupported environments
-      }
-    }
-  }, [vibrate]);
-
+  // Update title and PWA badge
   useEffect(() => {
-    const total = unreadCount + notifCount;
-    setTotalBadge(total);
-    // Update page title with badge
-    if (total > 0) {
-      document.title = `(${total}) Portal do Morador`;
-    } else {
-      document.title = 'Portal do Morador';
-    }
-    // Update PWA app icon badge
-    setAppBadge(total);
-  }, [unreadCount, notifCount]);
+    document.title = totalBadge > 0 ? `(${totalBadge}) Portal do Morador` : 'Portal do Morador';
+    setAppBadge(totalBadge);
+  }, [totalBadge]);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -83,50 +66,114 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
         .eq('user_id', user.id)
         .eq('role', 'resident')
         .maybeSingle();
-      if (!role) {
-        navigate('/morador/login');
-      }
+      if (!role) navigate('/morador/login');
     };
     checkRole();
-
-    let currentResidentId: string | null = null;
 
     let isActive = true;
     let pollTimeout: ReturnType<typeof setTimeout>;
 
     const loadCounts = async () => {
-      const { data: res } = await (supabase
-        .from('residents')
-        .select('id') as any)
-        .eq('auth_user_id', user.id)
-        .maybeSingle();
-      if (!res) return;
-      currentResidentId = res.id;
+      // Get resident ID
+      if (!residentIdRef.current) {
+        const { data: res } = await (supabase
+          .from('residents')
+          .select('id') as any)
+          .eq('auth_user_id', user.id)
+          .maybeSingle();
+        if (!res) return;
+        residentIdRef.current = res.id;
+      }
+      const rid = residentIdRef.current!;
 
-      const { count: chatCount } = await supabase
-        .from('chat_messages')
-        .select('*', { count: 'exact', head: true })
-        .eq('resident_id', res.id)
-        .eq('sender_type', 'staff')
-        .eq('read', false);
-      setUnreadCount(chatCount || 0);
+      const [chatRes, notifRes, mailsRes, announcementsRes, readsRes] = await Promise.all([
+        supabase
+          .from('chat_messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('resident_id', rid)
+          .eq('sender_type', 'staff')
+          .eq('read', false),
+        supabase
+          .from('notifications')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('read', false),
+        supabase
+          .from('mails')
+          .select('*', { count: 'exact', head: true })
+          .eq('resident_id', rid)
+          .eq('status', 'pending'),
+        supabase
+          .from('announcements')
+          .select('id', { count: 'exact', head: true }),
+        supabase
+          .from('announcement_reads')
+          .select('announcement_id', { count: 'exact', head: true })
+          .eq('user_id', user.id),
+      ]);
 
-      const { count: nCount } = await supabase
-        .from('notifications')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .eq('read', false);
-      setNotifCount(nCount || 0);
+      const newCounts: Counts = {
+        chat: chatRes.count || 0,
+        notif: notifRes.count || 0,
+        mails: mailsRes.count || 0,
+        announcements: Math.max(0, (announcementsRes.count || 0) - (readsRes.count || 0)),
+      };
+
+      const prev = prevCountsRef.current;
+
+      // Only notify on increases (not on first load to avoid spam)
+      if (!isFirstLoad.current) {
+        const total = newCounts.chat + newCounts.notif + newCounts.mails + newCounts.announcements;
+
+        if (newCounts.chat > prev.chat) {
+          notifyResident('Nova mensagem da portaria', 'Você recebeu uma nova mensagem no chat.', {
+            tag: 'chat-' + Date.now(),
+            totalBadge: total,
+          });
+        }
+        if (newCounts.notif > prev.notif) {
+          notifyResident('Nova notificação', 'Você tem uma nova notificação.', {
+            tag: 'notif-' + Date.now(),
+            totalBadge: total,
+          });
+        }
+        if (newCounts.mails > prev.mails) {
+          notifyResident('Nova correspondência', 'Você tem uma nova encomenda ou carta na portaria.', {
+            tag: 'mail-' + Date.now(),
+            totalBadge: total,
+          });
+        }
+        if (newCounts.announcements > prev.announcements) {
+          notifyResident('Novo comunicado', 'A administração publicou um novo comunicado.', {
+            tag: 'announcement-' + Date.now(),
+            totalBadge: total,
+          });
+        }
+      }
+
+      isFirstLoad.current = false;
+      prevCountsRef.current = newCounts;
+      setCounts(newCounts);
     };
+
     loadCounts();
 
+    // Realtime: immediate refresh + dedicated notifications
     const channel = supabase
       .channel('resident-notifs')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (payload) => {
-        playNotificationSound();
-        loadCounts();
         const notif = payload.new as any;
-        showBrowserNotification(notif.title || 'Nova notificação', notif.body || '');
+        // Immediate UI update
+        setCounts(prev => {
+          const next = { ...prev, notif: prev.notif + 1 };
+          const total = next.chat + next.notif + next.mails + next.announcements;
+          notifyResident(notif.title || 'Nova notificação', notif.body || '', {
+            tag: `notif-${notif.id}`,
+            totalBadge: total,
+          });
+          prevCountsRef.current = next;
+          return next;
+        });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => {
         loadCounts();
@@ -134,30 +181,46 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
         const msg = payload.new as any;
         if (msg.sender_type === 'staff') {
-          playNotificationSound();
-          loadCounts();
-          showBrowserNotification('Nova mensagem da portaria', msg.message?.substring(0, 100) || '');
+          setCounts(prev => {
+            const next = { ...prev, chat: prev.chat + 1 };
+            const total = next.chat + next.notif + next.mails + next.announcements;
+            notifyResident('Nova mensagem da portaria', msg.message?.substring(0, 100) || '', {
+              tag: `chat-${msg.id}`,
+              totalBadge: total,
+            });
+            prevCountsRef.current = next;
+            return next;
+          });
         }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, () => {
         loadCounts();
       })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mails' }, () => {
+        loadCounts();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'mails' }, () => {
+        loadCounts();
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'announcements' }, () => {
+        loadCounts();
+      })
       .subscribe();
 
-    // Polling fallback every 10s
+    // Polling fallback every 8s
     const poll = () => {
       if (!isActive) return;
       loadCounts();
-      pollTimeout = setTimeout(poll, 10000);
+      pollTimeout = setTimeout(poll, 8000);
     };
-    pollTimeout = setTimeout(poll, 10000);
+    pollTimeout = setTimeout(poll, 8000);
 
     return () => {
       isActive = false;
       clearTimeout(pollTimeout);
       supabase.removeChannel(channel);
     };
-  }, [user, isLoading, navigate, showBrowserNotification]);
+  }, [user, isLoading, navigate]);
 
   if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
@@ -165,7 +228,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
 
   const markNotifsRead = async () => {
     if (!user) return;
-    setNotifCount(0);
+    setCounts(prev => ({ ...prev, notif: 0 }));
     await supabase
       .from('notifications')
       .update({ read: true })
@@ -174,35 +237,30 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
   };
 
   const markChatRead = async () => {
-    if (!user) return;
-    setUnreadCount(0);
-    const { data: res } = await supabase
-      .from('residents')
-      .select('id')
-      .eq('auth_user_id', user.id)
-      .maybeSingle();
-    if (!res) return;
+    if (!user || !residentIdRef.current) return;
+    setCounts(prev => ({ ...prev, chat: 0 }));
     await supabase
       .from('chat_messages')
       .update({ read: true })
-      .eq('resident_id', res.id)
+      .eq('resident_id', residentIdRef.current!)
       .eq('sender_type', 'staff')
       .eq('read', false);
   };
 
   const handleSignOut = async () => {
     document.title = 'Portal do Morador';
+    setAppBadge(0);
     await supabase.auth.signOut();
     navigate('/morador/login');
   };
 
   const tabs = [
     { id: 'home', label: 'Início', icon: Home },
-    { id: 'mails', label: 'Correio', icon: Mail },
-    { id: 'announcements', label: 'Avisos', icon: Megaphone },
+    { id: 'mails', label: 'Correio', icon: Mail, badge: counts.mails },
+    { id: 'announcements', label: 'Avisos', icon: Megaphone, badge: counts.announcements },
     { id: 'visitors', label: 'Visitas', icon: Users },
     { id: 'authorizations', label: 'Autorizar', icon: Shield },
-    { id: 'chat', label: 'Chat', icon: MessageSquare, badge: unreadCount },
+    { id: 'chat', label: 'Chat', icon: MessageSquare, badge: counts.chat },
   ];
 
   return (
@@ -223,9 +281,9 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
             <ThemeToggle />
             <div className="relative cursor-pointer" onClick={() => { markNotifsRead(); onTabChange('home'); }}>
               <Bell className="h-5 w-5" />
-              {notifCount > 0 && (
+              {counts.notif > 0 && (
                 <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
-                  {notifCount > 9 ? '9+' : notifCount}
+                  {counts.notif > 9 ? '9+' : counts.notif}
                 </span>
               )}
             </div>
@@ -258,7 +316,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
             >
               <div className="relative">
                 <tab.icon className="h-5 w-5" />
-                {tab.badge && tab.badge > 0 && (
+                {tab.badge != null && tab.badge > 0 && (
                   <span className="absolute -top-1 -right-2 bg-destructive text-destructive-foreground text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
                     {tab.badge > 9 ? '9+' : tab.badge}
                   </span>

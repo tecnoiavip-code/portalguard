@@ -239,7 +239,6 @@ export const Dashboard = () => {
                   const p = log.payload || {};
                   const changes = p.object_changes?.[0]?.values || {};
                   
-                  // Extract person info from payload
                   const userName = changes.user_name || p.user_name || p.name || '';
                   const apartment = changes.apartment || changes.user_id || p.apartment || p.house || '';
                   const photoUrl = changes.photo_url || p.photo_url || p.photo || '';
@@ -257,10 +256,10 @@ export const Dashboard = () => {
                   return (
                     <div
                       key={log.id}
-                      className="flex items-center gap-3 py-3 px-2 relative z-10 group hover:bg-muted/40 rounded-lg transition-colors"
+                      className="flex items-start gap-3 py-3 px-2 relative z-10 group hover:bg-muted/40 rounded-lg transition-colors"
                     >
                       {/* Date & Time */}
-                      <div className="flex-shrink-0 w-[40px] text-right">
+                      <div className="flex-shrink-0 w-[40px] text-right pt-2">
                         <p className="text-[10px] text-muted-foreground leading-none">{dateStr}</p>
                         <p className={`text-lg font-bold leading-tight ${isAccess ? 'text-primary' : 'text-muted-foreground'}`}>
                           {timeStr}
@@ -269,27 +268,28 @@ export const Dashboard = () => {
 
                       {/* Avatar */}
                       <div className="flex-shrink-0 z-10">
-                        <Avatar className={`h-10 w-10 border-2 ${isAccess ? 'border-primary' : 'border-muted'}`}>
+                        <Avatar className={`h-16 w-16 border-2 ${isAccess ? 'border-primary' : 'border-muted'}`}>
                           {photoUrl ? (
-                            <AvatarImage src={photoUrl} alt={displayName} />
+                            <AvatarImage src={photoUrl} alt={displayName} className="object-cover" />
                           ) : null}
-                          <AvatarFallback className={`text-xs font-bold ${isAccess ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
-                            {userName ? userName.substring(0, 2).toUpperCase() : <User className="h-4 w-4" />}
+                          <AvatarFallback className={`text-base font-bold ${isAccess ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                            {userName ? userName.substring(0, 2).toUpperCase() : <User className="h-5 w-5" />}
                           </AvatarFallback>
                         </Avatar>
                       </div>
 
                       {/* Info */}
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-0 pt-1">
                         <p className={`text-sm font-bold truncate leading-tight ${isAccess ? 'text-foreground' : 'text-muted-foreground'}`}>
                           {displayLabel}
                         </p>
-                        <div className="flex items-center gap-1 mt-0.5">
+                        <div className="flex items-center gap-1 mt-1">
                           <CheckCheck className="h-3 w-3 text-success flex-shrink-0" />
                           <p className="text-[11px] text-muted-foreground truncate">
-                            {location} - {fullTimeStr}
+                            {location}
                           </p>
                         </div>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{fullTimeStr}</p>
                       </div>
                     </div>
                   );

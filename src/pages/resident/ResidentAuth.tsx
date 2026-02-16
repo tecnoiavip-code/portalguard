@@ -35,8 +35,8 @@ const ResidentAuth = () => {
         .maybeSingle();
 
       if (!role) {
-        await supabase.auth.signOut();
-        toast.error('Esta conta não é de morador. Use o portal da portaria.');
+        toast.success('Login realizado! Redirecionando para a portaria.');
+        navigate('/');
         return;
       }
 

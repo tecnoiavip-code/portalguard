@@ -333,12 +333,12 @@ export const NewRegistry = () => {
     })}`, 14, 22);
     const tableData = filteredActiveEntries.map(entry => {
       const resident = residents.find(r => r.id === entry.residentId);
-      return [entry.visitorName, entry.visitorDocument, resident?.name || '-', resident?.apartment || '-', entry.visitorType === 'visitor' ? 'Visitante' : 'Prestador', format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', {
+      return [entry.visitorName, entry.visitorDocument, resident?.name || '-', resident?.apartment || '-', entry.visitorType === 'visitor' ? 'Visitante' : 'Prestador', entry.badgeNumber || '-', format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', {
         locale: ptBR
       })];
     });
     autoTable(doc, {
-      head: [['Nome', 'Documento', 'Morador', 'Apt', 'Tipo', 'Entrada']],
+      head: [['Nome', 'Documento', 'Morador', 'Apt', 'Tipo', 'Crachá', 'Entrada']],
       body: tableData,
       startY: 28
     });
@@ -353,14 +353,14 @@ export const NewRegistry = () => {
     })}`, 14, 22);
     const tableData = filteredAllEntries.map(entry => {
       const resident = residents.find(r => r.id === entry.residentId);
-      return [entry.visitorName, entry.visitorDocument, resident?.name || '-', resident?.apartment || '-', format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', {
+      return [entry.visitorName, entry.visitorDocument, resident?.name || '-', resident?.apartment || '-', entry.badgeNumber || '-', format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', {
         locale: ptBR
       }), entry.exitTime ? format(new Date(entry.exitTime), 'dd/MM/yyyy HH:mm', {
         locale: ptBR
       }) : 'Ativo'];
     });
     autoTable(doc, {
-      head: [['Nome', 'Documento', 'Morador', 'Apt', 'Entrada', 'Saída']],
+      head: [['Nome', 'Documento', 'Morador', 'Apt', 'Crachá', 'Entrada', 'Saída']],
       body: tableData,
       startY: 28
     });

@@ -307,6 +307,9 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
               key={tab.id}
               onClick={() => {
                 if (tab.id === 'chat') markChatRead();
+                if (tab.id === 'mails') setCounts(prev => ({ ...prev, mails: 0 }));
+                if (tab.id === 'announcements') setCounts(prev => ({ ...prev, announcements: 0 }));
+                if (tab.id === 'home') markNotifsRead();
                 onTabChange(tab.id);
               }}
               className={cn(

@@ -29,12 +29,30 @@ self.addEventListener('push', (event) => {
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title || 'Portal do Morador', options)
+    self.registration.showNotification(data.title || 'Portal do Morador', options).then(() => {
+      // Update app icon badge counter
+      if (self.navigator && self.navigator.setAppBadge) {
+        return self.registration.getNotifications().then((notifications) => {
+          self.navigator.setAppBadge(notifications.length);
+        });
+      }
+    })
   );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+
+  // Update badge on click (decrement)
+  if (self.navigator && self.navigator.setAppBadge) {
+    self.registration.getNotifications().then((notifications) => {
+      if (notifications.length > 0) {
+        self.navigator.setAppBadge(notifications.length);
+      } else {
+        self.navigator.clearAppBadge();
+      }
+    });
+  }
 
   if (event.action === 'close') return;
 

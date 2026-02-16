@@ -457,67 +457,56 @@ export const Settings = () => {
 
       toast.info('Processando arquivos PDF...');
       
+      const { extractTextFromPDF, parseResidentsFromText, parsedToResident } = await import('@/lib/pdf-import');
+
       for (const file of Array.from(files)) {
         try {
-          // Para PDFs, tentamos extrair texto e buscar padrões
           const arrayBuffer = await file.arrayBuffer();
           const text = await extractTextFromPDF(arrayBuffer);
           
-          // Tentar identificar moradores por padrões (exemplo simples)
-          const lines = text.split('\n').filter(line => line.trim());
+          if (!text || text.trim().length < 10) {
+            toast.warning(`Não foi possível extrair texto de ${file.name}. O PDF pode ser uma imagem escaneada.`);
+            continue;
+          }
+
+          const parsed = parseResidentsFromText(text);
           
+          if (parsed.length === 0) {
+            toast.warning(
+              `Nenhum morador reconhecido em ${file.name}. Formatos aceitos: tabelas, "Nome | Apto | Tel", "Nome - Apto 101", campos rotulados (Nome: ..., Apartamento: ...), CSV com ; ou ,.`,
+              { duration: 8000 }
+            );
+            continue;
+          }
+
           let importedCount = 0;
-          for (const line of lines) {
-            // Exemplo: busca por linhas com formato "Nome | Apartamento | Telefone"
-            const match = line.match(/^(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)$/);
-            if (match) {
-              const [, name, apartment, phone] = match;
-              const resident = {
-                id: `res_${Date.now()}_${Math.random()}`,
-                name: name.trim(),
-                apartment: apartment.trim(),
-                phone: phone.trim(),
-                email: '',
-                cpf: '',
-                photo: '',
-                vehiclePlate: '',
-                vehicleModel: '',
-                vehicleColor: '',
-                vehicleTag: '',
-                createdAt: new Date().toISOString()
-              };
-              
-              const success = await supabaseStorage.saveResident(resident);
-              if (success) importedCount++;
+          let skippedCount = 0;
+          for (const p of parsed) {
+            const resident = parsedToResident(p);
+            const success = await supabaseStorage.saveResident(resident);
+            if (success) {
+              importedCount++;
+            } else {
+              skippedCount++;
             }
           }
           
+          let msg = `${importedCount} moradores importados de ${file.name}`;
+          if (skippedCount > 0) msg += ` (${skippedCount} duplicados ignorados)`;
+          
           if (importedCount > 0) {
-            toast.success(`${importedCount} moradores importados de ${file.name}`);
+            toast.success(msg);
           } else {
-            toast.warning(`Nenhum dado reconhecido em ${file.name}. Use CSV para importação estruturada.`);
+            toast.warning(msg);
           }
         } catch (error) {
           console.error('PDF import error:', error);
-          toast.error(`Erro ao processar ${file.name}. Use CSV para melhor compatibilidade.`);
+          toast.error(`Erro ao processar ${file.name}. Tente um formato diferente.`);
         }
       }
     };
 
     input.click();
-  };
-
-  const extractTextFromPDF = async (arrayBuffer: ArrayBuffer): Promise<string> => {
-    try {
-      // @ts-ignore - pdf-parse não tem tipos TypeScript completos
-      const pdfParse = (await import('pdf-parse')).default;
-      const buffer = Buffer.from(arrayBuffer);
-      const data = await pdfParse(buffer);
-      return data.text;
-    } catch (error) {
-      console.error('Erro ao extrair texto do PDF:', error);
-      return '';
-    }
   };
 
   const handleClearData = () => {

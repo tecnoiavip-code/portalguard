@@ -22,6 +22,7 @@ import { Megaphone, Send, Paperclip, X, Eye, FileText, Loader2, Trash2 } from 'l
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { sendPushToUser } from '@/lib/push-subscription';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -119,6 +120,28 @@ const StaffAnnouncements = () => {
             file_size: file.size,
             content_type: file.type,
           });
+        }
+      }
+
+      // Notify all residents via push
+      const { data: residents } = await supabase
+        .from('residents')
+        .select('auth_user_id');
+      if (residents) {
+        const pushTitle = priority === 'urgent' ? '🚨 Comunicado urgente' : '📢 Novo comunicado';
+        for (const r of residents) {
+          if (r.auth_user_id) {
+            // In-app notification
+            await supabase.from('notifications').insert({
+              user_id: r.auth_user_id,
+              title: pushTitle,
+              body: title.trim().substring(0, 100),
+              type: 'announcement',
+              related_id: ann?.id,
+            });
+            // Push notification
+            sendPushToUser(r.auth_user_id, pushTitle, title.trim().substring(0, 100), 'announcement');
+          }
         }
       }
 

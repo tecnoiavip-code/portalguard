@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { exportToCSV } from '@/lib/export-csv';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,7 +21,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Combobox } from '@/components/ui/combobox';
-import { Package, CheckCircle, Search, Pencil, Trash2, Download, Camera, X, Upload, Video } from 'lucide-react';
+import { Package, CheckCircle, Search, Pencil, Trash2, Download, Camera, X, Upload, Video, FileSpreadsheet } from 'lucide-react';
 import { Mail, Resident } from '@/types';
 import { useMails } from '@/hooks/useMails';
 import { useResidents } from '@/hooks/useResidents';
@@ -314,6 +315,17 @@ export const MailManagement = () => {
     toast.success('PDF gerado com sucesso');
   };
 
+  const exportMailsToCSV = () => {
+    const headers = ['Morador', 'Apartamento', 'Remetente', 'Tipo', 'Recebida em', 'Observações'];
+    const rows = filteredPendingMails.map(mail => {
+      const resident = residents.find(r => r.id === mail.residentId);
+      return [resident?.name || 'Desconhecido', resident?.apartment || '-', mail.sender, mail.packageType,
+        format(new Date(mail.receivedAt), 'dd/MM/yyyy HH:mm', { locale: ptBR }), mail.notes || '-'];
+    });
+    exportToCSV(`correspondencias-${format(new Date(), 'dd-MM-yyyy')}`, headers, rows);
+    toast.success('CSV gerado com sucesso');
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div>
@@ -464,10 +476,16 @@ export const MailManagement = () => {
                 <span className="text-warning">Pendentes de Retirada</span>
                 <span className="text-sm font-normal">{pendingMails.length}</span>
               </div>
-              <Button variant="outline" size="sm" onClick={exportMailsToPDF}>
-                <Download className="h-4 w-4 mr-2" />
-                Exportar PDF
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={exportMailsToPDF}>
+                  <Download className="h-4 w-4 mr-2" />
+                  PDF
+                </Button>
+                <Button variant="outline" size="sm" onClick={exportMailsToCSV}>
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                  CSV
+                </Button>
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent>

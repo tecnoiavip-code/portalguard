@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { ScrollText, Search, LogIn, LogOut, Download, ShieldBan } from 'lucide-react';
+import { ScrollText, Search, LogIn, LogOut, Download, ShieldBan, FileSpreadsheet } from 'lucide-react';
 import { useAccessEntries } from '@/hooks/useAccessEntries';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { exportToCSV } from '@/lib/export-csv';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
@@ -90,6 +91,17 @@ export const Logs = () => {
     toast.success('PDF gerado com sucesso');
   };
 
+  const exportLogsToCSV = () => {
+    const headers = ['Visitante', 'Documento', 'Morador', 'Apt', 'Entrada', 'Saída'];
+    const rows = filteredEntries.map(entry => [
+      entry.visitorName, entry.visitorDocument, entry.residentName, entry.apartment,
+      format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', { locale: ptBR }),
+      entry.exitTime ? format(new Date(entry.exitTime), 'dd/MM/yyyy HH:mm', { locale: ptBR }) : 'Ativo',
+    ]);
+    exportToCSV(`logs-acesso-${format(new Date(), 'dd-MM-yyyy')}`, headers, rows);
+    toast.success('CSV gerado com sucesso');
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div>
@@ -108,7 +120,11 @@ export const Logs = () => {
               <Badge variant="secondary">{entries.length} registros</Badge>
               <Button variant="outline" size="sm" onClick={exportLogsToPDF}>
                 <Download className="h-4 w-4 mr-2" />
-                Exportar PDF
+                PDF
+              </Button>
+              <Button variant="outline" size="sm" onClick={exportLogsToCSV}>
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                CSV
               </Button>
             </div>
           </CardTitle>

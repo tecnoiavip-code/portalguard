@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { sendPushToUser } from '@/lib/push-subscription';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -167,6 +168,8 @@ const StaffChat = () => {
         type: 'chat',
         related_id: selectedThread.resident_id,
       });
+      // Send real push notification
+      sendPushToUser(res.auth_user_id, 'Nova mensagem da portaria', msg.substring(0, 100), 'chat');
     }
   };
 

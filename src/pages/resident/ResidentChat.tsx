@@ -8,6 +8,7 @@ import { Send, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { sendPushToStaff } from '@/lib/push-subscription';
 
 interface ChatMsg {
   id: string;
@@ -96,7 +97,10 @@ const ResidentChat = () => {
       message: msg,
     } as any);
 
-    // Notify staff
+    // Notify staff via push notification
+    sendPushToStaff('Nova mensagem de morador', msg.substring(0, 100), `chat-${residentId}`);
+
+    // Also create in-app notifications for staff
     const { data: staffRoles } = await supabase
       .from('user_roles')
       .select('user_id')

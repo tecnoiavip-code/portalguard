@@ -32,7 +32,16 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
     }
   }, []);
 
+  const vibrate = useCallback(() => {
+    try {
+      if ('vibrate' in navigator) {
+        navigator.vibrate([200, 100, 200]);
+      }
+    } catch { /* silent */ }
+  }, []);
+
   const showBrowserNotification = useCallback((title: string, body: string) => {
+    vibrate();
     if ('Notification' in window && Notification.permission === 'granted') {
       try {
         new Notification(title, {
@@ -45,7 +54,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
         // Silent fail on unsupported environments
       }
     }
-  }, []);
+  }, [vibrate]);
 
   useEffect(() => {
     const total = unreadCount + notifCount;

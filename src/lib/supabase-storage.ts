@@ -17,7 +17,7 @@ export const supabaseStorage = {
     return (data || []).map(r => ({
       id: r.id,
       name: r.name,
-      cpf: r.cpf,
+      cpf: r.cpf || '',
       apartment: r.apartment,
       phone: r.phone || '',
       email: r.email || '',

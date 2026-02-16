@@ -278,7 +278,7 @@ export const Residents = () => {
                       </TableCell>
                       <TableCell className="font-medium">{resident.name}</TableCell>
                       <TableCell>{resident.apartment}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{resident.cpf}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{resident.cpf || '-'}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {resident.phone || '-'}
                       </TableCell>

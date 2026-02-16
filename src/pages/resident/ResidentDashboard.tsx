@@ -113,11 +113,11 @@ const ResidentDashboard = ({ onNavigate, counts }: Props) => {
       borderColor: 'border-blue-500/20',
       badge: counts.mails,
       badgeLabel: 'pendente',
-      items: previewMails.map(m => ({
-        primary: m.sender,
-        secondary: m.package_type || 'Carta',
-        time: m.received_at ? format(new Date(m.received_at), "dd/MM HH:mm", { locale: ptBR }) : '',
-      })),
+      items: previewMails.length > 0 ? [{
+        primary: previewMails[0].sender,
+        secondary: previewMails[0].package_type || 'Carta',
+        time: previewMails[0].received_at ? format(new Date(previewMails[0].received_at), "dd/MM HH:mm", { locale: ptBR }) : '',
+      }] : [],
     },
     {
       id: 'visitors',
@@ -128,12 +128,12 @@ const ResidentDashboard = ({ onNavigate, counts }: Props) => {
       borderColor: 'border-emerald-500/20',
       badge: previewVisitors.filter(v => !v.exit_time).length,
       badgeLabel: 'no local',
-      items: previewVisitors.map(v => ({
-        primary: v.visitor_name,
-        secondary: v.exit_time ? 'Saiu' : 'No local',
-        time: v.entry_time ? format(new Date(v.entry_time), "dd/MM HH:mm", { locale: ptBR }) : '',
-        active: !v.exit_time,
-      })),
+      items: previewVisitors.length > 0 ? [{
+        primary: previewVisitors[0].visitor_name,
+        secondary: previewVisitors[0].exit_time ? 'Saiu' : 'No local',
+        time: previewVisitors[0].entry_time ? format(new Date(previewVisitors[0].entry_time), "dd/MM HH:mm", { locale: ptBR }) : '',
+        active: !previewVisitors[0].exit_time,
+      }] : [],
     },
     {
       id: 'announcements',
@@ -144,11 +144,11 @@ const ResidentDashboard = ({ onNavigate, counts }: Props) => {
       borderColor: 'border-amber-500/20',
       badge: counts.announcements,
       badgeLabel: 'novo',
-      items: previewAnnouncements.map(a => ({
-        primary: a.title,
-        secondary: a.priority === 'urgent' ? '🔴 Urgente' : a.priority === 'important' ? '🟡 Importante' : 'Normal',
-        time: format(new Date(a.created_at), "dd/MM HH:mm", { locale: ptBR }),
-      })),
+      items: previewAnnouncements.length > 0 ? [{
+        primary: previewAnnouncements[0].title,
+        secondary: previewAnnouncements[0].priority === 'urgent' ? '🔴 Urgente' : previewAnnouncements[0].priority === 'important' ? '🟡 Importante' : 'Normal',
+        time: format(new Date(previewAnnouncements[0].created_at), "dd/MM HH:mm", { locale: ptBR }),
+      }] : [],
     },
     {
       id: 'authorizations',
@@ -159,11 +159,11 @@ const ResidentDashboard = ({ onNavigate, counts }: Props) => {
       borderColor: 'border-violet-500/20',
       badge: 0,
       badgeLabel: '',
-      items: previewAuths.map(a => ({
-        primary: a.visitor_name,
-        secondary: statusLabel[a.status || 'pending'] || a.status,
-        time: format(new Date(a.authorized_date), "dd/MM/yyyy", { locale: ptBR }),
-      })),
+      items: previewAuths.length > 0 ? [{
+        primary: previewAuths[0].visitor_name,
+        secondary: statusLabel[previewAuths[0].status || 'pending'] || previewAuths[0].status,
+        time: format(new Date(previewAuths[0].authorized_date), "dd/MM/yyyy", { locale: ptBR }),
+      }] : [],
     },
     {
       id: 'chat',

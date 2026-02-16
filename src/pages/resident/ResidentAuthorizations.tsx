@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Shield, Plus, Clock } from 'lucide-react';
+import { Shield, Plus, Clock, CalendarDays, Car, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { cn } from '@/lib/utils';
 
 interface Authorization {
   id: string;
@@ -25,18 +25,11 @@ interface Authorization {
   staff_notes: string | null;
 }
 
-const statusLabels: Record<string, string> = {
-  pending: 'Pendente',
-  approved: 'Aprovada',
-  rejected: 'Rejeitada',
-  expired: 'Expirada',
-};
-
-const statusVariant = (s: string | null): 'default' | 'secondary' | 'destructive' | 'outline' => {
-  if (s === 'approved') return 'default';
-  if (s === 'rejected') return 'destructive';
-  if (s === 'expired') return 'secondary';
-  return 'outline';
+const statusConfig: Record<string, { label: string; color: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+  pending: { label: 'Pendente', color: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30', variant: 'outline' },
+  approved: { label: 'Aprovada', color: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30', variant: 'default' },
+  rejected: { label: 'Rejeitada', color: 'bg-destructive/10 text-destructive border-destructive/30', variant: 'destructive' },
+  expired: { label: 'Expirada', color: 'bg-muted text-muted-foreground border-border', variant: 'secondary' },
 };
 
 const ResidentAuthorizations = () => {
@@ -76,7 +69,6 @@ const ResidentAuthorizations = () => {
     e.preventDefault();
     if (!residentId) return;
 
-    // Check for duplicate pending authorization
     const { data: existing } = await supabase
       .from('visitor_authorizations')
       .select('id')
@@ -100,17 +92,12 @@ const ResidentAuthorizations = () => {
       purpose: form.purpose || null,
       vehicle_plate: form.vehicle_plate || null,
     } as any);
-    if (error) {
-      toast.error('Erro ao enviar autorização');
-      return;
-    }
+    if (error) { toast.error('Erro ao enviar autorização'); return; }
     toast.success('Autorização enviada à portaria!');
     setOpen(false);
     setForm({ visitor_name: '', visitor_document: '', authorized_date: '', authorized_until: '', purpose: '', vehicle_plate: '' });
     await loadAuths(residentId);
 
-    // Notify staff
-    // Get all staff user IDs
     const { data: staffRoles } = await supabase
       .from('user_roles')
       .select('user_id')
@@ -126,75 +113,106 @@ const ResidentAuthorizations = () => {
     }
   };
 
-  if (loading) return <div className="flex justify-center p-8"><Clock className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  if (loading) return (
+    <div className="flex justify-center py-12">
+      <Clock className="h-6 w-6 animate-spin text-primary" />
+    </div>
+  );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold">Autorizações</h2>
+        <div>
+          <h2 className="text-xl font-bold text-foreground">Autorizações</h2>
+          <p className="text-sm text-muted-foreground">Gerencie acessos de visitantes</p>
+        </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button size="sm"><Plus className="h-4 w-4 mr-1" />Nova</Button>
+            <Button size="sm" className="rounded-xl gap-1.5">
+              <Plus className="h-4 w-4" />Nova
+            </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="rounded-2xl">
             <DialogHeader><DialogTitle>Autorizar Visitante</DialogTitle></DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
                 <Label>Nome do visitante *</Label>
-                <Input value={form.visitor_name} onChange={(e) => setForm({ ...form, visitor_name: e.target.value })} required />
+                <Input className="rounded-xl" value={form.visitor_name} onChange={(e) => setForm({ ...form, visitor_name: e.target.value })} required />
               </div>
               <div className="space-y-2">
                 <Label>Documento</Label>
-                <Input value={form.visitor_document} onChange={(e) => setForm({ ...form, visitor_document: e.target.value })} />
+                <Input className="rounded-xl" value={form.visitor_document} onChange={(e) => setForm({ ...form, visitor_document: e.target.value })} />
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-2">
                   <Label>Data autorizada *</Label>
-                  <Input type="date" value={form.authorized_date} onChange={(e) => setForm({ ...form, authorized_date: e.target.value })} required />
+                  <Input className="rounded-xl" type="date" value={form.authorized_date} onChange={(e) => setForm({ ...form, authorized_date: e.target.value })} required />
                 </div>
                 <div className="space-y-2">
                   <Label>Válido até</Label>
-                  <Input type="date" value={form.authorized_until} onChange={(e) => setForm({ ...form, authorized_until: e.target.value })} />
+                  <Input className="rounded-xl" type="date" value={form.authorized_until} onChange={(e) => setForm({ ...form, authorized_until: e.target.value })} />
                 </div>
               </div>
               <div className="space-y-2">
                 <Label>Motivo</Label>
-                <Textarea value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })} />
+                <Textarea className="rounded-xl" value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })} />
               </div>
               <div className="space-y-2">
                 <Label>Placa do veículo</Label>
-                <Input value={form.vehicle_plate} onChange={(e) => setForm({ ...form, vehicle_plate: e.target.value })} />
+                <Input className="rounded-xl" value={form.vehicle_plate} onChange={(e) => setForm({ ...form, vehicle_plate: e.target.value })} />
               </div>
-              <Button type="submit" className="w-full">Enviar à Portaria</Button>
+              <Button type="submit" className="w-full rounded-xl">Enviar à Portaria</Button>
             </form>
           </DialogContent>
         </Dialog>
       </div>
 
       {auths.length === 0 ? (
-        <Card><CardContent className="p-6 text-center text-muted-foreground">Nenhuma autorização registrada</CardContent></Card>
+        <div className="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl p-8 text-center">
+          <Shield className="h-12 w-12 mx-auto mb-3 text-muted-foreground/30" />
+          <p className="text-muted-foreground">Nenhuma autorização registrada</p>
+        </div>
       ) : (
-        auths.map((a) => (
-          <Card key={a.id}>
-            <CardContent className="p-4 flex items-start gap-3">
-              <div className="p-2 rounded-lg bg-muted">
-                <Shield className="h-5 w-5 text-accent" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-medium">{a.visitor_name}</p>
-                  <Badge variant={statusVariant(a.status)}>{statusLabels[a.status || 'pending']}</Badge>
+        auths.map((a) => {
+          const cfg = statusConfig[a.status || 'pending'];
+          return (
+            <div key={a.id} className="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl p-4 transition-all">
+              <div className="flex items-start gap-3">
+                <div className={cn("p-2.5 rounded-xl flex-shrink-0", cfg.color.split(' ')[0])}>
+                  <Shield className={cn("h-5 w-5", cfg.color.split(' ').slice(1).join(' '))} />
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  {format(new Date(a.authorized_date), 'dd/MM/yyyy', { locale: ptBR })}
-                  {a.authorized_until && ` até ${format(new Date(a.authorized_until), 'dd/MM/yyyy', { locale: ptBR })}`}
-                </p>
-                {a.purpose && <p className="text-xs text-muted-foreground mt-1">{a.purpose}</p>}
-                {a.staff_notes && <p className="text-xs text-warning mt-1">Portaria: {a.staff_notes}</p>}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-semibold text-foreground truncate">{a.visitor_name}</p>
+                    <Badge variant={cfg.variant} className={cn("text-xs shrink-0", cfg.color, "hover:" + cfg.color.split(' ')[0])}>
+                      {cfg.label}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1.5 text-sm text-muted-foreground">
+                    <CalendarDays className="h-3.5 w-3.5" />
+                    <span>{format(new Date(a.authorized_date), 'dd/MM/yyyy', { locale: ptBR })}</span>
+                    {a.authorized_until && (
+                      <span>até {format(new Date(a.authorized_until), 'dd/MM/yyyy', { locale: ptBR })}</span>
+                    )}
+                  </div>
+                  {a.vehicle_plate && (
+                    <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
+                      <Car className="h-3 w-3" />
+                      <span>{a.vehicle_plate}</span>
+                    </div>
+                  )}
+                  {a.purpose && <p className="text-xs text-muted-foreground mt-1.5">{a.purpose}</p>}
+                  {a.staff_notes && (
+                    <div className="flex items-start gap-1.5 mt-2 bg-muted/50 rounded-lg px-2.5 py-1.5">
+                      <MessageSquare className="h-3 w-3 mt-0.5 text-muted-foreground" />
+                      <p className="text-xs text-muted-foreground">Portaria: {a.staff_notes}</p>
+                    </div>
+                  )}
+                </div>
               </div>
-            </CardContent>
-          </Card>
-        ))
+            </div>
+          );
+        })
       )}
     </div>
   );

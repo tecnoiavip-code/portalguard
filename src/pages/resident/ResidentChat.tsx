@@ -3,8 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
-import { Send, Clock } from 'lucide-react';
+import { Send, Clock, MessageCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -38,7 +37,6 @@ const ResidentChat = () => {
       .order('created_at', { ascending: true });
     setMessages((data as any) || []);
     
-    // Mark staff messages as read
     await supabase
       .from('chat_messages')
       .update({ read: true })
@@ -63,7 +61,6 @@ const ResidentChat = () => {
     init();
   }, [user]);
 
-  // Realtime subscription
   useEffect(() => {
     if (!residentId) return;
     const channel = supabase
@@ -75,7 +72,6 @@ const ResidentChat = () => {
         filter: `resident_id=eq.${residentId}`,
       }, (payload) => {
         setMessages((prev) => [...prev, payload.new as ChatMsg]);
-        // Auto-mark as read if from staff
         if ((payload.new as ChatMsg).sender_type === 'staff') {
           supabase.from('chat_messages').update({ read: true }).eq('id', (payload.new as ChatMsg).id);
         }
@@ -97,10 +93,8 @@ const ResidentChat = () => {
       message: msg,
     } as any);
 
-    // Notify staff via push notification
     sendPushToStaff('Nova mensagem de morador', msg.substring(0, 100), `chat-${residentId}`);
 
-    // Also create in-app notifications for staff
     const { data: staffRoles } = await supabase
       .from('user_roles')
       .select('user_id')
@@ -117,34 +111,47 @@ const ResidentChat = () => {
     }
   };
 
-  if (loading) return <div className="flex justify-center p-8"><Clock className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  if (loading) return (
+    <div className="flex justify-center py-12">
+      <Clock className="h-6 w-6 animate-spin text-primary" />
+    </div>
+  );
 
   return (
-    <div className="flex flex-col h-[calc(100vh-12rem)]">
-      <h2 className="text-xl font-bold mb-4">Chat com Portaria</h2>
+    <div className="flex flex-col h-[calc(100vh-12rem)] animate-in fade-in duration-500">
+      <div className="mb-3">
+        <h2 className="text-xl font-bold text-foreground">Chat</h2>
+        <p className="text-sm text-muted-foreground">Fale diretamente com a portaria</p>
+      </div>
       
-      <Card className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl">
         <div ref={scrollRef} className="h-full overflow-y-auto p-4 space-y-3">
           {messages.length === 0 && (
-            <p className="text-center text-muted-foreground py-8">Envie uma mensagem para a portaria</p>
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <MessageCircle className="h-12 w-12 text-muted-foreground/30 mb-3" />
+              <p className="text-muted-foreground">Envie uma mensagem para a portaria</p>
+            </div>
           )}
           {messages.map((m) => (
             <div key={m.id} className={cn('flex', m.sender_type === 'resident' ? 'justify-end' : 'justify-start')}>
               <div className={cn(
-                'max-w-[80%] rounded-2xl px-4 py-2',
+                'max-w-[80%] rounded-2xl px-4 py-2.5 shadow-sm',
                 m.sender_type === 'resident'
-                  ? 'bg-primary text-primary-foreground rounded-br-sm'
-                  : 'bg-muted rounded-bl-sm'
+                  ? 'bg-primary text-primary-foreground rounded-br-md'
+                  : 'bg-muted/80 backdrop-blur-sm rounded-bl-md'
               )}>
-                <p className="text-sm">{m.message}</p>
-                <p className={cn('text-[10px] mt-1', m.sender_type === 'resident' ? 'text-primary-foreground/60' : 'text-muted-foreground')}>
+                <p className="text-sm leading-relaxed">{m.message}</p>
+                <p className={cn(
+                  'text-[10px] mt-1 text-right',
+                  m.sender_type === 'resident' ? 'text-primary-foreground/60' : 'text-muted-foreground'
+                )}>
                   {format(new Date(m.created_at), 'HH:mm', { locale: ptBR })}
                 </p>
               </div>
             </div>
           ))}
         </div>
-      </Card>
+      </div>
 
       <div className="flex gap-2 mt-3">
         <Input
@@ -152,8 +159,9 @@ const ResidentChat = () => {
           onChange={(e) => setNewMsg(e.target.value)}
           placeholder="Digite sua mensagem..."
           onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+          className="rounded-xl"
         />
-        <Button size="icon" onClick={sendMessage} disabled={!newMsg.trim()}>
+        <Button size="icon" onClick={sendMessage} disabled={!newMsg.trim()} className="rounded-xl shrink-0">
           <Send className="h-4 w-4" />
         </Button>
       </div>

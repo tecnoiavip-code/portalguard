@@ -591,7 +591,7 @@ export const NewRegistry = () => {
           <DialogHeader>
             <DialogTitle>{editingId ? 'Editar Cadastro' : 'Registrar Nova Entrada'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleEntry} className="space-y-3">
+          <form onSubmit={handleEntry} className="space-y-4">
               {/* Blocked visitor alert */}
               {formData.visitorDocument && isVisitorBlocked(formData.visitorDocument) && (
                 <div className="rounded-lg border-2 border-destructive bg-destructive/10 p-4 flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
@@ -666,10 +666,10 @@ export const NewRegistry = () => {
                 </div>}
 
               {/* Row 2: Visitando + Empresa (if service provider) + Crachá */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="space-y-1 relative md:col-span-1">
-                  <Label htmlFor="residentId" className="text-xs">Visitando *</Label>
-                  <Input id="visitedLocation" className="h-9" value={visitedLocationSearch} onChange={e => {
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2 relative md:col-span-1">
+                  <Label htmlFor="residentId">Visitando *</Label>
+                  <Input id="visitedLocation" value={visitedLocationSearch} onChange={e => {
                 setVisitedLocationSearch(e.target.value);
                 setShowResidentSuggestions(e.target.value.length > 0);
               }} onFocus={() => setShowResidentSuggestions(visitedLocationSearch.length > 0)} placeholder="Morador ou apt" required />
@@ -681,17 +681,17 @@ export const NewRegistry = () => {
                     </div>}
                 </div>
 
-                <div className="space-y-1">
-                  <Label htmlFor="company" className="text-xs">{formData.visitorType === 'service_provider' ? 'Empresa' : 'Empresa (opcional)'}</Label>
-                  <Input id="company" className="h-9" value={formData.company} onChange={e => setFormData({
+                <div className="space-y-2">
+                  <Label htmlFor="company">{formData.visitorType === 'service_provider' ? 'Empresa' : 'Empresa (opcional)'}</Label>
+                  <Input id="company" value={formData.company} onChange={e => setFormData({
                 ...formData,
                 company: e.target.value
               })} placeholder="Nome da empresa" />
                 </div>
 
-                <div className="space-y-1">
-                  <Label htmlFor="badgeNumber" className="text-xs">Nº Crachá</Label>
-                  <Input id="badgeNumber" className="h-9" value={formData.badgeNumber} onChange={e => setFormData({
+                <div className="space-y-2">
+                  <Label htmlFor="badgeNumber">Nº Crachá</Label>
+                  <Input id="badgeNumber" value={formData.badgeNumber} onChange={e => setFormData({
                 ...formData,
                 badgeNumber: e.target.value
               })} placeholder="Ex: 001" />
@@ -699,34 +699,34 @@ export const NewRegistry = () => {
               </div>
 
               {/* Row 3: Veículo + Motivo */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <div className="space-y-1">
-                  <Label htmlFor="vehiclePlate" className="text-xs">Placa</Label>
-                  <Input id="vehiclePlate" className="h-9" value={formData.vehiclePlate} onChange={e => setFormData({
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="vehiclePlate">Placa</Label>
+                  <Input id="vehiclePlate" value={formData.vehiclePlate} onChange={e => setFormData({
                 ...formData,
                 vehiclePlate: e.target.value
               })} placeholder="ABC-1234" />
                 </div>
 
-                <div className="space-y-1">
-                  <Label htmlFor="vehicleModel" className="text-xs">Modelo</Label>
-                  <Input id="vehicleModel" className="h-9" value={formData.vehicleModel} onChange={e => setFormData({
+                <div className="space-y-2">
+                  <Label htmlFor="vehicleModel">Modelo</Label>
+                  <Input id="vehicleModel" value={formData.vehicleModel} onChange={e => setFormData({
                 ...formData,
                 vehicleModel: e.target.value
               })} placeholder="Honda Civic" />
                 </div>
 
-                <div className="space-y-1">
-                  <Label htmlFor="vehicleColor" className="text-xs">Cor</Label>
-                  <Input id="vehicleColor" className="h-9" value={formData.vehicleColor} onChange={e => setFormData({
+                <div className="space-y-2">
+                  <Label htmlFor="vehicleColor">Cor</Label>
+                  <Input id="vehicleColor" value={formData.vehicleColor} onChange={e => setFormData({
                 ...formData,
                 vehicleColor: e.target.value
               })} placeholder="Preto" />
                 </div>
 
-                <div className="space-y-1">
-                  <Label htmlFor="purpose" className="text-xs">Motivo</Label>
-                  <Input id="purpose" className="h-9" value={formData.purpose} onChange={e => setFormData({
+                <div className="space-y-2">
+                  <Label htmlFor="purpose">Motivo</Label>
+                  <Input id="purpose" value={formData.purpose} onChange={e => setFormData({
                 ...formData,
                 purpose: e.target.value
               })} placeholder="Visita, manutenção..." />
@@ -734,26 +734,33 @@ export const NewRegistry = () => {
               </div>
 
               {/* Row 4: Foto */}
-              <div className="flex items-center gap-3">
-                <Label className="text-xs shrink-0">Foto:</Label>
-                <Button type="button" variant="outline" size="sm" onClick={startCamera} className="h-8">
-                  <Camera className="h-3 w-3 mr-1" />
-                  Webcam
-                </Button>
-                <Button type="button" variant="outline" size="sm" className="h-8" onClick={() => document.getElementById('photoUpload')?.click()}>
-                  <Upload className="h-3 w-3 mr-1" />
-                  Arquivo
-                </Button>
+              <div className="space-y-2 flex items-center gap-4">
+                <div>
+                  {formData.photo ? (
+                    <img src={formData.photo} alt="Foto" className="w-24 h-24 rounded-full object-cover border-2 border-primary" />
+                  ) : (
+                    <div className="w-24 h-24 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
+                      Sem foto
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Foto do Visitante</Label>
+                  <div className="flex gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={startCamera}>
+                      📷 Webcam
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" onClick={() => document.getElementById('photoUpload')?.click()}>
+                      📁 Carregar
+                    </Button>
+                    {formData.photo && (
+                      <Button type="button" size="sm" variant="destructive" onClick={() => setFormData({ ...formData, photo: '' })}>
+                        🗑️ Remover
+                      </Button>
+                    )}
+                  </div>
+                </div>
                 <input id="photoUpload" type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
-                {formData.photo && <div className="relative inline-block">
-                    <img src={formData.photo} alt="Foto" className="w-10 h-10 object-cover rounded border" />
-                    <button type="button" onClick={() => setFormData({
-                ...formData,
-                photo: ''
-              })} className="absolute -top-1 -right-1 bg-destructive text-white rounded-full p-0.5">
-                      <X className="h-2 w-2" />
-                    </button>
-                  </div>}
               </div>
 
               {showCamera && <div className="space-y-2">

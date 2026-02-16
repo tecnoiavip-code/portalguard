@@ -115,8 +115,8 @@ export const MailManagement = () => {
     const path = `${Date.now()}.${ext}`;
     const { error } = await supabase.storage.from('mail-photos').upload(path, photoFile);
     if (error) { console.error('Upload error:', error); return null; }
-    const { data } = supabase.storage.from('mail-photos').getPublicUrl(path);
-    return data.publicUrl;
+    const { data } = await supabase.storage.from('mail-photos').createSignedUrl(path, 60 * 60 * 24 * 365);
+    return data?.signedUrl || null;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

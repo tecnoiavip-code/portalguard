@@ -108,14 +108,14 @@ const StaffAnnouncements = () => {
             continue;
           }
 
-          const { data: urlData } = supabase.storage
+          const { data: urlData } = await supabase.storage
             .from('announcement-files')
-            .getPublicUrl(filePath);
+            .createSignedUrl(filePath, 60 * 60 * 24 * 365);
 
           await supabase.from('announcement_attachments').insert({
             announcement_id: ann.id,
             file_name: file.name,
-            file_url: urlData.publicUrl,
+            file_url: urlData?.signedUrl || '',
             file_size: file.size,
             content_type: file.type,
           });

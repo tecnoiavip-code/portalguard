@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { sendPushToUser } from '@/lib/push-subscription';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -76,13 +77,16 @@ const StaffAuthorizations = () => {
         .eq('id', auth.resident_id)
         .maybeSingle();
       if (res?.auth_user_id) {
+        const title = status === 'approved' ? '✅ Autorização aprovada' : '❌ Autorização rejeitada';
+        const body = `Visitante: ${auth.visitor_name}${staffNotes ? ` — ${staffNotes}` : ''}`;
         await supabase.from('notifications').insert({
           user_id: res.auth_user_id,
-          title: status === 'approved' ? '✅ Autorização aprovada' : '❌ Autorização rejeitada',
-          body: `Visitante: ${auth.visitor_name}${staffNotes ? ` — ${staffNotes}` : ''}`,
+          title,
+          body,
           type: 'authorization',
           related_id: id,
         });
+        sendPushToUser(res.auth_user_id, title, body, 'authorization');
       }
     }
 

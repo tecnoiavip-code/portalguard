@@ -10,6 +10,7 @@ import { Loader2 } from 'lucide-react';
 import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 import { setAppBadge } from '@/lib/pwa-badge';
 import { notifyResident, requestNotificationPermission } from '@/lib/pwa-notify';
+import { subscribeToPush, sendPushToUser } from '@/lib/push-subscription';
 
 interface ResidentLayoutProps {
   children: ReactNode;
@@ -34,17 +35,21 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
 
   const totalBadge = counts.chat + counts.notif + counts.mails + counts.announcements;
 
-  // Request notification permission on first user interaction
+  // Request notification permission and subscribe to push on first interaction
   useEffect(() => {
     const handler = () => {
-      requestNotificationPermission();
+      requestNotificationPermission().then(() => {
+        if (user) subscribeToPush(user.id);
+      });
       window.removeEventListener('click', handler);
     };
     window.addEventListener('click', handler, { once: true });
     // Also try immediately
-    requestNotificationPermission();
+    requestNotificationPermission().then(() => {
+      if (user) subscribeToPush(user.id);
+    });
     return () => window.removeEventListener('click', handler);
-  }, []);
+  }, [user]);
 
   // Update title and PWA badge
   useEffect(() => {

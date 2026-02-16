@@ -26,6 +26,7 @@ import { useMails } from '@/hooks/useMails';
 import { useResidents } from '@/hooks/useResidents';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { sendPushToUser } from '@/lib/push-subscription';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import jsPDF from 'jspdf';
@@ -178,6 +179,13 @@ export const MailManagement = () => {
               body: `Você recebeu ${mailData.packageType.toLowerCase()} de ${mailData.sender}${mailData.trackingCode ? ` (Rastreio: ${mailData.trackingCode})` : ''}`,
               type: 'mail',
             });
+            // Send real push notification
+            sendPushToUser(
+              resData.auth_user_id,
+              '📦 Nova correspondência!',
+              `Você recebeu ${mailData.packageType.toLowerCase()} de ${mailData.sender}`,
+              'mail'
+            );
           }
         } catch (err) {
           console.error('Error creating notification:', err);

@@ -29,12 +29,12 @@ export const Sidebar = ({ activeSection, onSectionChange, isOpen }: SidebarProps
   return (
     <aside
       className={cn(
-        'fixed md:sticky top-[88px] z-20 w-80 h-[calc(100vh-88px)] bg-card shadow-card transition-transform duration-300 flex flex-col',
+        'fixed md:sticky top-[88px] z-20 w-80 h-[calc(100vh-88px)] bg-card shadow-card transition-transform duration-300 overflow-y-auto',
         'md:translate-x-0',
         isOpen ? 'translate-x-0' : '-translate-x-full'
       )}
     >
-      <div className="p-6 space-y-6 flex-1 overflow-y-auto">
+      <div className="p-6 space-y-6">
         {groups.map((group) => (
           <div key={group}>
             <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">

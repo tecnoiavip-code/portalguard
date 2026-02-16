@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { playNotificationSound } from '@/lib/notification-sound';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { Home, Mail, Users, Shield, MessageSquare, LogOut, Bell, Megaphone } from 'lucide-react';
@@ -113,7 +114,8 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
     const channel = supabase
       .channel('resident-notifs')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (payload) => {
-        loadCounts(); // Full refresh to stay in sync
+        playNotificationSound();
+        loadCounts();
         const notif = payload.new as any;
         showBrowserNotification(notif.title || 'Nova notificação', notif.body || '');
       })
@@ -123,6 +125,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange }: ResidentLayoutProp
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
         const msg = payload.new as any;
         if (msg.sender_type === 'staff') {
+          playNotificationSound();
           loadCounts();
           showBrowserNotification('Nova mensagem da portaria', msg.message?.substring(0, 100) || '');
         }

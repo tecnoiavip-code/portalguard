@@ -21,7 +21,7 @@ export default defineConfig(({ mode }) => ({
         short_name: "Portal Morador",
         description: "Acesse seu condomínio na palma da mão",
         theme_color: "#1e40af",
-        background_color: "#ffffff",
+        background_color: "#1a2332",
         display: "standalone",
         orientation: "portrait",
         scope: "/",

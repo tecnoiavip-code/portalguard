@@ -148,8 +148,17 @@ export const NewRegistry = () => {
       const docMatch = document && entry.visitorDocument.includes(document);
       return nameMatch || docMatch;
     });
-    if (similar.length > 0) {
-      setSuggestions(similar.slice(0, 3));
+    // Deduplicate: keep only the most recent entry per visitor document
+    const uniqueMap = new Map<string, AccessEntry>();
+    for (const entry of similar) {
+      const key = entry.visitorDocument || entry.visitorName;
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, entry);
+      }
+    }
+    const unique = Array.from(uniqueMap.values());
+    if (unique.length > 0) {
+      setSuggestions(unique.slice(0, 3));
       setShowSuggestions(true);
     } else {
       setShowSuggestions(false);

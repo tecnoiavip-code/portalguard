@@ -190,16 +190,16 @@ const ResidentDashboard = ({ onNavigate, counts }: Props) => {
   return (
     <div className="space-y-5 animate-in fade-in duration-500">
       {/* Welcome */}
-      <div className="rounded-2xl bg-primary p-5 text-primary-foreground relative overflow-hidden"
+      <div className="rounded-2xl bg-primary p-6 text-primary-foreground relative overflow-hidden"
         style={{ boxShadow: 'var(--shadow-elegant)' }}
       >
         <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-8 translate-x-8" />
         <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full translate-y-6 -translate-x-6" />
         <div className="relative z-10">
-          <p className="text-sm opacity-80">{greeting()}</p>
-          <h2 className="text-xl font-bold mt-0.5">{resident?.name || 'Morador'}</h2>
+          <p className="text-base opacity-80">{greeting()}</p>
+          <h2 className="text-2xl font-bold mt-1">{resident?.name || 'Morador'}</h2>
           <div className="flex items-center gap-2 mt-2">
-            <span className="text-xs bg-white/20 px-2.5 py-0.5 rounded-full backdrop-blur-sm">
+            <span className="text-sm bg-white/20 px-3 py-1 rounded-full backdrop-blur-sm font-medium">
               Apto {resident?.apartment}
             </span>
           </div>
@@ -222,41 +222,41 @@ const ResidentDashboard = ({ onNavigate, counts }: Props) => {
             {/* Card Header */}
             <div className="flex items-center justify-between px-4 pt-4 pb-2">
               <div className="flex items-center gap-3">
-                <div className={cn("p-2 rounded-xl", section.iconBg)}>
-                  <section.icon className={cn("h-5 w-5", section.iconColor)} />
+                <div className={cn("p-3 rounded-xl shadow-sm", section.iconBg)}>
+                  <section.icon className={cn("h-7 w-7", section.iconColor)} strokeWidth={2.2} />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-foreground text-sm">{section.title}</h3>
+                  <h3 className="font-bold text-foreground text-base">{section.title}</h3>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 {section.badge > 0 && (
-                  <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-5 rounded-full animate-pulse">
+                  <Badge variant="destructive" className="text-xs px-2 py-0.5 h-6 rounded-full animate-pulse font-bold">
                     {section.badge} {section.badgeLabel}{section.badge > 1 ? 's' : ''}
                   </Badge>
                 )}
-                <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
+                <ChevronRight className="h-5 w-5 text-muted-foreground/50" />
               </div>
             </div>
 
             {/* Preview Items */}
-            <div className="px-4 pb-3">
+            <div className="px-4 pb-4">
               {section.items.length === 0 ? (
-                <p className="text-xs text-muted-foreground py-2">Nenhum registro</p>
+                <p className="text-sm text-muted-foreground py-2">Nenhum registro</p>
               ) : (
                 <div className="space-y-1">
                   {section.items.map((item, i) => (
-                    <div key={i} className="flex items-center justify-between py-1.5 border-t border-border/30 first:border-0">
+                    <div key={i} className="flex items-center justify-between py-2 border-t border-border/30 first:border-0">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           {'active' in item && (item as any).active && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
                           )}
-                          <span className="text-sm font-medium text-foreground truncate">{item.primary}</span>
+                          <span className="text-base font-semibold text-foreground truncate">{item.primary}</span>
                         </div>
-                        <p className="text-xs text-muted-foreground truncate">{item.secondary}</p>
+                        <p className="text-sm text-muted-foreground truncate mt-0.5">{item.secondary}</p>
                       </div>
-                      <span className="text-[10px] text-muted-foreground/70 shrink-0 ml-2">{item.time}</span>
+                      <span className="text-xs text-muted-foreground/70 shrink-0 ml-2 font-medium">{item.time}</span>
                     </div>
                   ))}
                 </div>

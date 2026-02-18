@@ -1,24 +1,64 @@
 import { Resident } from '@/types';
 
+let pdfjsInitialized = false;
+
 /**
  * Extract text from a PDF file using pdfjs-dist (browser-compatible)
  */
 export async function extractTextFromPDF(arrayBuffer: ArrayBuffer): Promise<string> {
   const pdfjsLib = await import('pdfjs-dist');
 
-  // Use the bundled worker
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+  // Configure worker only once, using the correct CDN path for v4
+  if (!pdfjsInitialized) {
+    const workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
+    pdfjsInitialized = true;
+  }
 
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const loadingTask = pdfjsLib.getDocument({
+    data: new Uint8Array(arrayBuffer),
+    useSystemFonts: true,
+  });
+
+  const pdf = await loadingTask.promise;
   const pages: string[] = [];
 
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    const strings = content.items
-      .filter((item: any) => 'str' in item)
-      .map((item: any) => item.str);
-    pages.push(strings.join(' '));
+    
+    // Group items by their Y position to reconstruct lines
+    const items = content.items.filter((item: any) => 'str' in item && item.str.trim());
+    
+    if (items.length === 0) continue;
+
+    // Sort by Y (descending = top to bottom) then X (left to right)
+    const sorted = [...items].sort((a: any, b: any) => {
+      const yDiff = b.transform[5] - a.transform[5];
+      if (Math.abs(yDiff) > 3) return yDiff;
+      return a.transform[4] - b.transform[4];
+    });
+
+    const lines: string[] = [];
+    let currentLine: string[] = [];
+    let lastY = (sorted[0] as any).transform[5];
+
+    for (const item of sorted) {
+      const y = (item as any).transform[5];
+      if (Math.abs(y - lastY) > 3) {
+        if (currentLine.length > 0) {
+          lines.push(currentLine.join('  '));
+        }
+        currentLine = [];
+        lastY = y;
+      }
+      currentLine.push((item as any).str);
+    }
+    if (currentLine.length > 0) {
+      lines.push(currentLine.join('  '));
+    }
+
+    pages.push(lines.join('\n'));
   }
 
   return pages.join('\n');

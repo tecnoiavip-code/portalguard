@@ -459,15 +459,21 @@ export const Settings = () => {
 
       toast.info('Processando arquivos PDF...');
       
-      const { extractTextFromPDF, parseResidentsFromText, parsedToResident } = await import('@/lib/pdf-import');
+      const { smartExtractText, parseResidentsFromText, parsedToResident } = await import('@/lib/pdf-import');
 
       for (const file of Array.from(files)) {
         try {
           const arrayBuffer = await file.arrayBuffer();
-          const text = await extractTextFromPDF(arrayBuffer);
           
+          toast.info(`Extraindo texto de ${file.name}...`);
+          const { text, method } = await smartExtractText(arrayBuffer, file.name);
+          
+          if (method === 'ocr') {
+            toast.info(`OCR utilizado para ${file.name} (PDF escaneado detectado)`);
+          }
+
           if (!text || text.trim().length < 10) {
-            toast.warning(`Não foi possível extrair texto de ${file.name}. O PDF pode ser uma imagem escaneada.`);
+            toast.warning(`Não foi possível extrair texto de ${file.name}.`);
             continue;
           }
 

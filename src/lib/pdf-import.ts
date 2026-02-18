@@ -1,5 +1,66 @@
 import { Resident } from '@/types';
+import { supabase } from '@/integrations/supabase/client';
 
+/**
+ * Convert ArrayBuffer to base64 string
+ */
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+/**
+ * Check if extracted text quality is good enough
+ */
+function isTextQualityGood(text: string): boolean {
+  if (!text || text.trim().length < 50) return false;
+  const letterCount = (text.match(/[a-zA-ZÀ-ÿ]/g) || []).length;
+  return letterCount > 30;
+}
+
+/**
+ * Extract text from a scanned PDF using OCR via AI
+ */
+export async function extractTextWithOCR(arrayBuffer: ArrayBuffer, fileName?: string): Promise<string> {
+  const pdfBase64 = arrayBufferToBase64(arrayBuffer);
+
+  const { data, error } = await supabase.functions.invoke('pdf-ocr', {
+    body: { pdfBase64, fileName },
+  });
+
+  if (error) {
+    console.error('OCR edge function error:', error);
+    throw new Error(`Erro no OCR: ${error.message}`);
+  }
+
+  if (data?.error) {
+    throw new Error(data.error);
+  }
+
+  return data?.text || '';
+}
+
+/**
+ * Smart extraction: tries native first, falls back to OCR
+ */
+export async function smartExtractText(arrayBuffer: ArrayBuffer, fileName?: string): Promise<{ text: string; method: 'native' | 'ocr' }> {
+  try {
+    const nativeText = await extractTextFromPDF(arrayBuffer);
+    if (isTextQualityGood(nativeText)) {
+      return { text: nativeText, method: 'native' };
+    }
+  } catch (e) {
+    console.warn('Native PDF extraction failed, trying OCR...', e);
+  }
+
+  // Fallback to OCR
+  const ocrText = await extractTextWithOCR(arrayBuffer, fileName);
+  return { text: ocrText, method: 'ocr' };
+}
 let pdfjsInitialized = false;
 
 /**

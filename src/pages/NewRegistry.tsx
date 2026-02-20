@@ -442,7 +442,6 @@ export const NewRegistry = () => {
     const updatedEntry: AccessEntry = {
       ...entry,
       exitTime: new Date().toISOString(),
-      badgeNumber: '',
     };
     
     await saveEntry(updatedEntry);

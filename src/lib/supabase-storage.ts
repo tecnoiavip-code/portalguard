@@ -1,6 +1,9 @@
 import { supabase } from '@/integrations/supabase/client';
 import { Resident, Mail, AccessEntry, Device, RealtimeEvent } from '@/types';
 
+// Helper to uppercase string fields (except email and urls)
+const up = (val: string | null | undefined): string | null => val ? val.toUpperCase() : val as null;
+
 export const supabaseStorage = {
   // Residents
   async getResidents(): Promise<Resident[]> {
@@ -88,16 +91,16 @@ export const supabaseStorage = {
     }
 
     const residentData = {
-      name: resident.name,
+      name: up(resident.name) || resident.name,
       cpf: resident.cpf || null,
-      apartment: resident.apartment,
+      apartment: up(resident.apartment) || resident.apartment,
       phone: resident.phone || null,
       email: resident.email || null,
       photo_url: resident.photo || null,
-      vehicle_plate: resident.vehiclePlate || null,
-      vehicle_model: resident.vehicleModel || null,
-      vehicle_color: resident.vehicleColor || null,
-      vehicle_tag: resident.vehicleTag || null,
+      vehicle_plate: up(resident.vehiclePlate) || null,
+      vehicle_model: up(resident.vehicleModel) || null,
+      vehicle_color: up(resident.vehicleColor) || null,
+      vehicle_tag: up(resident.vehicleTag) || null,
     };
 
     if (isNew) {
@@ -284,21 +287,21 @@ export const supabaseStorage = {
     }
     
     const entryData: any = {
-      visitor_name: entry.visitorName,
-      visitor_document: entry.visitorDocument,
+      visitor_name: up(entry.visitorName) || entry.visitorName,
+      visitor_document: up(entry.visitorDocument) || entry.visitorDocument,
       visitor_type: entry.visitorType,
       resident_id: entry.residentId || null,
-      resident_name: entry.residentName || null,
-      apartment: entry.apartment,
-      purpose: entry.purpose || null,
+      resident_name: up(entry.residentName) || null,
+      apartment: up(entry.apartment) || entry.apartment,
+      purpose: up(entry.purpose) || null,
       exit_time: entry.exitTime,
-      vehicle_plate: entry.vehiclePlate || null,
-      vehicle_model: entry.vehicleModel || null,
-      vehicle_color: entry.vehicleColor || null,
+      vehicle_plate: up(entry.vehiclePlate) || null,
+      vehicle_model: up(entry.vehicleModel) || null,
+      vehicle_color: up(entry.vehicleColor) || null,
       photo_url: entry.photo || null,
-      company: entry.company || null,
+      company: up(entry.company) || null,
       auto_recognized: entry.autoRecognized || false,
-      badge_number: entry.badgeNumber || null,
+      badge_number: up(entry.badgeNumber) || null,
     };
 
     if (isNew) {

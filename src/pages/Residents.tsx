@@ -83,9 +83,10 @@ export const Residents = () => {
     }
   };
 
-  const handleEdit = (resident: Resident) => {
+  const handleEdit = async (resident: Resident) => {
     setEditingId(resident.id);
-    const photo = resident.photo || '';
+    // Load photo on demand
+    const photo = await supabaseStorage.getResidentPhoto(resident.id);
     setFormData({
       name: resident.name,
       cpf: resident.cpf || '',
@@ -283,18 +284,9 @@ export const Residents = () => {
                   paginatedResidents.map((resident) => (
                     <TableRow key={resident.id} className="hover:bg-muted/50">
                       <TableCell>
-                        {resident.photo ? (
-                          <img 
-                            src={resident.photo} 
-                            alt={resident.name} 
-                            className="w-16 h-16 rounded-full object-cover border-2 border-primary/20"
-                            loading="lazy"
-                          />
-                        ) : (
-                          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-2xl">
-                            👤
-                          </div>
-                        )}
+                        <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-2xl">
+                          👤
+                        </div>
                       </TableCell>
                       <TableCell className="font-medium">{resident.name}</TableCell>
                       <TableCell>{resident.apartment}</TableCell>

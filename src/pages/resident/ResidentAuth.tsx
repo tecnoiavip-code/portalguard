@@ -86,11 +86,17 @@ const ResidentAuth = () => {
     setIsLoading(true);
     try {
       const { data, error: fnError } = await supabase.functions.invoke('register-resident', {
-        body: { email, password },
+        body: { email: email.trim(), password },
       });
 
       if (fnError) {
-        toast.error('Erro ao criar conta. Tente novamente.');
+        // Try to parse error body for user-friendly message
+        try {
+          const parsed = JSON.parse(fnError.message);
+          toast.error(parsed.error || 'Erro ao criar conta. Tente novamente.');
+        } catch {
+          toast.error('Erro ao criar conta. Tente novamente.');
+        }
         return;
       }
 

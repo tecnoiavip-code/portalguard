@@ -374,6 +374,22 @@ export const supabaseStorage = {
         return `Este visitante (${data[0].visitor_name}) já está com entrada ativa no ${data[0].apartment}. Registre a saída antes de uma nova entrada.`;
       }
     }
+
+    // Check if badge number is already in use by an active entry (no exit)
+    if (entry.badgeNumber && entry.badgeNumber.trim()) {
+      const badgeQuery = supabase
+        .from('access_entries')
+        .select('id, visitor_name, apartment, badge_number')
+        .eq('badge_number', entry.badgeNumber.trim().toUpperCase())
+        .is('exit_time', null)
+        .limit(1);
+      if (excludeId) badgeQuery.neq('id', excludeId);
+      const { data: badgeData } = await badgeQuery;
+      if (badgeData && badgeData.length > 0) {
+        return `O crachá ${badgeData[0].badge_number} já está em uso por ${badgeData[0].visitor_name} (${badgeData[0].apartment}). Registre a saída antes de reutilizá-lo.`;
+      }
+    }
+
     return null;
   },
 

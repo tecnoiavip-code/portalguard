@@ -132,7 +132,7 @@ const ResidentAuthorizations = () => {
               <Plus className="h-4 w-4" />Nova
             </Button>
           </DialogTrigger>
-          <DialogContent className="rounded-2xl">
+          <DialogContent className="rounded-2xl" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
             <DialogHeader><DialogTitle>Autorizar Visitante</DialogTitle></DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
@@ -161,7 +161,10 @@ const ResidentAuthorizations = () => {
                 <Label>Placa do veículo</Label>
                 <Input className="rounded-xl" value={form.vehicle_plate} onChange={(e) => setForm({ ...form, vehicle_plate: e.target.value })} />
               </div>
-              <Button type="submit" className="w-full rounded-xl">Enviar à Portaria</Button>
+              <div className="flex space-x-2">
+                <Button type="submit" className="flex-1 rounded-xl">Enviar à Portaria</Button>
+                <Button type="button" variant="secondary" className="rounded-xl" onClick={() => { setOpen(false); setForm({ visitor_name: '', visitor_document: '', authorized_date: '', authorized_until: '', purpose: '', vehicle_plate: '' }); }}>Cancelar</Button>
+              </div>
             </form>
           </DialogContent>
         </Dialog>

@@ -606,7 +606,7 @@ export const NewRegistry = () => {
       if (!open) resetForm();
       setIsDialogOpen(open);
     }}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{editingId ? 'Editar Cadastro' : 'Registrar Nova Entrada'}</DialogTitle>
           </DialogHeader>
@@ -788,10 +788,16 @@ export const NewRegistry = () => {
 
 
 
-              <Button type="submit" className="w-full">
-                <LogIn className="h-4 w-4 mr-2" />
-                Registrar Entrada
-              </Button>
+              <div className="flex space-x-2">
+                <Button type="submit" className="flex-1">
+                  <LogIn className="h-4 w-4 mr-2" />
+                  {editingId ? 'Salvar Alterações' : 'Registrar Entrada'}
+                </Button>
+                <Button type="button" variant="secondary" onClick={resetForm}>
+                  <X className="h-4 w-4 mr-2" />
+                  Cancelar
+                </Button>
+              </div>
             </form>
         </DialogContent>
       </Dialog>

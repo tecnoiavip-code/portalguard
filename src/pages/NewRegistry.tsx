@@ -793,7 +793,7 @@ export const NewRegistry = () => {
                   <LogIn className="h-4 w-4 mr-2" />
                   {editingId ? 'Salvar Alterações' : 'Registrar Entrada'}
                 </Button>
-                <Button type="button" variant="secondary" onClick={resetForm}>
+                <Button type="button" variant="destructive" onClick={resetForm}>
                   <X className="h-4 w-4 mr-2" />
                   Cancelar
                 </Button>

@@ -6,6 +6,12 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const jsonResponse = (body: Record<string, unknown>, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -15,10 +21,7 @@ serve(async (req) => {
     const { email, password } = await req.json();
 
     if (!email || !password) {
-      return new Response(JSON.stringify({ error: "Email e senha são obrigatórios" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "Email e senha são obrigatórios" });
     }
 
     const supabaseAdmin = createClient(
@@ -29,31 +32,17 @@ serve(async (req) => {
     // Check if email exists in residents table (case-insensitive)
     const { data: resident, error: resError } = await supabaseAdmin
       .from("residents")
-      .select("id, name, email")
+      .select("id, name, email, auth_user_id")
       .ilike("email", email.trim())
       .maybeSingle();
 
     if (resError || !resident) {
-      return new Response(JSON.stringify({ error: "Este email não está cadastrado como morador" }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "Este email não está cadastrado como morador. Verifique com a portaria se seu email está correto." });
     }
 
     // Check if resident already has auth account
-    if (resident.id) {
-      const { data: existingRes } = await supabaseAdmin
-        .from("residents")
-        .select("auth_user_id")
-        .eq("id", resident.id)
-        .maybeSingle();
-      
-      if (existingRes?.auth_user_id) {
-        return new Response(JSON.stringify({ error: "Este morador já possui uma conta. Faça login." }), {
-          status: 409,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+    if (resident.auth_user_id) {
+      return jsonResponse({ error: "Este morador já possui uma conta. Faça login ou use 'Esqueci minha senha'." });
     }
 
     // Create auth user (email always lowercase)
@@ -65,10 +54,10 @@ serve(async (req) => {
     });
 
     if (authError) {
-      return new Response(JSON.stringify({ error: authError.message }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      if (authError.message.includes("already been registered")) {
+        return jsonResponse({ error: "Este email já possui uma conta. Faça login ou use 'Esqueci minha senha'." });
+      }
+      return jsonResponse({ error: authError.message });
     }
 
     const userId = authData.user.id;
@@ -79,14 +68,9 @@ serve(async (req) => {
     // Link auth user to resident
     await supabaseAdmin.from("residents").update({ auth_user_id: userId }).eq("id", resident.id);
 
-    return new Response(JSON.stringify({ success: true, message: "Conta criada com sucesso!" }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResponse({ success: true, message: "Conta criada com sucesso!" });
   } catch (error) {
-    return new Response(JSON.stringify({ error: "Erro interno do servidor" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    console.error("Register resident error:", error);
+    return jsonResponse({ error: "Erro interno do servidor. Tente novamente." });
   }
 });

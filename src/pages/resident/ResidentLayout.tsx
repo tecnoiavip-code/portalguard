@@ -355,9 +355,9 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
               onClick={() => { markNotifsRead(); }}
             >
               <Bell className="h-5 w-5" />
-              {totalBadge > 0 && (
+              {counts.notif > 0 && (
                 <span className="absolute -top-0.5 -right-0.5 bg-destructive text-destructive-foreground text-[10px] rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 font-bold shadow-lg animate-pulse">
-                  {totalBadge > 99 ? '99+' : totalBadge}
+                  {counts.notif > 99 ? '99+' : counts.notif}
                 </span>
               )}
             </Button>

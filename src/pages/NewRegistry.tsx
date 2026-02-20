@@ -120,7 +120,7 @@ export const NewRegistry = () => {
     loadBlockedVisitors();
   };
 
-  const activeEntries = entries.filter(e => !e.exitTime).reverse();
+  const activeEntries = entries.filter(e => !e.exitTime);
   const filteredActiveEntries = activeEntries.filter(entry => entry.visitorName.toLowerCase().includes(searchTerm.toLowerCase()) || entry.apartment.toLowerCase().includes(searchTerm.toLowerCase()) || entry.visitorDocument.toLowerCase().includes(searchTerm.toLowerCase()));
   const totalPages = Math.ceil(filteredActiveEntries.length / itemsPerPage);
   const paginatedEntries = filteredActiveEntries.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);

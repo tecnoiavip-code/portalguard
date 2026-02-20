@@ -1,5 +1,4 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.75.0';
-import { createHmac } from 'node:crypto';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,58 +7,97 @@ const corsHeaders = {
 
 // Input validation helpers
 const sanitizeString = (val: any, maxLength = 255): string => {
-  if (typeof val !== 'string') return '';
-  return val.trim().substring(0, maxLength);
+  if (typeof val !== 'string' && typeof val !== 'number') return '';
+  return String(val).trim().substring(0, maxLength);
 };
 
-const isValidNumber = (val: any): boolean => {
-  return typeof val === 'number' && !isNaN(val);
-};
-
-// Verify HMAC signature
-const verifyWebhookSignature = (payload: string, signature: string | null): boolean => {
-  if (!signature) return false;
-  
-  const webhookSecret = Deno.env.get('CONTROLID_WEBHOOK_SECRET');
-  if (!webhookSecret) {
-    console.error('CONTROLID_WEBHOOK_SECRET not configured');
-    return false;
-  }
-
-  const hmac = createHmac('sha256', webhookSecret);
-  hmac.update(payload);
-  const expectedSignature = hmac.digest('hex');
-  
-  return signature === expectedSignature;
-};
-
-// Rate limiting map: device_id -> { count, resetTime }
+// Rate limiting map
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
-const RATE_LIMIT_WINDOW = 60000; // 1 minuto
-const MAX_REQUESTS_PER_WINDOW = 100; // 100 requisições por minuto por dispositivo
+const RATE_LIMIT_WINDOW = 60000;
+const MAX_REQUESTS_PER_WINDOW = 200;
 
 const checkRateLimit = (deviceId: string): boolean => {
   const now = Date.now();
   const limit = rateLimitMap.get(deviceId);
-  
   if (!limit || now > limit.resetTime) {
     rateLimitMap.set(deviceId, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
     return true;
   }
-  
-  if (limit.count >= MAX_REQUESTS_PER_WINDOW) {
-    return false;
-  }
-  
+  if (limit.count >= MAX_REQUESTS_PER_WINDOW) return false;
   limit.count++;
   return true;
 };
 
+/**
+ * Detect event type from URL path and payload.
+ * 
+ * Control iD Monitor mode sends to these endpoints:
+ *   POST /api/notifications/dao          - access_logs, alarm_logs, cards, users changes
+ *   POST /api/notifications/device_is_alive - heartbeat
+ *   POST /api/notifications/operation_mode  - operation mode changes
+ *   POST /api/notifications/door         - door state changes
+ *   POST /api/notifications/catra_event  - turnstile events (iDBlock)
+ * 
+ * Control iD Online mode sends to:
+ *   POST /device_is_alive.fcgi           - heartbeat / check server availability
+ *   POST /session_is_valid.fcgi          - session validation
+ *   POST /identification_event.fcgi      - user identification events
+ */
+const detectEventType = (url: URL, payload: any): string => {
+  const path = url.pathname.toLowerCase();
+
+  // Monitor mode endpoints (sub-path based)
+  if (path.includes('/dao')) return 'dao';
+  if (path.includes('/device_is_alive') || path.includes('device_is_alive.fcgi')) return 'device_is_alive';
+  if (path.includes('/operation_mode')) return 'operation_mode';
+  if (path.includes('/door')) return 'door';
+  if (path.includes('/catra_event')) return 'catra_event';
+  if (path.includes('/access_photo')) return 'access_photo';
+  if (path.includes('session_is_valid.fcgi')) return 'session_is_valid';
+  if (path.includes('identification_event.fcgi')) return 'identification_event';
+
+  // Fallback: detect from payload content
+  if (payload?.object_changes) return 'dao';
+  if (payload?.access_logs !== undefined) return 'device_is_alive';
+  if (payload?.operation_mode) return 'operation_mode';
+  if (payload?.door) return 'door';
+  if (payload?.access_photo) return 'access_photo';
+  if (payload?.event) return 'catra_event';
+
+  return 'unknown';
+};
+
+/**
+ * Extract device identifier from multiple sources.
+ * Control iD may send it as:
+ * - Body field: device_id, deviceId
+ * - Query param: deviceId
+ * - Header: x-device-id
+ * - Serial number in body
+ */
+const extractDeviceId = (url: URL, payload: any, req: Request): string => {
+  // From body
+  if (payload?.device_id) return sanitizeString(payload.device_id, 100);
+  if (payload?.deviceId) return sanitizeString(payload.deviceId, 100);
+  if (payload?.serial) return sanitizeString(payload.serial, 100);
+
+  // From query params
+  const qDeviceId = url.searchParams.get('deviceId') || url.searchParams.get('device_id');
+  if (qDeviceId) return sanitizeString(qDeviceId, 100);
+
+  // From headers
+  const hDeviceId = req.headers.get('x-device-id');
+  if (hDeviceId) return sanitizeString(hDeviceId, 100);
+
+  return '';
+};
+
 Deno.serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const url = new URL(req.url);
 
   try {
     const supabaseClient = createClient(
@@ -67,212 +105,209 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // Basic request validation
-    if (req.method !== 'POST') {
+    // Accept GET for device_is_alive.fcgi and session_is_valid.fcgi (some devices use GET)
+    if (req.method !== 'POST' && req.method !== 'GET') {
       return new Response(
         JSON.stringify({ error: 'Method not allowed' }),
         { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Read raw payload for HMAC verification
-    const rawPayload = await req.text();
-    const signature = req.headers.get('x-webhook-signature');
+    // Parse payload (may be empty for GET or device_is_alive)
+    let payload: any = {};
+    let rawPayload = '';
     
-    // Verify HMAC signature only when signature header is provided
-    const webhookSecret = Deno.env.get('CONTROLID_WEBHOOK_SECRET');
-    if (webhookSecret && signature && !verifyWebhookSignature(rawPayload, signature)) {
-      console.error('Invalid webhook signature');
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized - invalid signature' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    if (req.method === 'POST') {
+      const contentType = req.headers.get('content-type') || '';
+      rawPayload = await req.text();
+      
+      if (rawPayload && rawPayload.trim()) {
+        try {
+          payload = JSON.parse(rawPayload);
+        } catch {
+          // Some Control iD endpoints send form data or octet-stream
+          console.log('Non-JSON payload received, treating as raw data');
+          payload = { raw_data: rawPayload.substring(0, 1000) };
+        }
+      }
     }
 
-    const payload = JSON.parse(rawPayload);
+    // Detect event type from URL path + payload
+    const eventType = detectEventType(url, payload);
     
-    // Validate payload is object
-    if (!payload || typeof payload !== 'object') {
-      return new Response(
-        JSON.stringify({ error: 'Invalid payload' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    // Extract device ID from multiple sources
+    const deviceId = extractDeviceId(url, payload, req);
 
-    // Log only essential info (not sensitive data)
-    console.log('Webhook received:', {
-      device_id: payload.device_id ? String(payload.device_id).substring(0, 20) : 'unknown',
-      event_detected: true,
+    console.log('Control iD webhook received:', {
+      method: req.method,
+      path: url.pathname,
+      event_type: eventType,
+      device_id: deviceId || 'unknown',
       timestamp: new Date().toISOString()
     });
 
-    // Validate and sanitize device_id
-    const deviceId = sanitizeString(payload.device_id, 50);
-    if (!deviceId || deviceId.length === 0) {
+    // Handle session_is_valid.fcgi - respond immediately (Online mode check)
+    if (eventType === 'session_is_valid') {
+      console.log('Session validation request - responding OK');
       return new Response(
-        JSON.stringify({ error: 'device_id is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ session_is_valid: true }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
+    // Handle device_is_alive.fcgi (Online mode) - respond with empty or expected format
+    if (eventType === 'device_is_alive' && url.pathname.includes('.fcgi')) {
+      console.log('Online mode device_is_alive from:', deviceId);
+      
+      // Update device status if we have a device ID
+      if (deviceId) {
+        await updateDeviceStatus(supabaseClient, deviceId);
+        
+        // Save log
+        await supabaseClient.from('controlid_logs').insert({
+          device_id: deviceId || 'unknown',
+          event_type: 'device_is_alive',
+          payload: payload,
+          processed: true
+        });
+      }
+
+      // Response expected by Control iD online mode
+      const accessLogs = payload?.access_logs || 0;
+      return new Response(
+        JSON.stringify({ connected: true, access_logs: accessLogs }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // For events without device_id, use "unknown" but still process
+    const effectiveDeviceId = deviceId || 'unknown-device';
+
     // Check rate limit
-    if (!checkRateLimit(deviceId)) {
-      console.error('Rate limit exceeded', { device_id: deviceId });
+    if (!checkRateLimit(effectiveDeviceId)) {
+      console.error('Rate limit exceeded', { device_id: effectiveDeviceId });
       return new Response(
         JSON.stringify({ error: 'Too many requests' }),
         { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Verify device is registered (optional security check)
-    const { data: device, error: deviceCheckError } = await supabaseClient
-      .from('controlid_config')
-      .select('device_id, is_active')
-      .eq('device_id', deviceId)
-      .maybeSingle();
-
-    // If device check is enabled and device not found, reject
-    if (device && !device.is_active) {
-      console.error('Inactive device:', deviceId);
-      return new Response(
-        JSON.stringify({ error: 'Device inactive' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-    
-    // Determinar o tipo de evento
-    let eventType = 'unknown';
-    if (payload.object_changes) {
-      eventType = 'dao';
-    } else if (payload.operation_mode) {
-      eventType = 'operation_mode';
-    } else if (payload.access_logs !== undefined) {
-      eventType = 'device_is_alive';
-    } else if (payload.door) {
-      eventType = 'door';
-    } else if (payload.access_photo) {
-      eventType = 'access_photo';
-    } else if (payload.event) {
-      eventType = 'catra_event';
-    }
-
-    // Salvar o log recebido
+    // Save the log
     const { error: logError } = await supabaseClient
       .from('controlid_logs')
       .insert({
-        device_id: deviceId,
-        event_type: sanitizeString(eventType, 100),
+        device_id: effectiveDeviceId,
+        event_type: eventType,
         payload: payload,
         processed: false
       });
 
     if (logError) {
       console.error('Error saving Control iD log:', logError);
-      throw logError;
     }
 
-    // Processar eventos específicos
+    // Process specific events
     if (eventType === 'dao' && payload.object_changes) {
-      await processAccessLogs(supabaseClient, payload.object_changes, deviceId);
+      await processAccessLogs(supabaseClient, payload.object_changes, effectiveDeviceId);
     } else if (eventType === 'device_is_alive') {
-      await updateDeviceStatus(supabaseClient, deviceId);
-    } else if (eventType === 'access_photo') {
-      await processAccessPhoto(supabaseClient, payload, deviceId);
+      if (effectiveDeviceId !== 'unknown-device') {
+        await updateDeviceStatus(supabaseClient, effectiveDeviceId);
+      }
+    } else if (eventType === 'identification_event') {
+      await processIdentificationEvent(supabaseClient, payload, effectiveDeviceId);
     }
 
     return new Response(
-      JSON.stringify({ success: true, message: 'Webhook received and processed' }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200
-      }
+      JSON.stringify({ success: true, event_type: eventType }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
     console.error('Error processing Control iD webhook:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return new Response(
       JSON.stringify({ error: errorMessage }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500
-      }
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
 
-// Input validation helpers (duplicated for clarity)
-const sanitizeStringInner = (val: any, maxLength = 255): string => {
-  if (typeof val !== 'string') return '';
-  return val.trim().substring(0, maxLength);
-};
-
-const isValidNumberInner = (val: any): boolean => {
-  return typeof val === 'number' && !isNaN(val);
-};
-
 async function processAccessLogs(supabaseClient: any, objectChanges: any[], deviceId: string) {
-  console.log('Processing access logs from Control iD');
-  
+  console.log('Processing access logs from Control iD, changes:', objectChanges.length);
+
   for (const change of objectChanges) {
     if (change.object === 'access_logs' && change.type === 'inserted') {
       const values = change.values || {};
-      
-      // Validate and sanitize all inputs
-      const userId = sanitizeStringInner(values.user_id, 100);
-      const cardValue = sanitizeStringInner(values.card_value, 100);
-      const eventDesc = sanitizeStringInner(values.event, 100);
-      const portalId = sanitizeStringInner(values.portal_id, 50);
-      
-      // Validate timestamp
+
+      const userId = sanitizeString(values.user_id, 100);
+      const cardValue = sanitizeString(values.card_value, 100);
+      const eventDesc = sanitizeString(values.event, 100);
+      const portalId = sanitizeString(values.portal_id, 50);
+
       let entryTime = new Date().toISOString();
-      if (values.time && isValidNumberInner(values.time)) {
+      if (values.time) {
         try {
-          entryTime = new Date(parseInt(values.time) * 1000).toISOString();
-        } catch (e) {
-          console.error('Invalid timestamp:', values.time);
-        }
+          const ts = typeof values.time === 'number' ? values.time : parseInt(values.time);
+          if (!isNaN(ts)) {
+            entryTime = new Date(ts * 1000).toISOString();
+          }
+        } catch { /* use default */ }
       }
-      
-      // Criar entrada de acesso no sistema com dados validados
+
       const entryData = {
-        visitor_name: sanitizeStringInner(`Acesso Control iD - User ${userId || cardValue}`, 200),
-        visitor_document: sanitizeStringInner(cardValue || userId || 'N/A', 50),
+        visitor_name: sanitizeString(`Control iD - ${userId || cardValue || 'Desconhecido'}`, 200),
+        visitor_document: sanitizeString(cardValue || userId || 'N/A', 50),
         visitor_type: 'visitor',
         apartment: 'N/A',
-        purpose: sanitizeStringInner(`Evento: ${eventDesc}`, 100),
+        purpose: sanitizeString(`Evento: ${eventDesc || 'acesso'}`, 100),
         entry_time: entryTime,
         auto_recognized: true,
-        notes: sanitizeStringInner(`Device: ${deviceId}, Portal: ${portalId}`, 500)
+        notes: sanitizeString(`Device: ${deviceId}, Portal: ${portalId}`, 500)
       };
 
-      const { error } = await supabaseClient
-        .from('access_entries')
-        .insert(entryData);
+      const { error } = await supabaseClient.from('access_entries').insert(entryData);
 
       if (error) {
-        console.error('Error creating access entry from Control iD:', error);
+        console.error('Error creating access entry:', error);
       } else {
-        console.log('Access entry created successfully from Control iD event');
-        
-        // Criar evento em tempo real com dados sanitizados
-        await supabaseClient
-          .from('realtime_events')
-          .insert({
-            type: 'entry',
-            description: sanitizeStringInner(`Acesso registrado automaticamente - Device ${deviceId}`, 200),
-            priority: 'medium'
-          });
+        console.log('Access entry created from Control iD event');
+        await supabaseClient.from('realtime_events').insert({
+          type: 'entry',
+          description: sanitizeString(`Acesso automático - Device ${deviceId}`, 200),
+          priority: 'medium'
+        });
       }
     }
   }
 }
 
+async function processIdentificationEvent(supabaseClient: any, payload: any, deviceId: string) {
+  console.log('Processing online identification event from:', deviceId);
+
+  const userId = sanitizeString(payload.user_id, 100);
+  const cardValue = sanitizeString(payload.card, 100);
+
+  const entryData = {
+    visitor_name: sanitizeString(`Control iD Online - ${userId || cardValue || 'Desconhecido'}`, 200),
+    visitor_document: sanitizeString(cardValue || userId || 'N/A', 50),
+    visitor_type: 'visitor',
+    apartment: 'N/A',
+    purpose: 'Identificação Online',
+    entry_time: new Date().toISOString(),
+    auto_recognized: true,
+    notes: sanitizeString(`Device: ${deviceId}, Online Mode`, 500)
+  };
+
+  const { error } = await supabaseClient.from('access_entries').insert(entryData);
+  if (error) {
+    console.error('Error creating access entry from identification:', error);
+  }
+}
+
 async function updateDeviceStatus(supabaseClient: any, deviceId: string) {
-  console.log('Updating device status - device is alive:', deviceId);
-  
+  console.log('Updating device status - alive:', deviceId);
   const now = new Date().toISOString();
 
-  // Try matching by serial_number first, then by name
+  // Try matching by serial_number first
   const { data: deviceBySerial } = await supabaseClient
     .from('devices')
     .select('id')
@@ -285,7 +320,7 @@ async function updateDeviceStatus(supabaseClient: any, deviceId: string) {
       .update({ last_sync: now, status: 'online' })
       .eq('id', deviceBySerial.id);
   } else {
-    // Fallback: try matching by name (case-insensitive partial match)
+    // Fallback: try matching by name
     const { data: deviceByName } = await supabaseClient
       .from('devices')
       .select('id')
@@ -302,28 +337,9 @@ async function updateDeviceStatus(supabaseClient: any, deviceId: string) {
     }
   }
 
-  // Also update controlid_config if exists
+  // Update controlid_config
   await supabaseClient
     .from('controlid_config')
     .update({ last_sync: now, is_active: true })
     .eq('device_id', deviceId);
-}
-
-async function processAccessPhoto(supabaseClient: any, payload: any, deviceId: string) {
-  console.log('Processing access photo from Control iD');
-  
-  // Validate and sanitize user_id
-  const userId = sanitizeStringInner(payload.user_id, 100);
-  const sanitizedDeviceId = sanitizeStringInner(deviceId, 50);
-  
-  // Aqui você pode salvar a foto em storage do Supabase se necessário
-  // Por enquanto, apenas registramos o evento
-  
-  await supabaseClient
-    .from('realtime_events')
-    .insert({
-      type: 'entry',
-      description: sanitizeStringInner(`Foto de acesso capturada - User ${userId}, Device ${sanitizedDeviceId}`, 200),
-      priority: 'low'
-    });
 }

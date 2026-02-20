@@ -34,14 +34,87 @@ export const supabaseStorage = {
   },
 
   async getResidentPhoto(id: string): Promise<string> {
+    // First check if there's a photo in Storage
+    const { data: storageFiles } = await supabase.storage
+      .from('resident-photos')
+      .list(id, { limit: 1 });
+
+    if (storageFiles && storageFiles.length > 0) {
+      const { data: signedUrl } = await supabase.storage
+        .from('resident-photos')
+        .createSignedUrl(`${id}/${storageFiles[0].name}`, 3600);
+      return signedUrl?.signedUrl || '';
+    }
+
+    // Fallback: check legacy base64 in photo_url column
     const { data, error } = await supabase
       .from('residents')
       .select('photo_url')
       .eq('id', id)
       .maybeSingle();
-    
+
     if (error || !data?.photo_url) return '';
+
+    // If it's base64, migrate it to Storage automatically
+    if (data.photo_url.startsWith('data:')) {
+      const migrated = await supabaseStorage.uploadResidentPhoto(id, data.photo_url);
+      if (migrated) {
+        // Clear the base64 from the DB column
+        await supabase.from('residents').update({ photo_url: null }).eq('id', id);
+        return migrated;
+      }
+    }
+
     return data.photo_url;
+  },
+
+  async uploadResidentPhoto(residentId: string, base64OrFile: string | File): Promise<string | null> {
+    try {
+      let file: File;
+      if (typeof base64OrFile === 'string') {
+        // Convert base64 to File
+        const res = await fetch(base64OrFile);
+        const blob = await res.blob();
+        file = new File([blob], 'photo.jpg', { type: blob.type || 'image/jpeg' });
+      } else {
+        file = base64OrFile;
+      }
+
+      const ext = file.name.split('.').pop() || 'jpg';
+      const path = `${residentId}/photo.${ext}`;
+
+      // Remove old photo if exists
+      await supabase.storage.from('resident-photos').remove([path]);
+
+      const { error } = await supabase.storage
+        .from('resident-photos')
+        .upload(path, file, { upsert: true });
+
+      if (error) {
+        console.error('Error uploading photo:', error);
+        return null;
+      }
+
+      const { data: signedUrl } = await supabase.storage
+        .from('resident-photos')
+        .createSignedUrl(path, 3600);
+
+      return signedUrl?.signedUrl || null;
+    } catch (err) {
+      console.error('Error in uploadResidentPhoto:', err);
+      return null;
+    }
+  },
+
+  async deleteResidentPhoto(residentId: string): Promise<void> {
+    const { data: files } = await supabase.storage
+      .from('resident-photos')
+      .list(residentId);
+    if (files && files.length > 0) {
+      await supabase.storage
+        .from('resident-photos')
+        .remove(files.map(f => `${residentId}/${f.name}`));
+    }
   },
 
   async checkResidentDuplicate(resident: Resident, excludeId?: string): Promise<string | null> {
@@ -101,28 +174,34 @@ export const supabaseStorage = {
       return false;
     }
 
-    const residentData = {
+    const residentData: any = {
       name: up(resident.name) || resident.name,
       cpf: resident.cpf || null,
       apartment: up(resident.apartment) || resident.apartment,
       phone: resident.phone || null,
       email: resident.email?.toLowerCase() || null,
-      photo_url: resident.photo || null,
       vehicle_plate: up(resident.vehiclePlate) || null,
       vehicle_model: up(resident.vehicleModel) || null,
       vehicle_color: up(resident.vehicleColor) || null,
       vehicle_tag: up(resident.vehicleTag) || null,
     };
 
+    // Determine resident ID for photo upload
+    const residentId = isNew ? undefined : resident.id;
+
+    let savedId: string;
+
     if (isNew) {
-      const { error } = await supabase
+      const { data: insertedData, error } = await supabase
         .from('residents')
         .insert(residentData)
-        .select();
-      if (error) {
-        console.error('Error inserting resident:', error.message);
+        .select('id')
+        .single();
+      if (error || !insertedData) {
+        console.error('Error inserting resident:', error?.message);
         return false;
       }
+      savedId = insertedData.id;
     } else {
       const { error } = await supabase
         .from('residents')
@@ -133,12 +212,27 @@ export const supabaseStorage = {
         console.error('Error updating resident:', error.message);
         return false;
       }
+      savedId = resident.id;
+    }
+
+    // Upload photo to Storage if provided
+    if (resident.photo && resident.photo.startsWith('data:')) {
+      await supabaseStorage.uploadResidentPhoto(savedId, resident.photo);
+      // Clear base64 from DB column
+      await supabase.from('residents').update({ photo_url: null }).eq('id', savedId);
+    } else if (!resident.photo) {
+      // Photo was removed
+      await supabaseStorage.deleteResidentPhoto(savedId);
+      await supabase.from('residents').update({ photo_url: null }).eq('id', savedId);
     }
     
     return true;
   },
 
   async deleteResident(id: string): Promise<boolean> {
+    // Delete photo from Storage first
+    await supabaseStorage.deleteResidentPhoto(id);
+
     const { error } = await supabase
       .from('residents')
       .delete()

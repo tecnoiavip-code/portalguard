@@ -6,6 +6,7 @@ import { Settings as SettingsIcon, Trash2, Download, Upload, Send, FileText, Fil
 import { storage } from '@/lib/storage';
 import { supabase } from '@/integrations/supabase/client';
 import { supabaseStorage } from '@/lib/supabase-storage';
+import { useResidents } from '@/hooks/useResidents';
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -59,6 +60,7 @@ const parseCSV = (text: string): any[] => {
 };
 
 export const Settings = () => {
+  const { residents } = useResidents();
   const [isIntegrationsUnlocked, setIsIntegrationsUnlocked] = useState(false);
   const [isCheckingRole, setIsCheckingRole] = useState(true);
   
@@ -459,7 +461,7 @@ export const Settings = () => {
 
       toast.info('Processando arquivos PDF...');
       
-      const { smartExtractText, parseResidentsFromText, parsedToResident } = await import('@/lib/pdf-import');
+      const { smartExtractText, parseResidentsFromText, parsedToResident, detectTextType, parseAccessEntriesFromText, parsedToAccessEntry } = await import('@/lib/pdf-import');
 
       for (const file of Array.from(files)) {
         try {
@@ -477,35 +479,60 @@ export const Settings = () => {
             continue;
           }
 
-          const parsed = parseResidentsFromText(text);
+          // Auto-detect data type
+          const dataType = detectTextType(text);
           
-          if (parsed.length === 0) {
-            toast.warning(
-              `Nenhum morador reconhecido em ${file.name}. Formatos aceitos: tabelas, "Nome | Apto | Tel", "Nome - Apto 101", campos rotulados (Nome: ..., Apartamento: ...), CSV com ; ou ,.`,
-              { duration: 8000 }
-            );
-            continue;
-          }
-
-          let importedCount = 0;
-          let skippedCount = 0;
-          for (const p of parsed) {
-            const resident = parsedToResident(p);
-            const success = await supabaseStorage.saveResident(resident);
-            if (success) {
-              importedCount++;
-            } else {
-              skippedCount++;
+          if (dataType === 'access_entries') {
+            // Parse as access entries
+            const parsed = parseAccessEntriesFromText(text);
+            if (parsed.length === 0) {
+              toast.warning(`Nenhum registro de acesso reconhecido em ${file.name}.`, { duration: 8000 });
+              continue;
             }
-          }
-          
-          let msg = `${importedCount} moradores importados de ${file.name}`;
-          if (skippedCount > 0) msg += ` (${skippedCount} duplicados ignorados)`;
-          
-          if (importedCount > 0) {
-            toast.success(msg);
+
+            // Try to match apartments to residents
+            let importedCount = 0;
+            let skippedCount = 0;
+            for (const p of parsed) {
+              const entry = parsedToAccessEntry(p);
+              // Match resident by apartment
+              const resident = residents.find(r => r.apartment.toLowerCase() === entry.apartment.toLowerCase());
+              if (resident) {
+                entry.residentId = resident.id;
+                entry.residentName = resident.name;
+              }
+              const success = await supabaseStorage.saveEntry(entry);
+              if (success) importedCount++;
+              else skippedCount++;
+            }
+
+            let msg = `${importedCount} registros de acesso importados de ${file.name}`;
+            if (skippedCount > 0) msg += ` (${skippedCount} com falha)`;
+            importedCount > 0 ? toast.success(msg) : toast.warning(msg);
           } else {
-            toast.warning(msg);
+            // Parse as residents (default)
+            const parsed = parseResidentsFromText(text);
+            
+            if (parsed.length === 0) {
+              toast.warning(
+                `Nenhum dado reconhecido em ${file.name}. Formatos aceitos: tabelas, "Nome | Apto | Tel", "Nome - Apto 101", campos rotulados (Nome: ..., Apartamento: ...), CSV com ; ou ,.`,
+                { duration: 8000 }
+              );
+              continue;
+            }
+
+            let importedCount = 0;
+            let skippedCount = 0;
+            for (const p of parsed) {
+              const resident = parsedToResident(p);
+              const success = await supabaseStorage.saveResident(resident);
+              if (success) importedCount++;
+              else skippedCount++;
+            }
+            
+            let msg = `${importedCount} moradores importados de ${file.name}`;
+            if (skippedCount > 0) msg += ` (${skippedCount} duplicados ignorados)`;
+            importedCount > 0 ? toast.success(msg) : toast.warning(msg);
           }
         } catch (error) {
           console.error('PDF import error:', error);

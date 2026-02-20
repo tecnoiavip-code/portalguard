@@ -83,13 +83,9 @@ export const Residents = () => {
     }
   };
 
-  const handleEdit = async (resident: Resident) => {
+  const handleEdit = (resident: Resident) => {
     setEditingId(resident.id);
-    // Load full photo if it's a base64 photo (marked as '📷')
-    let photo = resident.photo || '';
-    if (photo === '📷' || (resident as any).hasPhoto) {
-      photo = await supabaseStorage.getResidentPhoto(resident.id);
-    }
+    const photo = resident.photo || '';
     setFormData({
       name: resident.name,
       cpf: resident.cpf || '',
@@ -287,16 +283,16 @@ export const Residents = () => {
                   paginatedResidents.map((resident) => (
                     <TableRow key={resident.id} className="hover:bg-muted/50">
                       <TableCell>
-                        {resident.photo && resident.photo !== '📷' ? (
+                        {resident.photo ? (
                           <img 
                             src={resident.photo} 
                             alt={resident.name} 
-                            className="w-12 h-12 rounded-full object-cover border-2 border-primary/20"
+                            className="w-16 h-16 rounded-full object-cover border-2 border-primary/20"
                             loading="lazy"
                           />
                         ) : (
-                          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-xl">
-                            {(resident as any).hasPhoto ? '📷' : '👤'}
+                          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-2xl">
+                            👤
                           </div>
                         )}
                       </TableCell>

@@ -23,18 +23,24 @@ const ResidentAuth = () => {
     e.preventDefault();
     setIsSendingReset(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
         redirectTo: `${window.location.origin}/reset-password`,
       });
       if (error) {
-        toast.error(error.message);
+        if (error.message.includes('rate limit')) {
+          toast.error('Muitas tentativas. Aguarde alguns minutos antes de solicitar novamente.');
+        } else if (error.message.includes('timeout') || error.message.includes('timed out')) {
+          toast.info('O email pode ter sido enviado. Verifique sua caixa de entrada e spam. Caso não receba, tente novamente em alguns minutos.');
+        } else {
+          toast.error(error.message);
+        }
         return;
       }
-      toast.success('Email de recuperação enviado! Verifique sua caixa de entrada.');
+      toast.success('Email de recuperação enviado! Verifique sua caixa de entrada e pasta de spam.');
       setShowForgotPassword(false);
       setResetEmail('');
     } catch {
-      toast.error('Erro ao enviar email de recuperação');
+      toast.error('Erro ao enviar email de recuperação. Tente novamente em alguns minutos.');
     } finally {
       setIsSendingReset(false);
     }

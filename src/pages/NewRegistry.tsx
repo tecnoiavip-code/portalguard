@@ -151,16 +151,20 @@ export const NewRegistry = () => {
     setShowResidentSuggestions(false);
   };
   
-  const findSimilarEntries = (name: string, document: string) => {
-    if (!name && !document) {
+  const findSimilarEntries = (name: string, document: string, plate?: string) => {
+    const nameReady = name && name.trim().length >= 5;
+    const docReady = document && document.replace(/\D/g, '').length >= 5;
+    const plateReady = plate && plate.replace(/[^a-zA-Z0-9]/g, '').length >= 3;
+    if (!nameReady && !docReady && !plateReady) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
     const similar = allEntries.filter(entry => {
-      const nameMatch = name && entry.visitorName.toLowerCase().includes(name.toLowerCase());
-      const docMatch = document && entry.visitorDocument.includes(document);
-      return nameMatch || docMatch;
+      const nameMatch = nameReady && entry.visitorName.toLowerCase().includes(name.toLowerCase());
+      const docMatch = docReady && entry.visitorDocument.includes(document);
+      const plateMatch = plateReady && entry.vehiclePlate && entry.vehiclePlate.toLowerCase().includes(plate!.toLowerCase());
+      return nameMatch || docMatch || plateMatch;
     });
     // Deduplicate: keep only the most recent entry per visitor document
     const uniqueMap = new Map<string, AccessEntry>();
@@ -190,10 +194,10 @@ export const NewRegistry = () => {
       vehicleModel: entry.vehicleModel || '',
       vehicleColor: entry.vehicleColor || '',
       photo: entry.photo || '',
-      badgeNumber: entry.badgeNumber || '',
+      badgeNumber: '',
     });
     setShowSuggestions(false);
-    toast.success('Dados preenchidos automaticamente!');
+    toast.success('Dados preenchidos automaticamente! Atribua um novo crachá.');
   };
   const startCamera = async () => {
     try {
@@ -437,7 +441,8 @@ export const NewRegistry = () => {
     
     const updatedEntry: AccessEntry = {
       ...entry,
-      exitTime: new Date().toISOString()
+      exitTime: new Date().toISOString(),
+      badgeNumber: '',
     };
     
     await saveEntry(updatedEntry);
@@ -652,7 +657,7 @@ export const NewRegistry = () => {
                   ...formData,
                   visitorName: e.target.value
                 });
-                findSimilarEntries(e.target.value, formData.visitorDocument);
+                findSimilarEntries(e.target.value, formData.visitorDocument, formData.vehiclePlate);
               }} placeholder="Nome completo" required />
                 </div>
                 
@@ -663,7 +668,7 @@ export const NewRegistry = () => {
                   ...formData,
                   visitorDocument: e.target.value
                 });
-                findSimilarEntries(formData.visitorName, e.target.value);
+                findSimilarEntries(formData.visitorName, e.target.value, formData.vehiclePlate);
               }} placeholder="Número do documento" required />
                 </div>
               </div>
@@ -717,10 +722,13 @@ export const NewRegistry = () => {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="vehiclePlate">Placa</Label>
-                  <Input id="vehiclePlate" value={formData.vehiclePlate} onChange={e => setFormData({
-                ...formData,
-                vehiclePlate: e.target.value
-              })} placeholder="ABC-1234" />
+              <Input id="vehiclePlate" value={formData.vehiclePlate} onChange={e => {
+                setFormData({
+                  ...formData,
+                  vehiclePlate: e.target.value
+                });
+                findSimilarEntries(formData.visitorName, formData.visitorDocument, e.target.value);
+              }} placeholder="ABC-1234" />
                 </div>
 
                 <div className="space-y-2">

@@ -61,6 +61,7 @@ export const NewRegistry = () => {
     badgeNumber: '',
   });
   const [showCamera, setShowCamera] = useState(false);
+  const [showCameraDialog, setShowCameraDialog] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [suggestions, setSuggestions] = useState<AccessEntry[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -185,15 +186,16 @@ export const NewRegistry = () => {
   const startCamera = async () => {
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: true
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
       });
       setStream(mediaStream);
       setShowCamera(true);
+      setShowCameraDialog(true);
       setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream;
         }
-      }, 100);
+      }, 200);
     } catch (error) {
       toast.error('Não foi possível acessar a câmera');
     }
@@ -204,6 +206,7 @@ export const NewRegistry = () => {
       setStream(null);
     }
     setShowCamera(false);
+    setShowCameraDialog(false);
   };
   const capturePhoto = () => {
     if (videoRef.current && canvasRef.current) {
@@ -763,18 +766,8 @@ export const NewRegistry = () => {
                 <input id="photoUpload" type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
               </div>
 
-              {showCamera && <div className="space-y-2">
-                  <video ref={videoRef} autoPlay className="w-full rounded-lg border max-h-48" />
-                  <canvas ref={canvasRef} className="hidden" />
-                  <div className="flex gap-2">
-                    <Button type="button" size="sm" onClick={capturePhoto} className="flex-1">
-                      Capturar
-                    </Button>
-                    <Button type="button" size="sm" variant="secondary" onClick={stopCamera}>
-                      Cancelar
-                    </Button>
-                  </div>
-                </div>}
+
+
 
               <Button type="submit" className="w-full">
                 <LogIn className="h-4 w-4 mr-2" />
@@ -784,7 +777,36 @@ export const NewRegistry = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Blocked Visitors Dialog */}
+      {/* Camera Capture Dialog */}
+      <Dialog open={showCameraDialog} onOpenChange={(open) => {
+        if (!open) stopCamera();
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Camera className="h-5 w-5" />
+              Capturar Foto do Visitante
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="relative rounded-lg overflow-hidden border-2 border-primary/20 bg-black">
+              <video ref={videoRef} autoPlay playsInline className="w-full rounded-lg" />
+              <canvas ref={canvasRef} className="hidden" />
+            </div>
+            <div className="flex gap-3">
+              <Button type="button" onClick={capturePhoto} className="flex-1 gap-2">
+                <Camera className="h-4 w-4" />
+                Capturar Foto
+              </Button>
+              <Button type="button" variant="secondary" onClick={stopCamera}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+
       <Dialog open={showBlockedDialog} onOpenChange={setShowBlockedDialog}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>

@@ -26,11 +26,11 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Check if email exists in residents table
+    // Check if email exists in residents table (case-insensitive)
     const { data: resident, error: resError } = await supabaseAdmin
       .from("residents")
       .select("id, name, email")
-      .eq("email", email)
+      .ilike("email", email.trim())
       .maybeSingle();
 
     if (resError || !resident) {
@@ -56,9 +56,9 @@ serve(async (req) => {
       }
     }
 
-    // Create auth user
+    // Create auth user (email always lowercase)
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
+      email: email.toLowerCase().trim(),
       password,
       email_confirm: true,
       user_metadata: { full_name: resident.name },

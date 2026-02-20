@@ -95,7 +95,7 @@ export const supabaseStorage = {
       cpf: resident.cpf || null,
       apartment: up(resident.apartment) || resident.apartment,
       phone: resident.phone || null,
-      email: resident.email || null,
+      email: resident.email?.toLowerCase() || null,
       photo_url: resident.photo || null,
       vehicle_plate: up(resident.vehiclePlate) || null,
       vehicle_model: up(resident.vehicleModel) || null,

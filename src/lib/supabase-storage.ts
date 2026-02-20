@@ -6,7 +6,7 @@ const up = (val: string | null | undefined): string | null => val ? val.toUpperC
 
 export const supabaseStorage = {
   // Residents
-  async getResidents(): Promise<Resident[]> {
+  async getResidents(): Promise<Resident[] | null> {
     const { data, error } = await supabase
       .from('residents')
       .select('id, name, cpf, apartment, phone, email, vehicle_plate, vehicle_model, vehicle_color, vehicle_tag, created_at, photo_url')
@@ -14,7 +14,7 @@ export const supabaseStorage = {
     
     if (error) {
       console.error('Error fetching residents:', error);
-      return [];
+      return null; // Return null on error so callers can preserve existing data
     }
     
     return (data || []).map(r => ({

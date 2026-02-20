@@ -10,7 +10,10 @@ export const useResidents = () => {
   const loadResidents = async () => {
     setLoading(true);
     const data = await supabaseStorage.getResidents();
-    setResidents(data);
+    // Only update if we got valid data; preserve existing list on error
+    if (data !== null) {
+      setResidents(data);
+    }
     setLoading(false);
   };
 

@@ -610,7 +610,7 @@ export const NewRegistry = () => {
           <DialogHeader>
             <DialogTitle>{editingId ? 'Editar Cadastro' : 'Registrar Nova Entrada'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleEntry} className="space-y-4">
+          <form onSubmit={handleEntry} className="space-y-4" autoComplete="off">
               {/* Blocked visitor alert */}
               {formData.visitorDocument && isVisitorBlocked(formData.visitorDocument) && (
                 <div className="rounded-lg border-2 border-destructive bg-destructive/10 p-4 flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
@@ -651,7 +651,7 @@ export const NewRegistry = () => {
 
                 <div className="space-y-1">
                   <Label htmlFor="visitorName" className="text-xs">Nome Completo *</Label>
-                  <Input id="visitorName" className="h-9" value={formData.visitorName} onChange={e => {
+                  <Input id="vn_field" name="vn_field" className="h-9" value={formData.visitorName} onChange={e => {
                 setFormData({
                   ...formData,
                   visitorName: e.target.value
@@ -662,7 +662,7 @@ export const NewRegistry = () => {
                 
                 <div className="space-y-1">
                   <Label htmlFor="visitorDocument" className="text-xs">RG/CPF *</Label>
-                  <Input id="visitorDocument" className="h-9" value={formData.visitorDocument} onChange={e => {
+                  <Input id="vd_field" name="vd_field" className="h-9" value={formData.visitorDocument} onChange={e => {
                 setFormData({
                   ...formData,
                   visitorDocument: e.target.value
@@ -688,7 +688,7 @@ export const NewRegistry = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2 relative md:col-span-1">
                   <Label htmlFor="residentId">Visitando *</Label>
-                  <Input id="visitedLocation" value={visitedLocationSearch} onChange={e => {
+                  <Input id="vl_field" name="vl_field" value={visitedLocationSearch} onChange={e => {
                 setVisitedLocationSearch(e.target.value);
                 setShowResidentSuggestions(e.target.value.length > 0);
               }} onFocus={() => setShowResidentSuggestions(visitedLocationSearch.length > 0)} placeholder="Morador ou apt" required />
@@ -702,7 +702,7 @@ export const NewRegistry = () => {
 
                 <div className="space-y-2">
                   <Label htmlFor="company">{formData.visitorType === 'service_provider' ? 'Empresa' : 'Empresa (opcional)'}</Label>
-                  <Input id="company" value={formData.company} onChange={e => setFormData({
+                  <Input id="co_field" name="co_field" value={formData.company} onChange={e => setFormData({
                 ...formData,
                 company: e.target.value
               })} placeholder="Nome da empresa" />
@@ -710,7 +710,7 @@ export const NewRegistry = () => {
 
                 <div className="space-y-2">
                   <Label htmlFor="badgeNumber">Nº Crachá</Label>
-                  <Input id="badgeNumber" value={formData.badgeNumber} onChange={e => setFormData({
+                  <Input id="bn_field" name="bn_field" value={formData.badgeNumber} onChange={e => setFormData({
                 ...formData,
                 badgeNumber: e.target.value
               })} placeholder="Ex: 001" />
@@ -721,7 +721,7 @@ export const NewRegistry = () => {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="vehiclePlate">Placa</Label>
-              <Input id="vehiclePlate" value={formData.vehiclePlate} onChange={e => {
+              <Input id="vp_field" name="vp_field" value={formData.vehiclePlate} onChange={e => {
                 setFormData({
                   ...formData,
                   vehiclePlate: e.target.value
@@ -732,7 +732,7 @@ export const NewRegistry = () => {
 
                 <div className="space-y-2">
                   <Label htmlFor="vehicleModel">Modelo</Label>
-                  <Input id="vehicleModel" value={formData.vehicleModel} onChange={e => setFormData({
+                  <Input id="vm_field" name="vm_field" value={formData.vehicleModel} onChange={e => setFormData({
                 ...formData,
                 vehicleModel: e.target.value
               })} placeholder="Honda Civic" />
@@ -740,7 +740,7 @@ export const NewRegistry = () => {
 
                 <div className="space-y-2">
                   <Label htmlFor="vehicleColor">Cor</Label>
-                  <Input id="vehicleColor" value={formData.vehicleColor} onChange={e => setFormData({
+                  <Input id="vc_field" name="vc_field" value={formData.vehicleColor} onChange={e => setFormData({
                 ...formData,
                 vehicleColor: e.target.value
               })} placeholder="Preto" />
@@ -748,7 +748,7 @@ export const NewRegistry = () => {
 
                 <div className="space-y-2">
                   <Label htmlFor="purpose">Motivo</Label>
-                  <Input id="purpose" value={formData.purpose} onChange={e => setFormData({
+                  <Input id="pp_field" name="pp_field" value={formData.purpose} onChange={e => setFormData({
                 ...formData,
                 purpose: e.target.value
               })} placeholder="Visita, manutenção..." />

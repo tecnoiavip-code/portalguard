@@ -44,7 +44,7 @@ export const Dashboard = () => {
   useEffect(() => {
     loadStats();
     loadControlidLogs();
-    const interval = setInterval(loadStats, 5000);
+    const interval = setInterval(loadStats, 30000);
     const channel = supabase
       .channel('controlid-realtime')
       .on('postgres_changes', {
@@ -70,7 +70,7 @@ export const Dashboard = () => {
       supabaseStorage.getEvents(),
     ]);
 
-    setResidents(residentsData);
+    setResidents(residentsData || []);
 
     const today = new Date().toDateString();
     const todayEntries = entriesData.filter(
@@ -80,7 +80,7 @@ export const Dashboard = () => {
     const pendingMails = mailsData.filter((m) => m.status === 'pending').length;
 
     setStats({
-      totalResidents: residentsData.length,
+      totalResidents: (residentsData || []).length,
       pendingMails,
       activeVisitors,
       todayEntries: todayEntries.length,

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { supabaseStorage } from '@/lib/supabase-storage';
 import { exportToCSV } from '@/lib/export-csv';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -82,15 +83,20 @@ export const Residents = () => {
     }
   };
 
-  const handleEdit = (resident: Resident) => {
+  const handleEdit = async (resident: Resident) => {
     setEditingId(resident.id);
+    // Load full photo if it's a base64 photo (marked as '📷')
+    let photo = resident.photo || '';
+    if (photo === '📷' || (resident as any).hasPhoto) {
+      photo = await supabaseStorage.getResidentPhoto(resident.id);
+    }
     setFormData({
       name: resident.name,
       cpf: resident.cpf || '',
       apartment: resident.apartment,
       phone: resident.phone || '',
       email: resident.email || '',
-      photo: resident.photo || '',
+      photo,
       vehiclePlate: resident.vehiclePlate || '',
       vehicleModel: resident.vehicleModel || '',
       vehicleColor: resident.vehicleColor || '',
@@ -281,15 +287,16 @@ export const Residents = () => {
                   paginatedResidents.map((resident) => (
                     <TableRow key={resident.id} className="hover:bg-muted/50">
                       <TableCell>
-                        {resident.photo ? (
+                        {resident.photo && resident.photo !== '📷' ? (
                           <img 
                             src={resident.photo} 
                             alt={resident.name} 
-                            className="w-12 h-12 rounded-full object-cover border-2 border-primary/20" 
+                            className="w-12 h-12 rounded-full object-cover border-2 border-primary/20"
+                            loading="lazy"
                           />
                         ) : (
                           <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-xl">
-                            👤
+                            {(resident as any).hasPhoto ? '📷' : '👤'}
                           </div>
                         )}
                       </TableCell>

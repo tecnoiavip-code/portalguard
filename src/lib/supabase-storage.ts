@@ -9,7 +9,7 @@ export const supabaseStorage = {
   async getResidents(): Promise<Resident[]> {
     const { data, error } = await supabase
       .from('residents')
-      .select('*')
+      .select('id, name, cpf, apartment, phone, email, vehicle_plate, vehicle_model, vehicle_color, vehicle_tag, created_at, photo_url')
       .order('created_at', { ascending: false });
     
     if (error) {
@@ -24,13 +24,25 @@ export const supabaseStorage = {
       apartment: r.apartment,
       phone: r.phone || '',
       email: r.email || '',
-      photo: r.photo_url || '',
+      photo: r.photo_url && !r.photo_url.startsWith('data:') ? r.photo_url : (r.photo_url ? '📷' : ''),
+      hasPhoto: !!r.photo_url,
       vehiclePlate: r.vehicle_plate || '',
       vehicleModel: r.vehicle_model || '',
       vehicleColor: r.vehicle_color || '',
       vehicleTag: r.vehicle_tag || '',
       createdAt: r.created_at,
     }));
+  },
+
+  async getResidentPhoto(id: string): Promise<string> {
+    const { data, error } = await supabase
+      .from('residents')
+      .select('photo_url')
+      .eq('id', id)
+      .maybeSingle();
+    
+    if (error || !data?.photo_url) return '';
+    return data.photo_url;
   },
 
   async checkResidentDuplicate(resident: Resident, excludeId?: string): Promise<string | null> {

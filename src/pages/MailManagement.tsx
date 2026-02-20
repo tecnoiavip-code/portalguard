@@ -21,7 +21,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Combobox } from '@/components/ui/combobox';
-import { Package, CheckCircle, Search, Pencil, Trash2, Download, Camera, X, Upload, Video, FileSpreadsheet } from 'lucide-react';
+import { Package, CheckCircle, Search, Pencil, Trash2, Download, Camera, X, Upload, Video, FileSpreadsheet, Plus } from 'lucide-react';
 import { Mail, Resident } from '@/types';
 import { useMails } from '@/hooks/useMails';
 import { useResidents } from '@/hooks/useResidents';
@@ -540,6 +540,27 @@ export const MailManagement = () => {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-1">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => {
+                                  setEditingMail(null);
+                                  setFormData({
+                                    residentId: mail.residentId,
+                                    sender: '',
+                                    packageType: 'Carta',
+                                    notes: '',
+                                    trackingCode: '',
+                                  });
+                                  setPhotoFile(null);
+                                  setPhotoPreview(null);
+                                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                                }}
+                                className="h-8 w-8 text-primary"
+                                title="Adicionar outra encomenda para este morador"
+                              >
+                                <Plus className="h-4 w-4" />
+                              </Button>
                               <Button
                                 size="icon"
                                 variant="ghost"

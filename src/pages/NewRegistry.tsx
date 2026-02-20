@@ -72,6 +72,14 @@ export const NewRegistry = () => {
     loadBlockedVisitors();
   }, []);
 
+  // Auto-correct pagination when current page exceeds total pages
+  useEffect(() => {
+    const total = Math.ceil(entries.filter(e => !e.exitTime).length / itemsPerPage);
+    if (total > 0 && currentPage > total) {
+      setCurrentPage(total);
+    }
+  }, [entries, currentPage]);
+
   const loadBlockedVisitors = async () => {
     const { data, error } = await supabase
       .from('blocked_visitors')
@@ -124,7 +132,11 @@ export const NewRegistry = () => {
   const activeEntries = entries.filter(e => !e.exitTime);
   const filteredActiveEntries = activeEntries.filter(entry => entry.visitorName.toLowerCase().includes(searchTerm.toLowerCase()) || entry.apartment.toLowerCase().includes(searchTerm.toLowerCase()) || entry.visitorDocument.toLowerCase().includes(searchTerm.toLowerCase()));
   const totalPages = Math.ceil(filteredActiveEntries.length / itemsPerPage);
-  const paginatedEntries = filteredActiveEntries.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const safePage = Math.max(1, Math.min(currentPage, totalPages || 1));
+  if (safePage !== currentPage && totalPages > 0) {
+    // Will be corrected on next render via useEffect below
+  }
+  const paginatedEntries = filteredActiveEntries.slice((safePage - 1) * itemsPerPage, safePage * itemsPerPage);
   const filteredAllEntries = allEntries.filter(entry => entry.visitorName.toLowerCase().includes(searchTerm.toLowerCase()) || entry.apartment.toLowerCase().includes(searchTerm.toLowerCase()) || entry.visitorDocument.toLowerCase().includes(searchTerm.toLowerCase()));
   const totalPagesAll = Math.ceil(filteredAllEntries.length / itemsPerPageTable);
   const paginatedAllEntries = filteredAllEntries.slice((currentPageAll - 1) * itemsPerPageTable, currentPageAll * itemsPerPageTable);

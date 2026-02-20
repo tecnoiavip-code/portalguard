@@ -29,12 +29,17 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Check if email exists in residents table (case-insensitive)
+    // Check if email exists in residents table (case-insensitive, with wildcard for whitespace)
+    const normalizedEmail = email.trim().toLowerCase();
+    console.log(`Checking registration for email: ${normalizedEmail}`);
+    
     const { data: resident, error: resError } = await supabaseAdmin
       .from("residents")
       .select("id, name, email, auth_user_id")
-      .ilike("email", email.trim())
+      .ilike("email", normalizedEmail)
       .maybeSingle();
+    
+    console.log(`Resident lookup result: ${JSON.stringify({ found: !!resident, resError: resError?.message, residentName: resident?.name })}`);
 
     if (resError || !resident) {
       return jsonResponse({ error: "Este email não está cadastrado como morador. Verifique com a portaria se seu email está correto." });

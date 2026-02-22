@@ -8,7 +8,8 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { Shield, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import appLogo from '@/assets/app-icon-v18-preview.png';
 
 export const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -124,9 +125,7 @@ export const Auth = () => {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
-              <Shield className="w-8 h-8 text-primary" />
-            </div>
+            <img src={appLogo} alt="PortalGuard Pro" className="w-16 h-16 rounded-2xl shadow-lg" />
           </div>
           <CardTitle className="text-2xl">PortalGuard Pro</CardTitle>
           <CardDescription>Sistema de controle de acesso seguro</CardDescription>

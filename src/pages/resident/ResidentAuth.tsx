@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { Home, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import appLogo from '@/assets/app-icon-v18-preview.png';
 
 const ResidentAuth = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -125,9 +126,7 @@ const ResidentAuth = () => {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <div className="w-16 h-16 bg-accent/10 rounded-full flex items-center justify-center">
-              <Home className="w-8 h-8 text-accent" />
-            </div>
+            <img src={appLogo} alt="Portal do Morador" className="w-16 h-16 rounded-2xl shadow-lg" />
           </div>
           <CardTitle className="text-2xl">Portal do Morador</CardTitle>
           <CardDescription>Acesse sua área exclusiva</CardDescription>

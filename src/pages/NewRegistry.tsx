@@ -610,7 +610,10 @@ export const NewRegistry = () => {
           <DialogHeader>
             <DialogTitle>{editingId ? 'Editar Cadastro' : 'Registrar Nova Entrada'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleEntry} className="space-y-4" autoComplete="off">
+          <form onSubmit={handleEntry} className="space-y-4" autoComplete="off" data-form-type="other" data-lpignore="true">
+              {/* Hidden fields to trick browser autocomplete */}
+              <input type="text" name="fake_field_1" style={{ display: 'none' }} tabIndex={-1} autoComplete="off" />
+              <input type="text" name="fake_field_2" style={{ display: 'none' }} tabIndex={-1} autoComplete="off" />
               {/* Blocked visitor alert */}
               {formData.visitorDocument && isVisitorBlocked(formData.visitorDocument) && (
                 <div className="rounded-lg border-2 border-destructive bg-destructive/10 p-4 flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
@@ -651,7 +654,7 @@ export const NewRegistry = () => {
 
                 <div className="space-y-1">
                   <Label htmlFor="visitorName" className="text-xs">Nome Completo *</Label>
-                  <Input id="vn_field" name="vn_field" className="h-9" value={formData.visitorName} onChange={e => {
+                  <Input id="vn_field" name="vn_field" className="h-9" value={formData.visitorName} autoComplete="new-password" onChange={e => {
                 setFormData({
                   ...formData,
                   visitorName: e.target.value
@@ -662,7 +665,7 @@ export const NewRegistry = () => {
                 
                 <div className="space-y-1">
                   <Label htmlFor="visitorDocument" className="text-xs">RG/CPF *</Label>
-                  <Input id="vd_field" name="vd_field" className="h-9" value={formData.visitorDocument} onChange={e => {
+                  <Input id="vd_field" name="vd_field" className="h-9" value={formData.visitorDocument} autoComplete="new-password" onChange={e => {
                 setFormData({
                   ...formData,
                   visitorDocument: e.target.value
@@ -688,7 +691,7 @@ export const NewRegistry = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2 relative md:col-span-1">
                   <Label htmlFor="residentId">Visitando *</Label>
-                  <Input id="vl_field" name="vl_field" value={visitedLocationSearch} onChange={e => {
+                  <Input id="vl_field" name="vl_field" value={visitedLocationSearch} autoComplete="new-password" onChange={e => {
                 setVisitedLocationSearch(e.target.value);
                 setShowResidentSuggestions(e.target.value.length > 0);
               }} onFocus={() => setShowResidentSuggestions(visitedLocationSearch.length > 0)} placeholder="Morador ou apt" required />

@@ -65,11 +65,18 @@ export const NewRegistry = () => {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [suggestions, setSuggestions] = useState<AccessEntry[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [vehicleModelSuggestions, setVehicleModelSuggestions] = useState<string[]>([]);
+  const [vehicleColorSuggestions, setVehicleColorSuggestions] = useState<string[]>([]);
+  const [showModelSuggestions, setShowModelSuggestions] = useState(false);
+  const [showColorSuggestions, setShowColorSuggestions] = useState(false);
+  const [allVehicleModels, setAllVehicleModels] = useState<string[]>([]);
+  const [allVehicleColors, setAllVehicleColors] = useState<string[]>([]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     loadBlockedVisitors();
+    loadVehicleSuggestions();
   }, []);
 
   // Auto-correct pagination when current page exceeds total pages
@@ -87,6 +94,33 @@ export const NewRegistry = () => {
       .eq('is_active', true)
       .order('blocked_at', { ascending: false });
     if (!error && data) setBlockedVisitors(data as BlockedVisitor[]);
+  };
+
+  const loadVehicleSuggestions = async () => {
+    const [modelsRes, colorsRes] = await Promise.all([
+      supabase.from('access_entries').select('vehicle_model').not('vehicle_model', 'is', null).not('vehicle_model', 'eq', ''),
+      supabase.from('access_entries').select('vehicle_color').not('vehicle_color', 'is', null).not('vehicle_color', 'eq', ''),
+    ]);
+    if (modelsRes.data) {
+      const unique = [...new Set(modelsRes.data.map(r => (r.vehicle_model as string).trim().toUpperCase()))].filter(Boolean).sort();
+      setAllVehicleModels(unique);
+    }
+    if (colorsRes.data) {
+      const unique = [...new Set(colorsRes.data.map(r => (r.vehicle_color as string).trim().toUpperCase()))].filter(Boolean).sort();
+      setAllVehicleColors(unique);
+    }
+  };
+
+  const filterVehicleModels = (query: string) => {
+    if (!query) { setVehicleModelSuggestions(allVehicleModels.slice(0, 8)); return; }
+    const q = query.toUpperCase();
+    setVehicleModelSuggestions(allVehicleModels.filter(m => m.includes(q)).slice(0, 8));
+  };
+
+  const filterVehicleColors = (query: string) => {
+    if (!query) { setVehicleColorSuggestions(allVehicleColors.slice(0, 8)); return; }
+    const q = query.toUpperCase();
+    setVehicleColorSuggestions(allVehicleColors.filter(c => c.includes(q)).slice(0, 8));
   };
 
   const isVisitorBlocked = (document: string) => {
@@ -600,7 +634,6 @@ export const NewRegistry = () => {
         </CardContent>
       </Card>
 
-      
 
       <Dialog open={isDialogOpen} onOpenChange={open => {
       if (!open) resetForm();
@@ -733,20 +766,32 @@ export const NewRegistry = () => {
               }} placeholder="ABC-1234" />
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-2 relative">
                   <Label htmlFor="vehicleModel">Modelo</Label>
-                  <Input id="vm_field" name="vm_field" value={formData.vehicleModel} onChange={e => setFormData({
-                ...formData,
-                vehicleModel: e.target.value
-              })} placeholder="Honda Civic" />
+                  <Input id="vm_field" name="vm_field" value={formData.vehicleModel} autoComplete="one-time-code" readOnly onFocus={e => { e.currentTarget.removeAttribute('readOnly'); filterVehicleModels(formData.vehicleModel); setShowModelSuggestions(true); }} onChange={e => { setFormData({ ...formData, vehicleModel: e.target.value }); filterVehicleModels(e.target.value); setShowModelSuggestions(true); }} onBlur={() => setTimeout(() => setShowModelSuggestions(false), 150)} placeholder="Honda Civic" />
+                  {showModelSuggestions && vehicleModelSuggestions.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                      {vehicleModelSuggestions.map(model => (
+                        <button key={model} type="button" className="w-full text-left px-3 py-1.5 hover:bg-accent transition-colors text-sm" onClick={() => { setFormData({ ...formData, vehicleModel: model }); setShowModelSuggestions(false); }}>
+                          {model}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-2 relative">
                   <Label htmlFor="vehicleColor">Cor</Label>
-                  <Input id="vc_field" name="vc_field" value={formData.vehicleColor} onChange={e => setFormData({
-                ...formData,
-                vehicleColor: e.target.value
-              })} placeholder="Preto" />
+                  <Input id="vc_field" name="vc_field" value={formData.vehicleColor} autoComplete="one-time-code" readOnly onFocus={e => { e.currentTarget.removeAttribute('readOnly'); filterVehicleColors(formData.vehicleColor); setShowColorSuggestions(true); }} onChange={e => { setFormData({ ...formData, vehicleColor: e.target.value }); filterVehicleColors(e.target.value); setShowColorSuggestions(true); }} onBlur={() => setTimeout(() => setShowColorSuggestions(false), 150)} placeholder="Preto" />
+                  {showColorSuggestions && vehicleColorSuggestions.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                      {vehicleColorSuggestions.map(color => (
+                        <button key={color} type="button" className="w-full text-left px-3 py-1.5 hover:bg-accent transition-colors text-sm" onClick={() => { setFormData({ ...formData, vehicleColor: color }); setShowColorSuggestions(false); }}>
+                          {color}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">

@@ -654,7 +654,7 @@ export const NewRegistry = () => {
 
                 <div className="space-y-1">
                   <Label htmlFor="visitorName" className="text-xs">Nome Completo *</Label>
-                  <Input id="vn_field" name="vn_field" className="h-9" value={formData.visitorName} autoComplete="new-password" onChange={e => {
+                  <Input id="vn_field" name="vn_field" className="h-9" value={formData.visitorName} autoComplete="one-time-code" readOnly onFocus={e => e.currentTarget.removeAttribute('readOnly')} onChange={e => {
                 setFormData({
                   ...formData,
                   visitorName: e.target.value
@@ -665,7 +665,7 @@ export const NewRegistry = () => {
                 
                 <div className="space-y-1">
                   <Label htmlFor="visitorDocument" className="text-xs">RG/CPF *</Label>
-                  <Input id="vd_field" name="vd_field" className="h-9" value={formData.visitorDocument} autoComplete="new-password" onChange={e => {
+                  <Input id="vd_field" name="vd_field" className="h-9" value={formData.visitorDocument} autoComplete="one-time-code" readOnly onFocus={e => e.currentTarget.removeAttribute('readOnly')} onChange={e => {
                 setFormData({
                   ...formData,
                   visitorDocument: e.target.value
@@ -691,10 +691,10 @@ export const NewRegistry = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2 relative md:col-span-1">
                   <Label htmlFor="residentId">Visitando *</Label>
-                  <Input id="vl_field" name="vl_field" value={visitedLocationSearch} autoComplete="new-password" onChange={e => {
+                  <Input id="vl_field" name="vl_field" value={visitedLocationSearch} autoComplete="one-time-code" readOnly onFocus={e => { e.currentTarget.removeAttribute('readOnly'); setShowResidentSuggestions(visitedLocationSearch.length > 0); }} onChange={e => {
                 setVisitedLocationSearch(e.target.value);
                 setShowResidentSuggestions(e.target.value.length > 0);
-              }} onFocus={() => setShowResidentSuggestions(visitedLocationSearch.length > 0)} placeholder="Morador ou apt" required />
+              }} placeholder="Morador ou apt" required />
                   {showResidentSuggestions && filteredResidents.length > 0 && <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg max-h-40 overflow-y-auto">
                       {filteredResidents.slice(0, 5).map(resident => <button key={resident.id} type="button" className="w-full text-left px-3 py-1.5 hover:bg-accent transition-colors text-sm" onClick={() => handleVisitedLocationSelect(resident.id, resident.name, resident.apartment)}>
                           <span className="font-medium">{resident.name}</span>

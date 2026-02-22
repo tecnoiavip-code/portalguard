@@ -482,6 +482,7 @@ export const supabaseStorage = {
       location: d.location,
       status: d.status as any,
       lastSync: d.last_sync,
+      ipAddress: (d as any).ip_address || '',
       serialNumber: d.serial_number || '',
     }));
   },
@@ -494,6 +495,7 @@ export const supabaseStorage = {
       type: device.type,
       location: device.location,
       status: device.status,
+      ip_address: device.ipAddress || null,
       serial_number: device.serialNumber || null,
     };
 

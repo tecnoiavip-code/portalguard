@@ -482,7 +482,7 @@ export const supabaseStorage = {
       location: d.location,
       status: d.status as any,
       lastSync: d.last_sync,
-      ipAddress: (d as any).ip_address || '',
+      ipAddress: d.ip_address || '',
       serialNumber: d.serial_number || '',
     }));
   },

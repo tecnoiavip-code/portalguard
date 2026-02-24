@@ -43,6 +43,7 @@ export const NewRegistry = () => {
   const [blockedVisitors, setBlockedVisitors] = useState<BlockedVisitor[]>([]);
   const [showBlockedDialog, setShowBlockedDialog] = useState(false);
   const [blockReason, setBlockReason] = useState('');
+  const [badgeError, setBadgeError] = useState<string | null>(null);
   const [blockingEntry, setBlockingEntry] = useState<AccessEntry | null>(null);
   const [showBlockReasonDialog, setShowBlockReasonDialog] = useState(false);
   const itemsPerPage = 12;
@@ -291,6 +292,7 @@ export const NewRegistry = () => {
   };
   const handleEntry = async (e: React.FormEvent) => {
     e.preventDefault();
+    setBadgeError(null);
     if (isVisitorBlocked(formData.visitorDocument)) {
       toast.error('Este visitante está bloqueado e não pode entrar!');
       return;
@@ -299,6 +301,21 @@ export const NewRegistry = () => {
     if (!resident) {
       toast.error('Selecione um morador válido');
       return;
+    }
+
+    // Check badge availability before saving (for new entries)
+    const isNew = !editingId;
+    if (isNew && formData.badgeNumber && formData.badgeNumber.trim()) {
+      const { data: badgeData } = await supabase
+        .from('access_entries')
+        .select('id, visitor_name, apartment, badge_number')
+        .eq('badge_number', formData.badgeNumber.trim().toUpperCase())
+        .is('exit_time', null)
+        .limit(1);
+      if (badgeData && badgeData.length > 0) {
+        setBadgeError(`O crachá ${badgeData[0].badge_number} já está em uso por ${badgeData[0].visitor_name} (${badgeData[0].apartment}). Registre a saída antes de reutilizá-lo.`);
+        return;
+      }
     }
     
     const entryData: AccessEntry = editingId
@@ -494,7 +511,7 @@ export const NewRegistry = () => {
               <Badge variant="destructive" className="ml-1">{blockedVisitors.length}</Badge>
             )}
           </Button>
-          <Button onClick={() => setIsDialogOpen(true)} size="lg" className="gap-2 text-primary-foreground">
+          <Button onClick={() => { setBadgeError(null); setIsDialogOpen(true); }} size="lg" className="gap-2 text-primary-foreground">
             <Plus className="h-5 w-5" />
             Nova Entrada
           </Button>
@@ -664,6 +681,22 @@ export const NewRegistry = () => {
                       </p>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* Badge in use alert */}
+              {badgeError && (
+                <div className="rounded-lg border-2 border-warning bg-warning/10 p-4 flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="rounded-full bg-warning p-2 shrink-0">
+                    <AlertTriangle className="h-5 w-5 text-warning-foreground" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-bold text-foreground text-base">⚠️ Crachá em uso</h4>
+                    <p className="text-sm text-muted-foreground mt-1">{badgeError}</p>
+                  </div>
+                  <Button type="button" size="sm" variant="outline" onClick={() => setBadgeError(null)}>
+                    OK
+                  </Button>
                 </div>
               )}
 

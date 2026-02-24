@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,15 +11,17 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Wifi, WifiOff, Camera, Tag, CreditCard, Pencil, Trash2, Plus } from 'lucide-react';
+import { Wifi, WifiOff, Camera, Tag, CreditCard, Pencil, Trash2, Plus, Settings2, Loader2 } from 'lucide-react';
 import { Device } from '@/types';
 import { useDevices } from '@/hooks/useDevices';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 export const Devices = () => {
   const { devices, loading, saveDevice, deleteDevice, refresh } = useDevices();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string>('');
+  const [pushingConfig, setPushingConfig] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     type: 'facial_recognition' as Device['type'],
@@ -28,6 +30,35 @@ export const Devices = () => {
     ipAddress: '',
     serialNumber: '',
   });
+
+  const handlePushConfig = async (device: Device) => {
+    if (!device.serialNumber) {
+      toast.error('Dispositivo sem número de série configurado');
+      return;
+    }
+
+    setPushingConfig(device.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('controlid-webhook/push-config', {
+        method: 'POST',
+        body: { device_id: device.serialNumber },
+      });
+
+      if (error) throw error;
+
+      toast.success('Configuração do monitor enfileirada com sucesso! O dispositivo receberá na próxima consulta push.', {
+        duration: 5000,
+        description: `Hostname: ${data?.config?.monitor?.hostname || 'N/A'}`,
+      });
+    } catch (err: any) {
+      console.error('Error pushing config:', err);
+      toast.error('Erro ao enviar configuração', {
+        description: err.message || 'Tente novamente',
+      });
+    } finally {
+      setPushingConfig(null);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -273,7 +304,22 @@ export const Devices = () => {
                   </div>
                 </div>
 
-                <div className="flex gap-2 pt-2">
+                <div className="flex gap-2 pt-2 flex-wrap">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handlePushConfig(device)}
+                    disabled={pushingConfig === device.id}
+                    className="flex-1"
+                    title="Enviar configuração do monitor ao dispositivo via Push"
+                  >
+                    {pushingConfig === device.id ? (
+                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                    ) : (
+                      <Settings2 className="h-3.5 w-3.5 mr-1" />
+                    )}
+                    Enviar Config
+                  </Button>
                   <Button
                     size="sm"
                     variant="outline"

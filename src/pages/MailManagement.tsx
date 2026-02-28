@@ -268,30 +268,11 @@ export const MailManagement = () => {
         const residentPhone = resident.phone?.replace(/\D/g, '');
 
         if (residentPhone) {
-          const whatsappUrl = getWhatsappWebUrl(residentPhone, whatsappMsg);
-          toast.success(
-            `Correspondência registrada! ${resident.name} foi notificado.`,
-            {
-              duration: Infinity,
-              description: (
-                <div className="flex gap-2 mt-2">
-                  <a
-                    href={whatsappUrl}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors"
-                    onClick={(e) => openWhatsappWithFallback(residentPhone, whatsappMsg, e)}
-                  >
-                    📱 WhatsApp
-                  </a>
-                  <button
-                    className="inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
-                    onClick={() => toast.dismiss()}
-                  >
-                    Fechar
-                  </button>
-                </div>
-              ),
-            }
-          );
+          toast.success(`Correspondência registrada! ${resident.name} foi notificado.`);
+          // Redireciona direto ao WhatsApp sem confirmação
+          setTimeout(() => {
+            openWhatsappWithFallback(residentPhone, whatsappMsg);
+          }, 300);
         } else {
           toast.success(`Correspondência registrada para ${resident.name} (sem telefone cadastrado)`);
         }

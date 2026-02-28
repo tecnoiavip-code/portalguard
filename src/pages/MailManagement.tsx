@@ -103,10 +103,10 @@ export const MailManagement = () => {
       window.removeEventListener('blur', markSwitched);
       document.removeEventListener('visibilitychange', markSwitched);
 
-      if (!switchedApp || isMobileDevice) {
-        window.location.href = webUrl;
+      if (!switchedApp) {
+        window.open(webUrl, '_blank');
       }
-    }, 1200);
+    }, 1500);
   };
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {

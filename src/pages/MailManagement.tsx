@@ -220,7 +220,10 @@ export const MailManagement = () => {
         const residentPhone = resident.phone?.replace(/\D/g, '');
 
         if (residentPhone) {
-          const whatsappUrl = `https://api.whatsapp.com/send?phone=55${residentPhone}&text=${whatsappMsg}`;
+          const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
+          const whatsappUrl = isMobile
+            ? `whatsapp://send?phone=55${residentPhone}&text=${whatsappMsg}`
+            : `https://web.whatsapp.com/send?phone=55${residentPhone}&text=${whatsappMsg}`;
           toast.success(
             `Correspondência registrada! ${resident.name} foi notificado.`,
             {
@@ -585,9 +588,13 @@ export const MailManagement = () => {
                                   (mail.trackingCode ? `🔍 Rastreio: ${mail.trackingCode}\n` : '') +
                                   `\nPor favor, retire na portaria. Obrigado!`
                                 );
+                                const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
+                                const waUrl = isMobile
+                                  ? `whatsapp://send?phone=55${phone}&text=${msg}`
+                                  : `https://web.whatsapp.com/send?phone=55${phone}&text=${msg}`;
                                 return (
                                   <a
-                                    href={`https://api.whatsapp.com/send?phone=55${phone}&text=${msg}`}
+                                    href={waUrl}
                                     className="inline-flex items-center justify-center h-8 w-8 rounded-md text-green-600 hover:bg-accent transition-colors"
                                     title="Enviar WhatsApp"
                                   >

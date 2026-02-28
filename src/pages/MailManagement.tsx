@@ -21,7 +21,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Combobox } from '@/components/ui/combobox';
-import { Package, CheckCircle, Search, Pencil, Trash2, Download, Camera, X, Upload, Video, FileSpreadsheet, Plus } from 'lucide-react';
+import { Package, CheckCircle, Search, Pencil, Trash2, Download, Camera, X, Upload, Video, FileSpreadsheet, Plus, MessageCircle } from 'lucide-react';
 import { Mail, Resident } from '@/types';
 import { useMails } from '@/hooks/useMails';
 import { useResidents } from '@/hooks/useResidents';
@@ -562,6 +562,27 @@ export const MailManagement = () => {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-1">
+                              {resident?.phone && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    const phone = resident.phone?.replace(/\D/g, '');
+                                    const msg = encodeURIComponent(
+                                      `Olá ${resident.name}! 📦\n\nInformamos que uma correspondência está aguardando retirada na portaria.\n\n` +
+                                      `📋 Tipo: ${mail.packageType}\n` +
+                                      `📤 Remetente: ${mail.sender}\n` +
+                                      (mail.trackingCode ? `🔍 Rastreio: ${mail.trackingCode}\n` : '') +
+                                      `\nPor favor, retire na portaria. Obrigado!`
+                                    );
+                                    window.open(`https://wa.me/55${phone}?text=${msg}`, '_blank');
+                                  }}
+                                  className="h-8 w-8 text-green-600"
+                                  title="Enviar WhatsApp"
+                                >
+                                  <MessageCircle className="h-4 w-4" />
+                                </Button>
+                              )}
                               <Button
                                 size="icon"
                                 variant="ghost"

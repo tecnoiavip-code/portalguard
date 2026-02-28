@@ -8,11 +8,11 @@ const PWAUpdatePrompt = () => {
     updateServiceWorker,
   } = useRegisterSW({
     onRegisteredSW(swUrl, registration) {
-      // Check for updates every 60 seconds
+      // Check for updates once per day (86400 seconds)
       if (registration) {
         setInterval(() => {
           registration.update();
-        }, 60 * 1000);
+        }, 24 * 60 * 60 * 1000);
       }
     },
     onRegisterError(error) {

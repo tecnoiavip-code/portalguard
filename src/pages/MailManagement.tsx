@@ -61,6 +61,20 @@ export const MailManagement = () => {
   const [editingMail, setEditingMail] = useState<Mail | null>(null);
   const [withdrawnBy, setWithdrawnBy] = useState('');
 
+  const isMobileDevice = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
+
+  const getWhatsappPhone = (rawPhone: string) => {
+    const digits = rawPhone.replace(/\D/g, '');
+    return digits.startsWith('55') ? digits : `55${digits}`;
+  };
+
+  const getWhatsappUrl = (rawPhone: string, encodedMessage: string) => {
+    const phone = getWhatsappPhone(rawPhone);
+    return isMobileDevice
+      ? `whatsapp://send?phone=${phone}&text=${encodedMessage}`
+      : `https://api.whatsapp.com/send?phone=${phone}&text=${encodedMessage}`;
+  };
+
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -220,10 +234,7 @@ export const MailManagement = () => {
         const residentPhone = resident.phone?.replace(/\D/g, '');
 
         if (residentPhone) {
-          const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
-          const whatsappUrl = isMobile
-            ? `whatsapp://send?phone=55${residentPhone}&text=${whatsappMsg}`
-            : `https://web.whatsapp.com/send?phone=55${residentPhone}&text=${whatsappMsg}`;
+          const whatsappUrl = getWhatsappUrl(residentPhone, whatsappMsg);
           toast.success(
             `Correspondência registrada! ${resident.name} foi notificado.`,
             {
@@ -588,10 +599,7 @@ export const MailManagement = () => {
                                   (mail.trackingCode ? `🔍 Rastreio: ${mail.trackingCode}\n` : '') +
                                   `\nPor favor, retire na portaria. Obrigado!`
                                 );
-                                const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
-                                const waUrl = isMobile
-                                  ? `whatsapp://send?phone=55${phone}&text=${msg}`
-                                  : `https://web.whatsapp.com/send?phone=55${phone}&text=${msg}`;
+                                const waUrl = getWhatsappUrl(phone, msg);
                                 return (
                                   <a
                                     href={waUrl}

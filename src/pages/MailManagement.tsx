@@ -223,10 +223,14 @@ export const MailManagement = () => {
           toast.success(
             `Correspondência registrada! ${resident.name} foi notificado.`,
             {
-              duration: 15000,
+              duration: Infinity,
               action: {
                 label: '📱 WhatsApp',
                 onClick: () => window.open(`https://wa.me/55${residentPhone}?text=${whatsappMsg}`, '_blank'),
+              },
+              cancel: {
+                label: 'Fechar',
+                onClick: () => {},
               },
             }
           );

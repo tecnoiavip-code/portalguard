@@ -68,11 +68,45 @@ export const MailManagement = () => {
     return digits.startsWith('55') ? digits : `55${digits}`;
   };
 
-  const getWhatsappUrl = (rawPhone: string, encodedMessage: string) => {
+  const getWhatsappAppUrl = (rawPhone: string, encodedMessage: string) => {
     const phone = getWhatsappPhone(rawPhone);
-    return isMobileDevice
-      ? `whatsapp://send?phone=${phone}&text=${encodedMessage}`
-      : `https://api.whatsapp.com/send?phone=${phone}&text=${encodedMessage}`;
+    return `whatsapp://send?phone=${phone}&text=${encodedMessage}`;
+  };
+
+  const getWhatsappWebUrl = (rawPhone: string, encodedMessage: string) => {
+    const phone = getWhatsappPhone(rawPhone);
+    return `https://api.whatsapp.com/send?phone=${phone}&text=${encodedMessage}`;
+  };
+
+  const openWhatsappWithFallback = (
+    rawPhone: string,
+    encodedMessage: string,
+    event?: React.MouseEvent<HTMLElement>
+  ) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+
+    const appUrl = getWhatsappAppUrl(rawPhone, encodedMessage);
+    const webUrl = getWhatsappWebUrl(rawPhone, encodedMessage);
+    let switchedApp = false;
+
+    const markSwitched = () => {
+      switchedApp = true;
+    };
+
+    window.addEventListener('blur', markSwitched, { once: true });
+    document.addEventListener('visibilitychange', markSwitched, { once: true });
+
+    window.location.href = appUrl;
+
+    window.setTimeout(() => {
+      window.removeEventListener('blur', markSwitched);
+      document.removeEventListener('visibilitychange', markSwitched);
+
+      if (!switchedApp || isMobileDevice) {
+        window.location.href = webUrl;
+      }
+    }, 1200);
   };
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -234,7 +268,7 @@ export const MailManagement = () => {
         const residentPhone = resident.phone?.replace(/\D/g, '');
 
         if (residentPhone) {
-          const whatsappUrl = getWhatsappUrl(residentPhone, whatsappMsg);
+          const whatsappUrl = getWhatsappWebUrl(residentPhone, whatsappMsg);
           toast.success(
             `Correspondência registrada! ${resident.name} foi notificado.`,
             {
@@ -244,7 +278,7 @@ export const MailManagement = () => {
                   <a
                     href={whatsappUrl}
                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors"
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => openWhatsappWithFallback(residentPhone, whatsappMsg, e)}
                   >
                     📱 WhatsApp
                   </a>
@@ -599,10 +633,11 @@ export const MailManagement = () => {
                                   (mail.trackingCode ? `🔍 Rastreio: ${mail.trackingCode}\n` : '') +
                                   `\nPor favor, retire na portaria. Obrigado!`
                                 );
-                                const waUrl = getWhatsappUrl(phone, msg);
+                                const waUrl = getWhatsappWebUrl(phone, msg);
                                 return (
                                   <a
                                     href={waUrl}
+                                    onClick={(e) => openWhatsappWithFallback(phone, msg, e)}
                                     className="inline-flex items-center justify-center h-8 w-8 rounded-md text-green-600 hover:bg-accent transition-colors"
                                     title="Enviar WhatsApp"
                                   >

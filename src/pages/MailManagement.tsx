@@ -220,7 +220,7 @@ export const MailManagement = () => {
         const residentPhone = resident.phone?.replace(/\D/g, '');
 
         if (residentPhone) {
-          const whatsappUrl = `https://wa.me/55${residentPhone}?text=${whatsappMsg}`;
+          const whatsappUrl = `https://api.whatsapp.com/send?phone=55${residentPhone}&text=${whatsappMsg}`;
           toast.success(
             `Correspondência registrada! ${resident.name} foi notificado.`,
             {
@@ -229,8 +229,6 @@ export const MailManagement = () => {
                 <div className="flex gap-2 mt-2">
                   <a
                     href={whatsappUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors"
                     onClick={(e) => e.stopPropagation()}
                   >
@@ -589,9 +587,7 @@ export const MailManagement = () => {
                                 );
                                 return (
                                   <a
-                                    href={`https://wa.me/55${phone}?text=${msg}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                    href={`https://api.whatsapp.com/send?phone=55${phone}&text=${msg}`}
                                     className="inline-flex items-center justify-center h-8 w-8 rounded-md text-green-600 hover:bg-accent transition-colors"
                                     title="Enviar WhatsApp"
                                   >

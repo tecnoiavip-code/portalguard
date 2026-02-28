@@ -220,18 +220,30 @@ export const MailManagement = () => {
         const residentPhone = resident.phone?.replace(/\D/g, '');
 
         if (residentPhone) {
+          const whatsappUrl = `https://wa.me/55${residentPhone}?text=${whatsappMsg}`;
           toast.success(
             `Correspondência registrada! ${resident.name} foi notificado.`,
             {
               duration: Infinity,
-              action: {
-                label: '📱 WhatsApp',
-                onClick: () => window.open(`https://wa.me/55${residentPhone}?text=${whatsappMsg}`, '_blank'),
-              },
-              cancel: {
-                label: 'Fechar',
-                onClick: () => {},
-              },
+              description: (
+                <div className="flex gap-2 mt-2">
+                  <a
+                    href={whatsappUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    📱 WhatsApp
+                  </a>
+                  <button
+                    className="inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
+                    onClick={() => toast.dismiss()}
+                  >
+                    Fechar
+                  </button>
+                </div>
+              ),
             }
           );
         } else {
@@ -566,27 +578,27 @@ export const MailManagement = () => {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-1">
-                              {resident?.phone && (
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    const phone = resident.phone?.replace(/\D/g, '');
-                                    const msg = encodeURIComponent(
-                                      `Olá ${resident.name}! 📦\n\nInformamos que uma correspondência está aguardando retirada na portaria.\n\n` +
-                                      `📋 Tipo: ${mail.packageType}\n` +
-                                      `📤 Remetente: ${mail.sender}\n` +
-                                      (mail.trackingCode ? `🔍 Rastreio: ${mail.trackingCode}\n` : '') +
-                                      `\nPor favor, retire na portaria. Obrigado!`
-                                    );
-                                    window.open(`https://wa.me/55${phone}?text=${msg}`, '_blank');
-                                  }}
-                                  className="h-8 w-8 text-green-600"
-                                  title="Enviar WhatsApp"
-                                >
-                                  <MessageCircle className="h-4 w-4" />
-                                </Button>
-                              )}
+                              {resident?.phone && (() => {
+                                const phone = resident.phone?.replace(/\D/g, '');
+                                const msg = encodeURIComponent(
+                                  `Olá ${resident.name}! 📦\n\nInformamos que uma correspondência está aguardando retirada na portaria.\n\n` +
+                                  `📋 Tipo: ${mail.packageType}\n` +
+                                  `📤 Remetente: ${mail.sender}\n` +
+                                  (mail.trackingCode ? `🔍 Rastreio: ${mail.trackingCode}\n` : '') +
+                                  `\nPor favor, retire na portaria. Obrigado!`
+                                );
+                                return (
+                                  <a
+                                    href={`https://wa.me/55${phone}?text=${msg}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center justify-center h-8 w-8 rounded-md text-green-600 hover:bg-accent transition-colors"
+                                    title="Enviar WhatsApp"
+                                  >
+                                    <MessageCircle className="h-4 w-4" />
+                                  </a>
+                                );
+                              })()}
                               <Button
                                 size="icon"
                                 variant="ghost"

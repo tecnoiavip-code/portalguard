@@ -204,13 +204,35 @@ export const MailManagement = () => {
               trackingCode: mailData.trackingCode,
             }
           });
-          toast.success(`Correspondência registrada! ${resident.name} foi notificado.`);
         } catch (error) {
           console.error('Error sending notification:', error);
-          toast.success(`Correspondência registrada! (Notificação por email falhou)`);
         }
-      } else if (!editingMail) {
-        toast.success(`Correspondência registrada para ${resident.name}`);
+      }
+
+      if (!editingMail) {
+        const whatsappMsg = encodeURIComponent(
+          `Olá ${resident.name}! 📦\n\nInformamos que uma correspondência foi recebida para você na portaria.\n\n` +
+          `📋 Tipo: ${mailData.packageType}\n` +
+          `📤 Remetente: ${mailData.sender}\n` +
+          (mailData.trackingCode ? `🔍 Rastreio: ${mailData.trackingCode}\n` : '') +
+          `\nPor favor, retire na portaria. Obrigado!`
+        );
+        const residentPhone = resident.phone?.replace(/\D/g, '');
+
+        if (residentPhone) {
+          toast.success(
+            `Correspondência registrada! ${resident.name} foi notificado.`,
+            {
+              duration: 15000,
+              action: {
+                label: '📱 WhatsApp',
+                onClick: () => window.open(`https://wa.me/55${residentPhone}?text=${whatsappMsg}`, '_blank'),
+              },
+            }
+          );
+        } else {
+          toast.success(`Correspondência registrada para ${resident.name} (sem telefone cadastrado)`);
+        }
       }
       
       setFormData({

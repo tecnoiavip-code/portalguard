@@ -517,7 +517,25 @@ export const Reports = () => {
                     </div>
                   )}
 
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        // Initialize checks from current shift checks or fresh
+                        setEquipmentChecks(portariaEquipment.filter(e => e.is_active).map(eq => {
+                          const existing = currentShiftChecks.find(c => c.equipment_id === eq.id);
+                          return {
+                            equipment_id: eq.id,
+                            status: existing?.status || 'functional',
+                            notes: existing?.notes || '',
+                          };
+                        }));
+                        setIsChecklistDialogOpen(true);
+                      }}
+                    >
+                      <ClipboardList className="mr-2 h-4 w-4" />
+                      Checklist de Equipamentos
+                    </Button>
                     <Button onClick={() => setActiveTab('incidents')} variant="outline">
                       <AlertTriangle className="mr-2 h-4 w-4" />
                       Registrar Ocorrência
@@ -970,7 +988,28 @@ export const Reports = () => {
             {portariaEquipment.filter(e => e.is_active).length === 0 && (
               <p className="text-center text-muted-foreground py-4">Nenhum equipamento ativo cadastrado.</p>
             )}
-            <Button className="w-full" onClick={() => setIsChecklistDialogOpen(false)}>
+            <Button className="w-full" onClick={async () => {
+              // If there's an active shift, save/update checks to the database
+              if (currentShift) {
+                const checksToSave = equipmentChecks
+                  .filter(c => c.notes.trim())
+                  .map(c => ({
+                    shift_id: currentShift.id,
+                    equipment_id: c.equipment_id,
+                    status: c.status || 'functional',
+                    notes: c.notes || null,
+                  }));
+
+                // Delete existing checks for this shift and re-insert
+                await supabase.from('shift_equipment_checks').delete().eq('shift_id', currentShift.id);
+                if (checksToSave.length > 0) {
+                  await supabase.from('shift_equipment_checks').insert(checksToSave);
+                }
+                toast.success('Checklist atualizado');
+                loadCurrentShiftChecks(currentShift.id);
+              }
+              setIsChecklistDialogOpen(false);
+            }}>
               Confirmar Checklist
             </Button>
           </div>

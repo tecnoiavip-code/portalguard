@@ -303,8 +303,22 @@ export const NewRegistry = () => {
       return;
     }
 
-    // Check badge availability before saving (for new entries)
+    // Check for duplicate active entry (same document, still inside)
     const isNew = !editingId;
+    if (isNew && formData.visitorDocument.trim()) {
+      const { data: activeData } = await supabase
+        .from('access_entries')
+        .select('id, visitor_name, apartment')
+        .eq('visitor_document', formData.visitorDocument.trim().toUpperCase())
+        .is('exit_time', null)
+        .limit(1);
+      if (activeData && activeData.length > 0) {
+        toast.error(`${activeData[0].visitor_name} já possui uma entrada ativa (${activeData[0].apartment}). Registre a saída antes de cadastrar nova entrada.`);
+        return;
+      }
+    }
+
+    // Check badge availability before saving (for new entries)
     if (isNew && formData.badgeNumber && formData.badgeNumber.trim()) {
       const { data: badgeData } = await supabase
         .from('access_entries')

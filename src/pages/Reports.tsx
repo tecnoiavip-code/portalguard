@@ -142,8 +142,7 @@ export const Reports = () => {
     const { data, error } = await supabase
       .from('shifts')
       .select('*')
-      .order('shift_start', { ascending: false })
-      .limit(50);
+      .order('shift_start', { ascending: false });
     if (!error) setShifts((data || []) as Shift[]);
   };
 
@@ -310,16 +309,17 @@ export const Reports = () => {
 
   const handleViewShiftDetails = async (shift: Shift) => {
     setViewingShift(shift);
-    // Load checks for this shift
+    // Load checks for this shift with equipment names
     const { data: checks } = await supabase
       .from('shift_equipment_checks')
-      .select('*')
+      .select('*, portaria_equipment(name, description)')
       .eq('shift_id', shift.id);
 
-    const enrichedChecks = (checks || []).map(c => {
-      const eq = portariaEquipment.find(e => e.id === c.equipment_id);
-      return { ...c, equipment_name: eq?.name || 'Equipamento removido' };
-    });
+    const enrichedChecks = (checks || []).map((c: any) => ({
+      ...c,
+      equipment_name: c.portaria_equipment?.name || 'Equipamento removido',
+      equipment_description: c.portaria_equipment?.description || '',
+    }));
     setViewingShiftChecks(enrichedChecks);
 
     // Load incidents for this shift
@@ -408,8 +408,10 @@ export const Reports = () => {
     (shift.notes && shift.notes.toLowerCase().includes(shiftSearch.toLowerCase())) ||
     (shift.shift_type && shift.shift_type.toLowerCase().includes(shiftSearch.toLowerCase()))
   );
-  const paginatedShifts = filteredShifts.slice((shiftPage - 1) * ITEMS_PER_PAGE, shiftPage * ITEMS_PER_PAGE);
-  const totalShiftPages = Math.ceil(filteredShifts.length / ITEMS_PER_PAGE);
+  const totalShiftPages = Math.max(1, Math.ceil(filteredShifts.length / ITEMS_PER_PAGE));
+  const correctedShiftPage = Math.min(shiftPage, totalShiftPages);
+  if (correctedShiftPage !== shiftPage) setShiftPage(correctedShiftPage);
+  const paginatedShifts = filteredShifts.slice((correctedShiftPage - 1) * ITEMS_PER_PAGE, correctedShiftPage * ITEMS_PER_PAGE);
 
   const currentShiftIncidents = incidents.filter(i => currentShift && i.shift_id === currentShift.id);
 
@@ -843,63 +845,130 @@ export const Reports = () => {
 
       {/* Dialog: Detalhes do Plantão */}
       <Dialog open={!!viewingShift} onOpenChange={() => setViewingShift(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {viewingShift?.shift_type === 'diurno'
                 ? <Sun className="h-5 w-5 text-yellow-500" />
                 : <Moon className="h-5 w-5 text-blue-400" />}
-              Plantão {viewingShift?.shift_type === 'diurno' ? 'Diurno' : 'Noturno'}
+              Plantão {viewingShift?.shift_type === 'diurno' ? 'Diurno (06:00-18:00)' : 'Noturno (18:00-06:00)'}
             </DialogTitle>
           </DialogHeader>
           {viewingShift && (
-            <div className="space-y-4 py-2">
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  {format(new Date(viewingShift.shift_start), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                  {viewingShift.shift_end && <> — {format(new Date(viewingShift.shift_end), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</>}
-                </p>
-                <p className="text-sm mt-1"><strong>Equipe:</strong> {viewingShift.team_members.join(', ')}</p>
-                {viewingShift.notes && <p className="text-sm mt-1"><strong>Obs:</strong> {viewingShift.notes}</p>}
+            <div className="space-y-5 py-2">
+              {/* Informações gerais */}
+              <div className="border rounded-lg p-4 space-y-2">
+                <h4 className="font-semibold text-sm flex items-center gap-2">
+                  <ClipboardList className="h-4 w-4" /> Informações do Plantão
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Tipo:</span>{' '}
+                    <Badge variant={viewingShift.shift_type === 'diurno' ? 'default' : 'secondary'}>
+                      {viewingShift.shift_type === 'diurno' ? 'Diurno' : 'Noturno'}
+                    </Badge>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Status:</span>{' '}
+                    <Badge variant={viewingShift.shift_end ? 'secondary' : 'default'}>
+                      {viewingShift.shift_end ? 'Finalizado' : 'Em andamento'}
+                    </Badge>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Início:</span>{' '}
+                    {format(new Date(viewingShift.shift_start), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Fim:</span>{' '}
+                    {viewingShift.shift_end
+                      ? format(new Date(viewingShift.shift_end), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
+                      : '—'}
+                  </div>
+                  {viewingShift.shift_end && (
+                    <div className="sm:col-span-2">
+                      <span className="text-muted-foreground">Duração:</span>{' '}
+                      {(() => {
+                        const ms = new Date(viewingShift.shift_end).getTime() - new Date(viewingShift.shift_start).getTime();
+                        const hours = Math.floor(ms / 3600000);
+                        const mins = Math.floor((ms % 3600000) / 60000);
+                        return `${hours}h ${mins}min`;
+                      })()}
+                    </div>
+                  )}
+                </div>
+                <div className="text-sm mt-2">
+                  <span className="text-muted-foreground">Equipe:</span>{' '}
+                  <span className="font-medium">{viewingShift.team_members.join(', ')}</span>
+                </div>
+                {viewingShift.notes && (
+                  <div className="text-sm">
+                    <span className="text-muted-foreground">Observações:</span>{' '}
+                    <span>{viewingShift.notes}</span>
+                  </div>
+                )}
               </div>
 
-              {viewingShiftChecks.length > 0 && (
-                <div>
-                  <h4 className="font-semibold text-sm mb-2">Checklist de Equipamentos</h4>
+              {/* Checklist de equipamentos */}
+              <div className="border rounded-lg p-4">
+                <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                  <Wrench className="h-4 w-4" /> Checklist de Equipamentos
+                  {viewingShiftChecks.length > 0 && (
+                    <Badge variant="outline" className="text-xs ml-1">
+                      {viewingShiftChecks.filter(c => c.status === 'functional').length}/{viewingShiftChecks.length} OK
+                    </Badge>
+                  )}
+                </h4>
+                {viewingShiftChecks.length > 0 ? (
                   <div className="space-y-2">
                     {viewingShiftChecks.map(c => (
-                      <div key={c.id} className="flex items-center gap-2 text-sm">
+                      <div key={c.id} className="flex items-start gap-3 text-sm border-b pb-2 last:border-b-0 last:pb-0">
                         {getEquipStatusIcon(c.status)}
-                        <span className="font-medium">{c.equipment_name}</span>
-                        <Badge variant={c.status === 'functional' ? 'default' : 'destructive'} className="text-xs">
-                          {getEquipStatusLabel(c.status)}
-                        </Badge>
-                        {c.notes && <span className="text-muted-foreground">- {c.notes}</span>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {viewingShiftIncidents.length > 0 && (
-                <div>
-                  <h4 className="font-semibold text-sm mb-2">Ocorrências ({viewingShiftIncidents.length})</h4>
-                  <div className="space-y-2">
-                    {viewingShiftIncidents.map(inc => (
-                      <div key={inc.id} className="border rounded p-2 text-sm">
-                        <div className="flex justify-between items-start">
-                          <span className="font-medium">{inc.title}</span>
-                          <Badge variant={getSeverityColor(inc.severity)} className="text-xs">{getSeverityLabel(inc.severity)}</Badge>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{c.equipment_name}</span>
+                            <Badge variant={c.status === 'functional' ? 'default' : 'destructive'} className="text-xs">
+                              {getEquipStatusLabel(c.status)}
+                            </Badge>
+                          </div>
+                          {c.notes && <p className="text-muted-foreground text-xs mt-1">Obs: {c.notes}</p>}
                         </div>
-                        <p className="text-muted-foreground text-xs mt-1">{inc.description}</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {format(new Date(inc.created_at), "HH:mm", { locale: ptBR })} - {getStatusLabel(inc.status)}
-                        </p>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <p className="text-sm text-muted-foreground">Nenhum equipamento registrado neste plantão.</p>
+                )}
+              </div>
+
+              {/* Ocorrências */}
+              <div className="border rounded-lg p-4">
+                <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" /> Ocorrências
+                  <Badge variant="outline" className="text-xs ml-1">{viewingShiftIncidents.length}</Badge>
+                </h4>
+                {viewingShiftIncidents.length > 0 ? (
+                  <div className="space-y-3">
+                    {viewingShiftIncidents.map(inc => (
+                      <div key={inc.id} className="border rounded-lg p-3 text-sm">
+                        <div className="flex justify-between items-start mb-1">
+                          <span className="font-medium">{inc.title}</span>
+                          <div className="flex gap-1">
+                            <Badge variant={getSeverityColor(inc.severity)} className="text-xs">{getSeverityLabel(inc.severity)}</Badge>
+                            <Badge variant="outline" className="text-xs">{getStatusLabel(inc.status)}</Badge>
+                          </div>
+                        </div>
+                        <p className="text-muted-foreground text-xs">{inc.description}</p>
+                        <div className="flex gap-3 text-xs text-muted-foreground mt-2">
+                          <span>Registrada: {format(new Date(inc.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
+                          {inc.resolved_at && <span>Resolvida: {format(new Date(inc.resolved_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Nenhuma ocorrência neste plantão.</p>
+                )}
+              </div>
             </div>
           )}
         </DialogContent>

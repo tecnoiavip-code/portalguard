@@ -21,7 +21,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Combobox } from '@/components/ui/combobox';
-import { Package, CheckCircle, Search, Pencil, Trash2, Download, Camera, X, Upload, Video, FileSpreadsheet, Plus, MessageCircle } from 'lucide-react';
+import { Package, CheckCircle, Search, Pencil, Trash2, Download, Camera, X, Upload, Video, FileSpreadsheet, Plus, MessageCircle, MoreHorizontal } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Mail, Resident } from '@/types';
 import { useMails } from '@/hooks/useMails';
 import { useResidents } from '@/hooks/useResidents';
@@ -604,73 +610,79 @@ export const MailManagement = () => {
                             {new Date(mail.receivedAt).toLocaleDateString('pt-BR')}
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-1">
-                              {resident?.phone && (() => {
-                                const phone = resident.phone?.replace(/\D/g, '');
-                                const msg = encodeURIComponent(
-                                  `Olá ${resident.name}! 📦\n\nInformamos que uma correspondência está aguardando retirada na portaria.\n\n` +
-                                  `📋 Tipo: ${mail.packageType}\n` +
-                                  `📤 Remetente: ${mail.sender}\n` +
-                                  (mail.trackingCode ? `🔍 Rastreio: ${mail.trackingCode}\n` : '') +
-                                  `\nPor favor, retire na portaria. Obrigado!`
-                                );
-                                const waUrl = getWhatsappWebUrl(phone, msg);
-                                return (
-                                  <a
-                                    href={waUrl}
-                                    onClick={(e) => openWhatsappWithFallback(phone, msg, e)}
-                                    className="inline-flex items-center justify-center h-8 w-8 rounded-md text-green-600 hover:bg-accent transition-colors"
-                                    title="Enviar WhatsApp"
-                                  >
-                                    <MessageCircle className="h-4 w-4" />
-                                  </a>
-                                );
-                              })()}
+                            <div className="flex justify-end gap-2">
                               <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => {
-                                  setEditingMail(null);
-                                  setFormData({
-                                    residentId: mail.residentId,
-                                    sender: '',
-                                    packageType: 'Carta',
-                                    notes: '',
-                                    trackingCode: '',
-                                  });
-                                  setPhotoFile(null);
-                                  setPhotoPreview(null);
-                                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                                }}
-                                className="h-8 w-8 text-primary"
-                                title="Adicionar outra encomenda para este morador"
-                              >
-                                <Plus className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => handleEdit(mail)}
-                                className="h-8 w-8"
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
+                                size="sm"
                                 onClick={() => handleDeliverClick(mail.id)}
-                                className="h-8 w-8 text-success"
+                                className="bg-green-600 hover:bg-green-700 text-white"
                               >
-                                <CheckCircle className="h-4 w-4" />
+                                <CheckCircle className="h-4 w-4 mr-1" />
+                                Retirada
                               </Button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => handleDelete(mail.id)}
-                                className="h-8 w-8 text-destructive hover:text-destructive"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    size="sm"
+                                    className="bg-black hover:bg-black/80 text-white dark:bg-white dark:text-black dark:hover:bg-white/80"
+                                  >
+                                    Ações
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  {resident?.phone && (() => {
+                                    const phone = resident.phone?.replace(/\D/g, '');
+                                    const msg = encodeURIComponent(
+                                      `Olá ${resident.name}! 📦\n\nInformamos que uma correspondência está aguardando retirada na portaria.\n\n` +
+                                      `📋 Tipo: ${mail.packageType}\n` +
+                                      `📤 Remetente: ${mail.sender}\n` +
+                                      (mail.trackingCode ? `🔍 Rastreio: ${mail.trackingCode}\n` : '') +
+                                      `\nPor favor, retire na portaria. Obrigado!`
+                                    );
+                                    const waUrl = getWhatsappWebUrl(phone, msg);
+                                    return (
+                                      <DropdownMenuItem asChild>
+                                        <a
+                                          href={waUrl}
+                                          onClick={(e) => openWhatsappWithFallback(phone, msg, e)}
+                                          className="cursor-pointer"
+                                        >
+                                          <MessageCircle className="h-4 w-4 mr-2 text-green-600" />
+                                          Enviar WhatsApp
+                                        </a>
+                                      </DropdownMenuItem>
+                                    );
+                                  })()}
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      setEditingMail(null);
+                                      setFormData({
+                                        residentId: mail.residentId,
+                                        sender: '',
+                                        packageType: 'Carta',
+                                        notes: '',
+                                        trackingCode: '',
+                                      });
+                                      setPhotoFile(null);
+                                      setPhotoPreview(null);
+                                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                                    }}
+                                  >
+                                    <Plus className="h-4 w-4 mr-2" />
+                                    Nova encomenda (mesmo morador)
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleEdit(mail)}>
+                                    <Pencil className="h-4 w-4 mr-2" />
+                                    Editar
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => handleDelete(mail.id)}
+                                    className="text-destructive focus:text-destructive"
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Excluir
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
                           </TableCell>
                         </TableRow>

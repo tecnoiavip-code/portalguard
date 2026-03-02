@@ -173,43 +173,45 @@ export const MailLogs = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
-            <div className="relative md:col-span-2">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar morador, apto, remetente..."
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="pl-10"
-              />
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="relative md:col-span-2">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar morador, apto, remetente..."
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="pl-10"
+                />
+              </div>
+              <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setCurrentPage(1); }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os Status</SelectItem>
+                  <SelectItem value="pending">Pendente</SelectItem>
+                  <SelectItem value="delivered">Entregue</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v); setCurrentPage(1); }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os Tipos</SelectItem>
+                  <SelectItem value="Carta">Carta</SelectItem>
+                  <SelectItem value="Pacote Pequeno">Pacote Pequeno</SelectItem>
+                  <SelectItem value="Pacote Médio">Pacote Médio</SelectItem>
+                  <SelectItem value="Pacote Grande">Pacote Grande</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setCurrentPage(1); }}>
-              <SelectTrigger>
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os Status</SelectItem>
-                <SelectItem value="pending">Pendente</SelectItem>
-                <SelectItem value="delivered">Entregue</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v); setCurrentPage(1); }}>
-              <SelectTrigger>
-                <SelectValue placeholder="Tipo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os Tipos</SelectItem>
-                <SelectItem value="Carta">Carta</SelectItem>
-                <SelectItem value="Pacote Pequeno">Pacote Pequeno</SelectItem>
-                <SelectItem value="Pacote Médio">Pacote Médio</SelectItem>
-                <SelectItem value="Pacote Grande">Pacote Grande</SelectItem>
-              </SelectContent>
-            </Select>
-            <div className="flex gap-2 items-end">
-              <div className="flex-1 space-y-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:max-w-md">
+              <div className="space-y-1">
                 <label className="text-xs text-muted-foreground">De</label>
                 <Input
                   type="date"
@@ -218,7 +220,7 @@ export const MailLogs = () => {
                   className="text-sm"
                 />
               </div>
-              <div className="flex-1 space-y-1">
+              <div className="space-y-1">
                 <label className="text-xs text-muted-foreground">Até</label>
                 <Input
                   type="date"

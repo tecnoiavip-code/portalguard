@@ -50,11 +50,13 @@ export function Combobox({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  const isTyping = inputValue.length > 0 && inputValue !== selectedOption?.label;
+
   const filtered = React.useMemo(() => {
-    if (!inputValue || inputValue === selectedOption?.label) return options;
+    if (!isTyping) return [];
     const lower = inputValue.toLowerCase();
     return options.filter((o) => o.label.toLowerCase().includes(lower));
-  }, [inputValue, options, selectedOption]);
+  }, [inputValue, options, isTyping]);
 
   return (
     <div ref={containerRef} className="relative">
@@ -76,11 +78,13 @@ export function Combobox({
             onValueChange("");
           }
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          if (isTyping) setOpen(true);
+        }}
       />
       <ChevronsUpDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 opacity-50 pointer-events-none" />
 
-      {open && (
+      {open && isTyping && filtered.length > 0 && (
         <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md max-h-48 overflow-y-auto">
           {filtered.length === 0 ? (
             <div className="px-3 py-2 text-sm text-muted-foreground">{emptyText}</div>

@@ -41,36 +41,71 @@ export function Combobox({
   className,
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false);
+  const [inputValue, setInputValue] = React.useState("");
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
   const selectedOption = options.find((option) => option.value === value);
+
+  // Sync display text with selected option
+  React.useEffect(() => {
+    if (selectedOption) {
+      setInputValue(selectedOption.label);
+    } else {
+      setInputValue("");
+    }
+  }, [selectedOption]);
+
+  const filtered = React.useMemo(() => {
+    if (!inputValue) return options;
+    const lower = inputValue.toLowerCase();
+    return options.filter((o) => o.label.toLowerCase().includes(lower));
+  }, [inputValue, options]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className={cn("w-full justify-between", className)}
-        >
-          <span className="truncate">
-            {selectedOption ? selectedOption.label : placeholder}
-          </span>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
+        <div className="relative">
+          <input
+            ref={inputRef}
+            type="text"
+            autoComplete="off"
+            data-lpignore="true"
+            data-form-type="other"
+            className={cn(
+              "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm pr-8",
+              className
+            )}
+            placeholder={placeholder}
+            value={inputValue}
+            onChange={(e) => {
+              setInputValue(e.target.value);
+              if (!open) setOpen(true);
+              // Clear selection if user edits text
+              if (selectedOption && e.target.value !== selectedOption.label) {
+                onValueChange("");
+              }
+            }}
+            onFocus={() => setOpen(true)}
+          />
+          <ChevronsUpDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 opacity-50 pointer-events-none" />
+        </div>
       </PopoverTrigger>
-      <PopoverContent className="w-full p-0" align="start">
+      <PopoverContent
+        className="w-[var(--radix-popover-trigger-width)] p-0"
+        align="start"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
         <Command>
-          <CommandInput placeholder={searchPlaceholder} />
           <CommandList>
             <CommandEmpty>{emptyText}</CommandEmpty>
             <CommandGroup>
-              {options.map((option) => (
+              {filtered.map((option) => (
                 <CommandItem
                   key={option.value}
                   value={option.label}
                   onSelect={() => {
                     onValueChange(option.value);
+                    setInputValue(option.label);
                     setOpen(false);
                   }}
                 >

@@ -669,10 +669,11 @@ export const MailManagement = () => {
                                   {resident?.phone && (() => {
                                     const phone = resident.phone?.replace(/\D/g, '');
                                     const msg = encodeURIComponent(
-                                      `Olá ${resident.name}! 📦\n\nInformamos que uma correspondência está aguardando retirada na portaria.\n\n` +
+                                      `Olá ${resident.name}! 📦\n\n` +
                                       `📋 Tipo: ${mail.packageType}\n` +
                                       `📤 Remetente: ${mail.sender}\n` +
                                       (mail.trackingCode ? `🔍 Rastreio: ${mail.trackingCode}\n` : '') +
+                                      (mail.photoUrl ? `\n📸 Foto: ${mail.photoUrl}\n` : '') +
                                       `\nPor favor, retire na portaria. Obrigado!`
                                     );
                                     const waUrl = getWhatsappWebUrl(phone, msg);

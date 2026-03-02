@@ -285,7 +285,7 @@ export const Residents = () => {
                   paginatedResidents.map((resident) => (
                     <TableRow key={resident.id} className="hover:bg-muted/50">
                       <TableCell>
-                        <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-2xl">
+                        <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-3xl">
                           👤
                         </div>
                       </TableCell>

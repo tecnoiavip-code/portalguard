@@ -118,44 +118,55 @@ export const supabaseStorage = {
   },
 
   async checkResidentDuplicate(resident: Resident, excludeId?: string): Promise<string | null> {
-    // Check by CPF if provided
-    if (resident.cpf) {
-      const query = supabase
+    const normalizedName = resident.name.trim().toUpperCase();
+    const normalizedApt = resident.apartment.trim().toUpperCase();
+    const normalizedCpf = resident.cpf ? resident.cpf.replace(/\D/g, '') : '';
+    const normalizedEmail = resident.email ? resident.email.trim().toLowerCase() : '';
+
+    // Check by CPF if provided (strip non-digits for comparison)
+    if (normalizedCpf) {
+      const { data } = await supabase
         .from('residents')
-        .select('id, name, apartment')
-        .eq('cpf', resident.cpf)
-        .limit(1);
-      if (excludeId) query.neq('id', excludeId);
-      const { data } = await query;
-      if (data && data.length > 0) {
-        return `Já existe um morador com este CPF: ${data[0].name} (${data[0].apartment})`;
+        .select('id, name, apartment, cpf');
+      if (data) {
+        const match = data.find(r => {
+          if (excludeId && r.id === excludeId) return false;
+          const rCpf = (r.cpf || '').replace(/\D/g, '');
+          return rCpf === normalizedCpf;
+        });
+        if (match) {
+          return `Já existe um morador com este CPF: ${match.name} (${match.apartment})`;
+        }
       }
     }
 
-    // Check by name + apartment (same person same unit)
-    const query2 = supabase
+    // Check by name (any apartment - same person cannot be registered twice)
+    const { data: nameData } = await supabase
       .from('residents')
       .select('id, name, apartment')
-      .ilike('name', resident.name.trim())
-      .ilike('apartment', resident.apartment.trim())
-      .limit(1);
-    if (excludeId) query2.neq('id', excludeId);
-    const { data: data2 } = await query2;
-    if (data2 && data2.length > 0) {
-      return `Já existe um morador com este nome neste apartamento: ${data2[0].name} (${data2[0].apartment})`;
+      .ilike('name', normalizedName);
+    if (nameData) {
+      const match = nameData.find(r => {
+        if (excludeId && r.id === excludeId) return false;
+        return r.name.trim().toUpperCase() === normalizedName;
+      });
+      if (match) {
+        return `Já existe um morador com este nome: ${match.name} (${match.apartment})`;
+      }
     }
 
     // Check by email if provided
-    if (resident.email) {
-      const query3 = supabase
+    if (normalizedEmail) {
+      const { data: emailData } = await supabase
         .from('residents')
         .select('id, name, apartment')
-        .ilike('email', resident.email.trim())
+        .ilike('email', normalizedEmail)
         .limit(1);
-      if (excludeId) query3.neq('id', excludeId);
-      const { data: data3 } = await query3;
-      if (data3 && data3.length > 0) {
-        return `Já existe um morador com este e-mail: ${data3[0].name} (${data3[0].apartment})`;
+      if (emailData) {
+        const match = emailData.find(r => !(excludeId && r.id === excludeId));
+        if (match) {
+          return `Já existe um morador com este e-mail: ${match.name} (${match.apartment})`;
+        }
       }
     }
 

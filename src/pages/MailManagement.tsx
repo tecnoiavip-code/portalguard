@@ -283,6 +283,7 @@ export const MailManagement = () => {
           `📋 Tipo: ${mailData.packageType}\n` +
           `📤 Remetente: ${mailData.sender}\n` +
           (mailData.trackingCode ? `🔍 Rastreio: ${mailData.trackingCode}\n` : '') +
+          (photoUrl ? `\n📸 Foto: ${photoUrl}\n` : '') +
           `\nPor favor, retire na portaria. Obrigado!`
         );
         const residentPhone = resident.phone?.replace(/\D/g, '');

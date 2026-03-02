@@ -95,9 +95,9 @@ export function Combobox({
         align="start"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        <Command>
+        <Command shouldFilter={false}>
           <CommandList>
-            <CommandEmpty>{emptyText}</CommandEmpty>
+            {filtered.length === 0 && <CommandEmpty>{emptyText}</CommandEmpty>}
             <CommandGroup>
               {filtered.map((option) => (
                 <CommandItem

@@ -136,7 +136,14 @@ export const MailManagement = () => {
     }
   };
 
-  // Attach stream to video element after it renders
+  // Attach stream to video element after it renders in dialog
+  const videoCallbackRef = useCallback((node: HTMLVideoElement | null) => {
+    videoRef.current = node;
+    if (node && streamRef.current) {
+      node.srcObject = streamRef.current;
+    }
+  }, [webcamActive]);
+
   useEffect(() => {
     if (webcamActive && videoRef.current && streamRef.current) {
       videoRef.current.srcObject = streamRef.current;
@@ -522,7 +529,7 @@ export const MailManagement = () => {
                     <div className="flex flex-col items-center gap-4">
                       <div className="w-full rounded-xl overflow-hidden border-2 border-border bg-muted">
                         <video
-                          ref={videoRef}
+                          ref={videoCallbackRef}
                           autoPlay
                           playsInline
                           muted

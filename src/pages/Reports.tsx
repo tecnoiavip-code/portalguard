@@ -48,7 +48,7 @@ interface PortariaEquipment {
 
 interface EquipmentCheck {
   equipment_id: string;
-  status: 'functional' | 'defective' | 'maintenance';
+  status: string;
   notes: string;
 }
 
@@ -80,6 +80,7 @@ export const Reports = () => {
 
   // Equipment management state
   const [isEquipmentDialogOpen, setIsEquipmentDialogOpen] = useState(false);
+  const [isChecklistDialogOpen, setIsChecklistDialogOpen] = useState(false);
   const [equipmentFormData, setEquipmentFormData] = useState({ name: '', description: '' });
   const [equipmentPage, setEquipmentPage] = useState(1);
 
@@ -200,13 +201,13 @@ export const Reports = () => {
       return;
     }
 
-    // Save equipment checklist
+    // Save equipment checklist - notes contains the "situação" written by user
     const checksToInsert = equipmentChecks
-      .filter(c => portariaEquipment.find(e => e.id === c.equipment_id))
+      .filter(c => portariaEquipment.find(e => e.id === c.equipment_id) && c.notes.trim())
       .map(c => ({
         shift_id: shiftData.id,
         equipment_id: c.equipment_id,
-        status: c.status,
+        status: c.status || 'functional',
         notes: c.notes || null,
       }));
 
@@ -479,13 +480,9 @@ export const Reports = () => {
                         {currentShiftChecks.map(check => {
                           const eq = portariaEquipment.find(e => e.id === check.equipment_id);
                           return (
-                            <div key={check.id} className="flex items-center gap-3 text-sm">
-                              {getEquipStatusIcon(check.status)}
+                            <div key={check.id} className="text-sm border-b pb-2 last:border-b-0 last:pb-0">
                               <span className="font-medium">{eq?.name || 'Equipamento'}</span>
-                              <Badge variant={check.status === 'functional' ? 'default' : 'destructive'} className="text-xs">
-                                {getEquipStatusLabel(check.status)}
-                              </Badge>
-                              {check.notes && <span className="text-muted-foreground">- {check.notes}</span>}
+                              {check.notes && <p className="text-muted-foreground text-xs mt-1">Situação: {check.notes}</p>}
                             </div>
                           );
                         })}
@@ -562,43 +559,21 @@ export const Reports = () => {
                     <Input value={teamMembers} onChange={e => setTeamMembers(e.target.value)} placeholder="João Silva, Maria Santos" />
                   </div>
 
-                  {/* Checklist de equipamentos cadastrados */}
-                  {portariaEquipment.length > 0 ? (
+                  {/* Botão para abrir checklist de equipamentos */}
+                  {portariaEquipment.filter(e => e.is_active).length > 0 ? (
                     <div>
-                      <Label>Checklist de Equipamentos da Portaria</Label>
-                      <div className="space-y-3 mt-2 border rounded-lg p-4">
-                        {portariaEquipment.filter(e => e.is_active).map(eq => {
-                          const check = equipmentChecks.find(c => c.equipment_id === eq.id);
-                          return (
-                            <div key={eq.id} className="space-y-2 border-b pb-3 last:border-b-0 last:pb-0">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="font-medium text-sm">{eq.name}</span>
-                                <Select
-                                  value={check?.status || 'functional'}
-                                  onValueChange={v => handleEquipmentCheckChange(eq.id, 'status', v)}
-                                >
-                                  <SelectTrigger className="w-40">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="functional">✅ Funcionando</SelectItem>
-                                    <SelectItem value="defective">❌ Defeituoso</SelectItem>
-                                    <SelectItem value="maintenance">⚠️ Manutenção</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              {(check?.status === 'defective' || check?.status === 'maintenance') && (
-                                <Input
-                                  value={check?.notes || ''}
-                                  onChange={e => handleEquipmentCheckChange(eq.id, 'notes', e.target.value)}
-                                  placeholder="Descreva o problema..."
-                                  className="text-sm"
-                                />
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => setIsChecklistDialogOpen(true)}
+                      >
+                        <ClipboardList className="mr-2 h-4 w-4" />
+                        Checklist de Equipamentos
+                        {equipmentChecks.some(c => c.notes.trim()) && (
+                          <Badge variant="default" className="ml-2">{equipmentChecks.filter(c => c.notes.trim()).length} preenchido(s)</Badge>
+                        )}
+                      </Button>
                     </div>
                   ) : (
                     <div className="p-4 border rounded-lg text-center text-muted-foreground">
@@ -914,24 +889,17 @@ export const Reports = () => {
                   <Wrench className="h-4 w-4" /> Checklist de Equipamentos
                   {viewingShiftChecks.length > 0 && (
                     <Badge variant="outline" className="text-xs ml-1">
-                      {viewingShiftChecks.filter(c => c.status === 'functional').length}/{viewingShiftChecks.length} OK
+                      {viewingShiftChecks.length} item(ns)
                     </Badge>
                   )}
                 </h4>
                 {viewingShiftChecks.length > 0 ? (
                   <div className="space-y-2">
                     {viewingShiftChecks.map(c => (
-                      <div key={c.id} className="flex items-start gap-3 text-sm border-b pb-2 last:border-b-0 last:pb-0">
-                        {getEquipStatusIcon(c.status)}
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{c.equipment_name}</span>
-                            <Badge variant={c.status === 'functional' ? 'default' : 'destructive'} className="text-xs">
-                              {getEquipStatusLabel(c.status)}
-                            </Badge>
-                          </div>
-                          {c.notes && <p className="text-muted-foreground text-xs mt-1">Obs: {c.notes}</p>}
-                        </div>
+                      <div key={c.id} className="text-sm border-b pb-2 last:border-b-0 last:pb-0">
+                        <span className="font-medium">{c.equipment_name}</span>
+                        {c.notes && <p className="text-muted-foreground text-xs mt-1">Situação: {c.notes}</p>}
+                        {!c.notes && <p className="text-muted-foreground text-xs mt-1 italic">Sem descrição</p>}
                       </div>
                     ))}
                   </div>
@@ -971,6 +939,41 @@ export const Reports = () => {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Checklist de Equipamentos */}
+      <Dialog open={isChecklistDialogOpen} onOpenChange={setIsChecklistDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ClipboardList className="h-5 w-5" />
+              Checklist de Equipamentos
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {portariaEquipment.filter(e => e.is_active).map(eq => {
+              const check = equipmentChecks.find(c => c.equipment_id === eq.id);
+              return (
+                <div key={eq.id} className="space-y-1 border-b pb-3 last:border-b-0 last:pb-0">
+                  <Label className="font-semibold">{eq.name}</Label>
+                  {eq.description && <p className="text-xs text-muted-foreground">{eq.description}</p>}
+                  <Textarea
+                    value={check?.notes || ''}
+                    onChange={e => handleEquipmentCheckChange(eq.id, 'notes', e.target.value)}
+                    placeholder="Descreva a situação do equipamento..."
+                    className="text-sm min-h-[60px]"
+                  />
+                </div>
+              );
+            })}
+            {portariaEquipment.filter(e => e.is_active).length === 0 && (
+              <p className="text-center text-muted-foreground py-4">Nenhum equipamento ativo cadastrado.</p>
+            )}
+            <Button className="w-full" onClick={() => setIsChecklistDialogOpen(false)}>
+              Confirmar Checklist
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

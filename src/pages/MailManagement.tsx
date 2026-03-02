@@ -85,6 +85,27 @@ export const MailManagement = () => {
     return `https://api.whatsapp.com/send?phone=${phone}&text=${encodedMessage}`;
   };
 
+  const buildWhatsappMessage = ({
+    residentName,
+    packageType,
+    sender,
+    trackingCode,
+    hasPhoto,
+  }: {
+    residentName: string;
+    packageType: string;
+    sender: string;
+    trackingCode?: string | null;
+    hasPhoto?: boolean;
+  }) => encodeURIComponent(
+    `Olá ${residentName}! 📦\n\n` +
+    `📋 Tipo: ${packageType}\n` +
+    `📤 Remetente: ${sender}\n` +
+    (trackingCode ? `🔍 Rastreio: ${trackingCode}\n` : '') +
+    (hasPhoto ? `\n📸 Foto: registrada na portaria\n` : '') +
+    `\nPor favor, retire na portaria. Obrigado!`
+  );
+
   const openWhatsappWithFallback = (
     rawPhone: string,
     encodedMessage: string,
@@ -278,14 +299,13 @@ export const MailManagement = () => {
       }
 
       if (!editingMail) {
-        const whatsappMsg = encodeURIComponent(
-          `Olá ${resident.name}! 📦\n\n` +
-          `📋 Tipo: ${mailData.packageType}\n` +
-          `📤 Remetente: ${mailData.sender}\n` +
-          (mailData.trackingCode ? `🔍 Rastreio: ${mailData.trackingCode}\n` : '') +
-          (photoUrl ? `\n📸 Foto: ${photoUrl}\n` : '') +
-          `\nPor favor, retire na portaria. Obrigado!`
-        );
+        const whatsappMsg = buildWhatsappMessage({
+          residentName: resident.name,
+          packageType: mailData.packageType,
+          sender: mailData.sender,
+          trackingCode: mailData.trackingCode,
+          hasPhoto: Boolean(photoUrl),
+        });
         const residentPhone = resident.phone?.replace(/\D/g, '');
 
         if (residentPhone) {
@@ -668,14 +688,13 @@ export const MailManagement = () => {
                                 <DropdownMenuContent align="end">
                                   {resident?.phone && (() => {
                                     const phone = resident.phone?.replace(/\D/g, '');
-                                    const msg = encodeURIComponent(
-                                      `Olá ${resident.name}! 📦\n\n` +
-                                      `📋 Tipo: ${mail.packageType}\n` +
-                                      `📤 Remetente: ${mail.sender}\n` +
-                                      (mail.trackingCode ? `🔍 Rastreio: ${mail.trackingCode}\n` : '') +
-                                      (mail.photoUrl ? `\n📸 Foto: ${mail.photoUrl}\n` : '') +
-                                      `\nPor favor, retire na portaria. Obrigado!`
-                                    );
+                                    const msg = buildWhatsappMessage({
+                                      residentName: resident.name,
+                                      packageType: mail.packageType,
+                                      sender: mail.sender,
+                                      trackingCode: mail.trackingCode,
+                                      hasPhoto: Boolean(mail.photoUrl),
+                                    });
                                     const waUrl = getWhatsappWebUrl(phone, msg);
                                     return (
                                       <DropdownMenuItem asChild>

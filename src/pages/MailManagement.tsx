@@ -279,7 +279,7 @@ export const MailManagement = () => {
 
       if (!editingMail) {
         const whatsappMsg = encodeURIComponent(
-          `Olá ${resident.name}! 📦\n\nInformamos que uma correspondência foi recebida para você na portaria.\n\n` +
+          `Olá ${resident.name}! 📦\n\n` +
           `📋 Tipo: ${mailData.packageType}\n` +
           `📤 Remetente: ${mailData.sender}\n` +
           (mailData.trackingCode ? `🔍 Rastreio: ${mailData.trackingCode}\n` : '') +

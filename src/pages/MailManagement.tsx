@@ -66,6 +66,7 @@ export const MailManagement = () => {
   }>({ open: false, mailId: null });
   const [editingMail, setEditingMail] = useState<Mail | null>(null);
   const [withdrawnBy, setWithdrawnBy] = useState('');
+  const [webcamDialogOpen, setWebcamDialogOpen] = useState(false);
 
   const isMobileDevice = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
 
@@ -125,9 +126,10 @@ export const MailManagement = () => {
 
   const startWebcam = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } });
       streamRef.current = stream;
       setWebcamActive(true);
+      setWebcamDialogOpen(true);
     } catch (err) {
       toast.error('Não foi possível acessar a câmera');
       console.error('Webcam error:', err);
@@ -147,6 +149,7 @@ export const MailManagement = () => {
       streamRef.current = null;
     }
     setWebcamActive(false);
+    setWebcamDialogOpen(false);
   }, []);
 
   const capturePhoto = () => {
@@ -492,18 +495,6 @@ export const MailManagement = () => {
                       <X className="h-3 w-3" />
                     </button>
                   </div>
-                ) : webcamActive ? (
-                  <div className="space-y-2">
-                    <video ref={videoRef} autoPlay playsInline muted className="w-full max-w-[240px] rounded-lg border" />
-                    <div className="flex gap-2">
-                      <Button type="button" size="sm" onClick={capturePhoto}>
-                        <Camera className="h-4 w-4 mr-1" /> Capturar
-                      </Button>
-                      <Button type="button" size="sm" variant="outline" onClick={stopWebcam}>
-                        Cancelar
-                      </Button>
-                    </div>
-                  </div>
                 ) : (
                   <div className="flex gap-2">
                     <Button type="button" variant="outline" size="sm" onClick={startWebcam} className="flex items-center gap-1">
@@ -515,6 +506,40 @@ export const MailManagement = () => {
                     </label>
                   </div>
                 )}
+
+                {/* Webcam Dialog */}
+                <Dialog open={webcamDialogOpen} onOpenChange={(open) => { if (!open) stopWebcam(); }}>
+                  <DialogContent className="sm:max-w-2xl max-h-[90vh]">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2">
+                        <Camera className="h-5 w-5" />
+                        Capturar Foto da Correspondência
+                      </DialogTitle>
+                      <DialogDescription>
+                        Posicione a correspondência na frente da câmera e clique em capturar.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex flex-col items-center gap-4">
+                      <div className="w-full rounded-xl overflow-hidden border-2 border-border bg-muted">
+                        <video
+                          ref={videoRef}
+                          autoPlay
+                          playsInline
+                          muted
+                          className="w-full h-auto max-h-[60vh] object-contain"
+                        />
+                      </div>
+                      <div className="flex gap-3">
+                        <Button type="button" size="lg" onClick={capturePhoto} className="gap-2">
+                          <Camera className="h-5 w-5" /> Capturar Foto
+                        </Button>
+                        <Button type="button" size="lg" variant="outline" onClick={stopWebcam}>
+                          Cancelar
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
               </div>
 
               <Button type="submit" className="w-full" disabled={uploading}>

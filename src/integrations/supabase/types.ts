@@ -364,6 +364,7 @@ export type Database = {
           resolved_at: string | null
           resolved_by: string | null
           severity: string
+          shift_id: string | null
           status: string | null
           title: string
           updated_at: string | null
@@ -376,6 +377,7 @@ export type Database = {
           resolved_at?: string | null
           resolved_by?: string | null
           severity: string
+          shift_id?: string | null
           status?: string | null
           title: string
           updated_at?: string | null
@@ -388,11 +390,20 @@ export type Database = {
           resolved_at?: string | null
           resolved_by?: string | null
           severity?: string
+          shift_id?: string | null
           status?: string | null
           title?: string
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "incidents_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       mails: {
         Row: {
@@ -477,6 +488,33 @@ export type Database = {
           title?: string
           type?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      portaria_equipment: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
         }
         Relationships: []
       }
@@ -615,6 +653,51 @@ export type Database = {
         }
         Relationships: []
       }
+      shift_equipment_checks: {
+        Row: {
+          checked_at: string
+          checked_by: string | null
+          equipment_id: string
+          id: string
+          notes: string | null
+          shift_id: string
+          status: string
+        }
+        Insert: {
+          checked_at?: string
+          checked_by?: string | null
+          equipment_id: string
+          id?: string
+          notes?: string | null
+          shift_id: string
+          status?: string
+        }
+        Update: {
+          checked_at?: string
+          checked_by?: string | null
+          equipment_id?: string
+          id?: string
+          notes?: string | null
+          shift_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shift_equipment_checks_equipment_id_fkey"
+            columns: ["equipment_id"]
+            isOneToOne: false
+            referencedRelation: "portaria_equipment"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_equipment_checks_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       shifts: {
         Row: {
           created_at: string | null
@@ -623,6 +706,7 @@ export type Database = {
           notes: string | null
           shift_end: string | null
           shift_start: string
+          shift_type: string
           team_members: string[]
         }
         Insert: {
@@ -632,6 +716,7 @@ export type Database = {
           notes?: string | null
           shift_end?: string | null
           shift_start: string
+          shift_type?: string
           team_members: string[]
         }
         Update: {
@@ -641,6 +726,7 @@ export type Database = {
           notes?: string | null
           shift_end?: string | null
           shift_start?: string
+          shift_type?: string
           team_members?: string[]
         }
         Relationships: []

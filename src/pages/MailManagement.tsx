@@ -127,15 +127,19 @@ export const MailManagement = () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
       setWebcamActive(true);
     } catch (err) {
       toast.error('Não foi possível acessar a câmera');
       console.error('Webcam error:', err);
     }
   };
+
+  // Attach stream to video element after it renders
+  useEffect(() => {
+    if (webcamActive && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  }, [webcamActive]);
 
   const stopWebcam = useCallback(() => {
     if (streamRef.current) {

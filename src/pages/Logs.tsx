@@ -162,9 +162,9 @@ export const Logs = () => {
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
                       {entry.photo ? (
-                        <img src={entry.photo} alt={entry.visitorName} className="w-12 h-12 rounded-full object-cover border-2 border-primary/20" />
+                        <img src={entry.photo} alt={entry.visitorName} className="w-20 h-20 rounded-full object-cover border-2 border-primary/20" />
                       ) : (
-                        <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-xl">
+                        <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-3xl">
                           {entry.visitorType === 'service_provider' ? '🔧' : '👤'}
                         </div>
                       )}

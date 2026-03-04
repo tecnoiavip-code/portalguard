@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Shield, Check, X, Clock, Users, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -49,6 +50,7 @@ const StaffAuthorizations = () => {
   const [staffNotes, setStaffNotes] = useState('');
   const [expandedLists, setExpandedLists] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
+  const [guestPage, setGuestPage] = useState(1);
   const PAGE_SIZE = 10;
 
   const loadAuths = async () => {
@@ -205,184 +207,205 @@ const StaffAuthorizations = () => {
     return 'outline';
   };
 
-  // Build a unified list: guest lists first (sorted by first item created_at), then singles
-  type ListItem = { type: 'guest'; data: GuestListGroup } | { type: 'single'; data: Authorization & { resident?: ResidentInfo } };
-  const allItems: ListItem[] = [
-    ...guestLists.map(g => ({ type: 'guest' as const, data: g, sortDate: g.items[0]?.created_at || '' })),
-    ...singles.map(s => ({ type: 'single' as const, data: s, sortDate: s.created_at })),
-  ].sort((a, b) => new Date(b.sortDate).getTime() - new Date(a.sortDate).getTime());
+  // Pagination for guest lists
+  const guestTotalPages = Math.max(1, Math.ceil(guestLists.length / PAGE_SIZE));
+  const safeGuestPage = Math.min(guestPage, guestTotalPages);
+  if (safeGuestPage !== guestPage) setGuestPage(safeGuestPage);
+  const paginatedGuests = guestLists
+    .sort((a, b) => new Date(b.items[0]?.created_at || '').getTime() - new Date(a.items[0]?.created_at || '').getTime())
+    .slice((safeGuestPage - 1) * PAGE_SIZE, safeGuestPage * PAGE_SIZE);
 
-  const totalPages = Math.max(1, Math.ceil(allItems.length / PAGE_SIZE));
-  // Auto-correct page if beyond range
-  const safePage = Math.min(page, totalPages);
+  // Pagination for singles
+  const singlesTotalPages = Math.max(1, Math.ceil(singles.length / PAGE_SIZE));
+  const safePage = Math.min(page, singlesTotalPages);
   if (safePage !== page) setPage(safePage);
-
-  const paginatedItems = allItems.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const paginatedSingles = singles.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Autorizações de Visitantes</h2>
-        <span className="text-sm text-muted-foreground">{allItems.length} registro(s)</span>
       </div>
 
-      {allItems.length === 0 ? (
-        <Card><CardContent className="p-6 text-center text-muted-foreground">Nenhuma autorização registrada</CardContent></Card>
-      ) : (
-        <>
-          {paginatedItems.map((item) => {
-            if (item.type === 'guest') {
-              const list = item.data;
-              const isExpanded = expandedLists.has(list.key);
-              const approvedCount = list.items.filter(i => i.status === 'approved').length;
-              const pendingCount = list.items.filter(i => i.status === 'pending').length;
-              const totalCount = list.items.length;
+      <Tabs defaultValue="individual" className="w-full">
+        <TabsList className="w-full">
+          <TabsTrigger value="individual" className="flex-1 gap-1.5">
+            <Shield className="h-4 w-4" /> Individuais
+            <Badge variant="secondary" className="ml-1 text-xs">{singles.length}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="guests" className="flex-1 gap-1.5">
+            <Users className="h-4 w-4" /> Listas de Convidados
+            <Badge variant="secondary" className="ml-1 text-xs">{guestLists.length}</Badge>
+          </TabsTrigger>
+        </TabsList>
 
-              return (
-                <Card key={list.key} className="overflow-hidden">
-                  <CardContent className="p-0">
-                    <div className="p-4 cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => toggleList(list.key)}>
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-start gap-3">
-                          <div className="p-2 rounded-lg bg-primary/10">
-                            <Users className="h-5 w-5 text-primary" />
-                          </div>
-                          <div>
-                            <p className="font-semibold text-foreground">{list.title}</p>
-                            <p className="text-sm text-muted-foreground">Morador: {list.resident?.name} - Apto {list.resident?.apartment}</p>
-                            <p className="text-sm text-muted-foreground">Data: {format(new Date(list.authorized_date), 'dd/MM/yyyy', { locale: ptBR })}</p>
-                            <div className="flex gap-2 mt-1.5">
-                              <Badge variant="outline" className="text-xs">{totalCount} convidado(s)</Badge>
-                              {approvedCount > 0 && <Badge variant="default" className="text-xs">{approvedCount} validado(s)</Badge>}
-                              {pendingCount > 0 && <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/30">{pendingCount} pendente(s)</Badge>}
-                            </div>
-                          </div>
+        {/* Individual Authorizations Tab */}
+        <TabsContent value="individual" className="space-y-3 mt-3">
+          {singles.length === 0 ? (
+            <Card><CardContent className="p-6 text-center text-muted-foreground">Nenhuma autorização individual</CardContent></Card>
+          ) : (
+            <>
+              {paginatedSingles.map((a) => (
+                <Card key={a.id}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start gap-3">
+                        <div className="p-2 rounded-lg bg-muted">
+                          <Shield className="h-5 w-5 text-accent" />
                         </div>
-                        <div className="flex items-center gap-2">
-                          {pendingCount > 0 && (
-                            <div className="flex gap-1">
-                              <Button size="sm" variant="default" onClick={(e) => { e.stopPropagation(); handleBulkReview(list.items, 'approved'); }}>
-                                <Check className="h-4 w-4 mr-1" /> Aprovar Todos
-                              </Button>
-                              <Button size="sm" variant="destructive" onClick={(e) => { e.stopPropagation(); handleBulkReview(list.items, 'rejected'); }}>
-                                <X className="h-4 w-4 mr-1" /> Rejeitar
-                              </Button>
-                            </div>
-                          )}
-                          {isExpanded ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
+                        <div>
+                          <p className="font-medium">{a.visitor_name}</p>
+                          <p className="text-sm text-muted-foreground">Morador: {a.resident?.name} - Apto {a.resident?.apartment}</p>
+                          <p className="text-sm text-muted-foreground">
+                            Data: {format(new Date(a.authorized_date), 'dd/MM/yyyy', { locale: ptBR })}
+                            {a.authorized_until && ` até ${format(new Date(a.authorized_until), 'dd/MM/yyyy', { locale: ptBR })}`}
+                          </p>
+                          {a.purpose && <p className="text-xs text-muted-foreground">{a.purpose}</p>}
+                          {a.vehicle_plate && <p className="text-xs text-muted-foreground">Placa: {a.vehicle_plate}</p>}
                         </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={statusVariant(a.status)}>{statusLabels[a.status || 'pending']}</Badge>
+                        {a.status === 'pending' && (
+                          <Dialog open={reviewId === a.id} onOpenChange={(o) => { if (!o) setReviewId(null); }}>
+                            <DialogTrigger asChild>
+                              <Button size="sm" variant="outline" onClick={() => setReviewId(a.id)}>Revisar</Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader><DialogTitle>Revisar Autorização</DialogTitle></DialogHeader>
+                              <div className="space-y-4">
+                                <p><strong>Visitante:</strong> {a.visitor_name}</p>
+                                <p><strong>Morador:</strong> {a.resident?.name} - Apto {a.resident?.apartment}</p>
+                                <Textarea placeholder="Observações (opcional)" value={staffNotes} onChange={(e) => setStaffNotes(e.target.value)} />
+                                <div className="flex gap-2">
+                                  <Button className="flex-1" onClick={() => handleReview(a.id, 'approved')}><Check className="h-4 w-4 mr-1" /> Aprovar</Button>
+                                  <Button variant="destructive" className="flex-1" onClick={() => handleReview(a.id, 'rejected')}><X className="h-4 w-4 mr-1" /> Rejeitar</Button>
+                                </div>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                        )}
                       </div>
                     </div>
-
-                    {isExpanded && (
-                      <div className="border-t divide-y">
-                        {list.items.map((a) => (
-                          <div key={a.id} className="px-4 py-3 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className={`w-2 h-2 rounded-full ${a.status === 'approved' ? 'bg-emerald-500' : a.status === 'rejected' ? 'bg-destructive' : 'bg-amber-500'}`} />
-                              <div>
-                                <p className="text-sm font-medium">{a.visitor_name}</p>
-                                {a.visitor_document && <p className="text-xs text-muted-foreground">Doc: {a.visitor_document}</p>}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Badge variant={statusVariant(a.status)} className="text-xs">{statusLabels[a.status || 'pending']}</Badge>
-                              {a.status === 'pending' && (
-                                <Dialog open={reviewId === a.id} onOpenChange={(o) => { if (!o) setReviewId(null); }}>
-                                  <DialogTrigger asChild>
-                                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setReviewId(a.id); }}>Revisar</Button>
-                                  </DialogTrigger>
-                                  <DialogContent>
-                                    <DialogHeader><DialogTitle>Revisar Autorização</DialogTitle></DialogHeader>
-                                    <div className="space-y-4">
-                                      <p><strong>Visitante:</strong> {a.visitor_name}</p>
-                                      <p><strong>Morador:</strong> {a.resident?.name} - Apto {a.resident?.apartment}</p>
-                                      <Textarea placeholder="Observações (opcional)" value={staffNotes} onChange={(e) => setStaffNotes(e.target.value)} />
-                                      <div className="flex gap-2">
-                                        <Button className="flex-1" onClick={() => handleReview(a.id, 'approved')}><Check className="h-4 w-4 mr-1" /> Aprovar</Button>
-                                        <Button variant="destructive" className="flex-1" onClick={() => handleReview(a.id, 'rejected')}><X className="h-4 w-4 mr-1" /> Rejeitar</Button>
-                                      </div>
-                                    </div>
-                                  </DialogContent>
-                                </Dialog>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </CardContent>
                 </Card>
-              );
-            }
+              ))}
+              {singlesTotalPages > 1 && (
+                <div className="flex items-center justify-between pt-2">
+                  <p className="text-sm text-muted-foreground">Página {safePage} de {singlesTotalPages}</p>
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="outline" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}><ChevronLeft className="h-4 w-4" /></Button>
+                    <Button size="sm" variant="outline" disabled={safePage >= singlesTotalPages} onClick={() => setPage(safePage + 1)}><ChevronRight className="h-4 w-4" /></Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </TabsContent>
 
-            // Single authorization
-            const a = item.data;
-            return (
-              <Card key={a.id}>
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-start gap-3">
-                      <div className="p-2 rounded-lg bg-muted">
-                        <Shield className="h-5 w-5 text-accent" />
-                      </div>
-                      <div>
-                        <p className="font-medium">{a.visitor_name}</p>
-                        <p className="text-sm text-muted-foreground">Morador: {a.resident?.name} - Apto {a.resident?.apartment}</p>
-                        <p className="text-sm text-muted-foreground">
-                          Data: {format(new Date(a.authorized_date), 'dd/MM/yyyy', { locale: ptBR })}
-                          {a.authorized_until && ` até ${format(new Date(a.authorized_until), 'dd/MM/yyyy', { locale: ptBR })}`}
-                        </p>
-                        {a.purpose && <p className="text-xs text-muted-foreground">{a.purpose}</p>}
-                        {a.vehicle_plate && <p className="text-xs text-muted-foreground">Placa: {a.vehicle_plate}</p>}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={statusVariant(a.status)}>{statusLabels[a.status || 'pending']}</Badge>
-                      {a.status === 'pending' && (
-                        <Dialog open={reviewId === a.id} onOpenChange={(o) => { if (!o) setReviewId(null); }}>
-                          <DialogTrigger asChild>
-                            <Button size="sm" variant="outline" onClick={() => setReviewId(a.id)}>Revisar</Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader><DialogTitle>Revisar Autorização</DialogTitle></DialogHeader>
-                            <div className="space-y-4">
-                              <p><strong>Visitante:</strong> {a.visitor_name}</p>
-                              <p><strong>Morador:</strong> {a.resident?.name} - Apto {a.resident?.apartment}</p>
-                              <Textarea placeholder="Observações (opcional)" value={staffNotes} onChange={(e) => setStaffNotes(e.target.value)} />
-                              <div className="flex gap-2">
-                                <Button className="flex-1" onClick={() => handleReview(a.id, 'approved')}><Check className="h-4 w-4 mr-1" /> Aprovar</Button>
-                                <Button variant="destructive" className="flex-1" onClick={() => handleReview(a.id, 'rejected')}><X className="h-4 w-4 mr-1" /> Rejeitar</Button>
+        {/* Guest Lists Tab */}
+        <TabsContent value="guests" className="space-y-3 mt-3">
+          {guestLists.length === 0 ? (
+            <Card><CardContent className="p-6 text-center text-muted-foreground">Nenhuma lista de convidados</CardContent></Card>
+          ) : (
+            <>
+              {paginatedGuests.map((list) => {
+                const isExpanded = expandedLists.has(list.key);
+                const approvedCount = list.items.filter(i => i.status === 'approved').length;
+                const pendingCount = list.items.filter(i => i.status === 'pending').length;
+                const totalCount = list.items.length;
+
+                return (
+                  <Card key={list.key} className="overflow-hidden">
+                    <CardContent className="p-0">
+                      <div className="p-4 cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => toggleList(list.key)}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-3">
+                            <div className="p-2 rounded-lg bg-primary/10">
+                              <Users className="h-5 w-5 text-primary" />
+                            </div>
+                            <div>
+                              <p className="font-semibold text-foreground">{list.title}</p>
+                              <p className="text-sm text-muted-foreground">Morador: {list.resident?.name} - Apto {list.resident?.apartment}</p>
+                              <p className="text-sm text-muted-foreground">Data: {format(new Date(list.authorized_date), 'dd/MM/yyyy', { locale: ptBR })}</p>
+                              {list.vehicle_plate && <p className="text-xs text-muted-foreground">Placa: {list.vehicle_plate}</p>}
+                              <div className="flex gap-2 mt-1.5 flex-wrap">
+                                <Badge variant="outline" className="text-xs">{totalCount} convidado(s)</Badge>
+                                {approvedCount > 0 && <Badge variant="default" className="text-xs">{approvedCount} validado(s)</Badge>}
+                                {pendingCount > 0 && <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/30">{pendingCount} pendente(s)</Badge>}
                               </div>
                             </div>
-                          </DialogContent>
-                        </Dialog>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {pendingCount > 0 && (
+                              <div className="flex gap-1">
+                                <Button size="sm" variant="default" onClick={(e) => { e.stopPropagation(); handleBulkReview(list.items, 'approved'); }}>
+                                  <Check className="h-4 w-4 mr-1" /> Aprovar
+                                </Button>
+                                <Button size="sm" variant="destructive" onClick={(e) => { e.stopPropagation(); handleBulkReview(list.items, 'rejected'); }}>
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            )}
+                            {isExpanded ? <ChevronUp className="h-5 w-5 text-muted-foreground" /> : <ChevronDown className="h-5 w-5 text-muted-foreground" />}
+                          </div>
+                        </div>
+                      </div>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between pt-2">
-              <p className="text-sm text-muted-foreground">
-                Página {safePage} de {totalPages}
-              </p>
-              <div className="flex gap-1">
-                <Button size="sm" variant="outline" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <Button size="sm" variant="outline" disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)}>
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
+                      {isExpanded && (
+                        <div className="border-t divide-y">
+                          {list.items.map((a) => (
+                            <div key={a.id} className="px-4 py-3 flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-2 h-2 rounded-full ${a.status === 'approved' ? 'bg-primary' : a.status === 'rejected' ? 'bg-destructive' : 'bg-amber-500'}`} />
+                                <div>
+                                  <p className="text-sm font-medium">{a.visitor_name}</p>
+                                  {a.visitor_document && <p className="text-xs text-muted-foreground">Doc: {a.visitor_document}</p>}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge variant={statusVariant(a.status)} className="text-xs">{statusLabels[a.status || 'pending']}</Badge>
+                                {a.status === 'pending' && (
+                                  <Dialog open={reviewId === a.id} onOpenChange={(o) => { if (!o) setReviewId(null); }}>
+                                    <DialogTrigger asChild>
+                                      <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setReviewId(a.id); }}>Revisar</Button>
+                                    </DialogTrigger>
+                                    <DialogContent>
+                                      <DialogHeader><DialogTitle>Revisar Autorização</DialogTitle></DialogHeader>
+                                      <div className="space-y-4">
+                                        <p><strong>Visitante:</strong> {a.visitor_name}</p>
+                                        <p><strong>Morador:</strong> {a.resident?.name} - Apto {a.resident?.apartment}</p>
+                                        <Textarea placeholder="Observações (opcional)" value={staffNotes} onChange={(e) => setStaffNotes(e.target.value)} />
+                                        <div className="flex gap-2">
+                                          <Button className="flex-1" onClick={() => handleReview(a.id, 'approved')}><Check className="h-4 w-4 mr-1" /> Aprovar</Button>
+                                          <Button variant="destructive" className="flex-1" onClick={() => handleReview(a.id, 'rejected')}><X className="h-4 w-4 mr-1" /> Rejeitar</Button>
+                                        </div>
+                                      </div>
+                                    </DialogContent>
+                                  </Dialog>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+              {guestTotalPages > 1 && (
+                <div className="flex items-center justify-between pt-2">
+                  <p className="text-sm text-muted-foreground">Página {safeGuestPage} de {guestTotalPages}</p>
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="outline" disabled={safeGuestPage <= 1} onClick={() => setGuestPage(safeGuestPage - 1)}><ChevronLeft className="h-4 w-4" /></Button>
+                    <Button size="sm" variant="outline" disabled={safeGuestPage >= guestTotalPages} onClick={() => setGuestPage(safeGuestPage + 1)}><ChevronRight className="h-4 w-4" /></Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
-        </>
-      )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

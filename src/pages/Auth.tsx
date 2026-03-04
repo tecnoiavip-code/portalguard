@@ -59,7 +59,6 @@ export const Auth = () => {
         toast.error(translateAuthError(error.message));
         return;
       }
-      }
 
       // Check if user is a resident
       const { data: { user } } = await supabase.auth.getUser();

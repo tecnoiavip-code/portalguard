@@ -18,7 +18,11 @@ const PWAInstallPrompt = () => {
       || (window.navigator as any).standalone === true;
     setIsStandalone(standalone);
 
-    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    // Detect iOS/iPadOS (iPads now report as Macintosh)
+    const ua = navigator.userAgent;
+    const ios = /iphone|ipad|ipod/i.test(ua) || 
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ||
+      (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
     setIsIOS(ios);
 
     const handler = (e: Event) => {
@@ -30,7 +34,7 @@ const PWAInstallPrompt = () => {
 
     window.addEventListener('beforeinstallprompt', handler);
 
-    // Show iOS banner if not installed and not dismissed
+    // Show iOS/iPadOS banner if not installed and not dismissed
     if (ios && !standalone) {
       const dismissed = localStorage.getItem('pwa-install-dismissed');
       if (!dismissed) setShowBanner(true);
@@ -67,9 +71,11 @@ const PWAInstallPrompt = () => {
         <div className="flex-1">
           <p className="font-semibold text-sm">Instale o App</p>
           {isIOS ? (
-            <p className="text-xs opacity-80">
-              Toque em <span className="font-bold">Compartilhar</span> → <span className="font-bold">Adicionar à Tela Inicial</span>
-            </p>
+            <div>
+              <p className="text-xs opacity-80">
+                No Safari, toque em <span className="inline-flex items-center"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline mx-0.5"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></span> e depois em <span className="font-bold">"Adicionar à Tela de Início"</span>
+              </p>
+            </div>
           ) : (
             <p className="text-xs opacity-80">Acesse rápido pela tela inicial</p>
           )}

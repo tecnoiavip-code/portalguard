@@ -64,22 +64,10 @@ export const Settings = () => {
   const [isIntegrationsUnlocked, setIsIntegrationsUnlocked] = useState(false);
   const [isCheckingRole, setIsCheckingRole] = useState(true);
   
-  // Control iD config
-  const [controlIdName, setControlIdName] = useState('');
-  const [controlIdIp, setControlIdIp] = useState('');
-  const [controlIdPort, setControlIdPort] = useState('80');
-  const [controlIdDeviceId, setControlIdDeviceId] = useState('');
-  const [existingConfigs, setExistingConfigs] = useState<any[]>([]);
 
   useEffect(() => {
     checkAdminRole();
   }, []);
-
-  useEffect(() => {
-    if (isIntegrationsUnlocked) {
-      loadControlIdConfigs();
-    }
-  }, [isIntegrationsUnlocked]);
 
   const checkAdminRole = async () => {
     setIsCheckingRole(true);
@@ -98,63 +86,6 @@ export const Settings = () => {
       }
     }
     setIsCheckingRole(false);
-  };
-
-  const loadControlIdConfigs = async () => {
-    const { data, error } = await supabase
-      .from('controlid_config')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      console.error('Error loading Control iD configs:', error);
-    } else {
-      setExistingConfigs(data || []);
-    }
-  };
-
-  const handleSaveControlIdConfig = async () => {
-    if (!controlIdName.trim() || !controlIdIp.trim()) {
-      toast.error('Preencha nome e IP do dispositivo');
-      return;
-    }
-
-    const webhookUrl = `${window.location.origin.replace('https://', 'https://kxdqffkkufgsizszchvw.supabase.co')}/functions/v1/controlid-webhook`;
-
-    const { error } = await supabase
-      .from('controlid_config')
-      .insert({
-        device_name: controlIdName,
-        device_ip: controlIdIp,
-        device_port: controlIdPort,
-        device_id: controlIdDeviceId || null,
-        is_active: true
-      });
-
-    if (error) {
-      toast.error('Erro ao salvar configuração');
-    } else {
-      toast.success('Configuração salva! Configure o webhook no dispositivo: ' + webhookUrl);
-      setControlIdName('');
-      setControlIdIp('');
-      setControlIdPort('80');
-      setControlIdDeviceId('');
-      loadControlIdConfigs();
-    }
-  };
-
-  const handleDeleteConfig = async (id: string) => {
-    const { error } = await supabase
-      .from('controlid_config')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      toast.error('Erro ao excluir configuração');
-    } else {
-      toast.success('Configuração excluída');
-      loadControlIdConfigs();
-    }
   };
 
 
@@ -667,98 +598,8 @@ export const Settings = () => {
                   <span className="text-sm font-medium text-success">🔓 Acesso de administrador concedido</span>
                 </div>
                 
-                <div className="p-4 bg-muted rounded-lg space-y-4">
-                  <Label className="text-base font-semibold mb-2 block">Control iD - Dispositivos de Acesso</Label>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    Configure a conexão com seus dispositivos Control iD para reconhecimento facial e tags veiculares.
-                    Os eventos serão recebidos automaticamente via webhook.
-                  </p>
-                  
-                  <div className="space-y-3 border-t pt-4">
-                    <div>
-                      <Label>Nome do Dispositivo</Label>
-                      <Input 
-                        placeholder="Ex: Portaria Principal" 
-                        value={controlIdName}
-                        onChange={(e) => setControlIdName(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label>IP do Dispositivo</Label>
-                      <Input 
-                        placeholder="Ex: 192.168.1.100" 
-                        value={controlIdIp}
-                        onChange={(e) => setControlIdIp(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label>Porta</Label>
-                      <Input 
-                        placeholder="80" 
-                        value={controlIdPort}
-                        onChange={(e) => setControlIdPort(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label>ID do Dispositivo (Opcional)</Label>
-                      <Input 
-                        placeholder="Ex: 478435" 
-                        value={controlIdDeviceId}
-                        onChange={(e) => setControlIdDeviceId(e.target.value)}
-                      />
-                    </div>
-                    <Button onClick={handleSaveControlIdConfig} className="w-full">
-                      <SettingsIcon className="h-4 w-4 mr-2" />
-                      Salvar Configuração
-                    </Button>
-                  </div>
+                
 
-                  {existingConfigs.length > 0 && (
-                    <div className="border-t pt-4 space-y-2">
-                      <Label className="text-sm font-semibold">Dispositivos Configurados</Label>
-                      {existingConfigs.map((config) => (
-                        <div key={config.id} className="flex items-center justify-between p-3 bg-background rounded border">
-                          <div>
-                            <p className="font-medium">{config.device_name}</p>
-                            <p className="text-xs text-muted-foreground">{config.device_ip}:{config.device_port}</p>
-                          </div>
-                          <Button 
-                            variant="ghost" 
-                            size="sm"
-                            onClick={() => handleDeleteConfig(config.id)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="mt-4 p-3 bg-primary/10 rounded-lg space-y-3">
-                    <p className="text-xs font-semibold mb-1">Configuração para o Dispositivo (Push Server):</p>
-                    <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Hostname:</p>
-                      <code className="text-xs bg-background p-2 rounded block">kxdqffkkufgsizszchvw.supabase.co</code>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Porta:</p>
-                      <code className="text-xs bg-background p-2 rounded block">443</code>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Endpoint:</p>
-                      <code className="text-xs bg-background p-2 rounded block">/functions/v1/controlid-webhook/push</code>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">URL completa do Webhook:</p>
-                      <code className="text-xs bg-background p-2 rounded block overflow-x-auto">
-                        https://kxdqffkkufgsizszchvw.supabase.co/functions/v1/controlid-webhook
-                      </code>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Configure estes parâmetros no seu dispositivo Control iD para receber eventos automaticamente.
-                    </p>
-                  </div>
-                </div>
                 
                 <div className="p-4 bg-muted rounded-lg">
                   <Label className="text-base font-semibold mb-2 block">WhatsApp Business API</Label>

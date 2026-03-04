@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
+import { translateAuthError } from '@/lib/translate-auth-error';
 import appLogo from '@/assets/app-icon-v18-preview.png';
 
 export const Auth = () => {

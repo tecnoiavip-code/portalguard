@@ -48,7 +48,7 @@ const ResidentAuthorizations = () => {
 
   // Guest list state
   const [guests, setGuests] = useState<GuestItem[]>([{ name: '', document: '' }]);
-  const [guestListForm, setGuestListForm] = useState({ authorized_date: '', authorized_until: '', purpose: '', vehicle_plate: '' });
+  const [guestListForm, setGuestListForm] = useState({ title: '', authorized_date: '', vehicle_plate: '' });
 
   const loadAuths = async (rid: string) => {
     const { data } = await supabase
@@ -158,8 +158,8 @@ const ResidentAuthorizations = () => {
       visitor_name: g.name.trim(),
       visitor_document: g.document.trim() || null,
       authorized_date: guestListForm.authorized_date,
-      authorized_until: guestListForm.authorized_until || null,
-      purpose: guestListForm.purpose || null,
+      authorized_until: null,
+      purpose: guestListForm.title.trim() || null,
       vehicle_plate: guestListForm.vehicle_plate || null,
     }));
 
@@ -169,7 +169,7 @@ const ResidentAuthorizations = () => {
     toast.success(`${validGuests.length} convidado(s) autorizado(s) com sucesso!`);
     setGuestListOpen(false);
     setGuests([{ name: '', document: '' }]);
-    setGuestListForm({ authorized_date: '', authorized_until: '', purpose: '', vehicle_plate: '' });
+    setGuestListForm({ title: '', authorized_date: '', vehicle_plate: '' });
     await loadAuths(residentId);
 
     // Notify staff
@@ -249,27 +249,21 @@ const ResidentAuthorizations = () => {
                   <p className="text-xs text-muted-foreground">{guests.filter(g => g.name.trim()).length} convidado(s) adicionado(s)</p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-2">
-                    <Label>Data autorizada *</Label>
-                    <Input className="rounded-xl" type="date" value={guestListForm.authorized_date} onChange={(e) => setGuestListForm({ ...guestListForm, authorized_date: e.target.value })} required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Válido até</Label>
-                    <Input className="rounded-xl" type="date" value={guestListForm.authorized_until} onChange={(e) => setGuestListForm({ ...guestListForm, authorized_until: e.target.value })} />
-                  </div>
+                <div className="space-y-2">
+                  <Label>Título da lista *</Label>
+                  <Input className="rounded-xl" placeholder="Ex: Aniversário, Churrasco..." value={guestListForm.title} onChange={(e) => setGuestListForm({ ...guestListForm, title: e.target.value })} required />
                 </div>
                 <div className="space-y-2">
-                  <Label>Motivo</Label>
-                  <Textarea className="rounded-xl" value={guestListForm.purpose} onChange={(e) => setGuestListForm({ ...guestListForm, purpose: e.target.value })} />
+                  <Label>Data autorizada *</Label>
+                  <Input className="rounded-xl" type="date" value={guestListForm.authorized_date} onChange={(e) => setGuestListForm({ ...guestListForm, authorized_date: e.target.value })} required />
                 </div>
                 <div className="space-y-2">
-                  <Label>Placa do veículo</Label>
+                  <Label>Placa do veículo (opcional)</Label>
                   <Input className="rounded-xl" value={guestListForm.vehicle_plate} onChange={(e) => setGuestListForm({ ...guestListForm, vehicle_plate: e.target.value })} />
                 </div>
                 <div className="flex space-x-2">
                   <Button type="submit" className="flex-1 rounded-xl">Enviar Lista à Portaria</Button>
-                  <Button type="button" variant="secondary" className="rounded-xl" onClick={() => { setGuestListOpen(false); setGuests([{ name: '', document: '' }]); setGuestListForm({ authorized_date: '', authorized_until: '', purpose: '', vehicle_plate: '' }); }}>Cancelar</Button>
+                  <Button type="button" variant="secondary" className="rounded-xl" onClick={() => { setGuestListOpen(false); setGuests([{ name: '', document: '' }]); setGuestListForm({ title: '', authorized_date: '', vehicle_plate: '' }); }}>Cancelar</Button>
                 </div>
               </form>
             </DialogContent>

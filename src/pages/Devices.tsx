@@ -63,6 +63,7 @@ export const Devices = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    const isNew = !editingId;
     const deviceData: Device = {
       id: editingId || `dev_${Date.now()}`,
       ...formData,
@@ -72,6 +73,11 @@ export const Devices = () => {
     const success = await saveDevice(deviceData);
     if (success) {
       resetForm();
+      // Auto-sync config for new devices with serial number
+      if (isNew && deviceData.serialNumber) {
+        toast.info('Sincronizando configuração automaticamente...');
+        await handlePushConfig(deviceData);
+      }
     }
   };
 

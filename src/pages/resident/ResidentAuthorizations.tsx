@@ -325,7 +325,11 @@ const ResidentAuthorizations = () => {
         auths.map((a) => {
           const cfg = statusConfig[a.status || 'pending'];
           return (
-            <div key={a.id} className="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl p-4 transition-all">
+            <div
+              key={a.id}
+              className="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl p-4 transition-all cursor-pointer hover:border-primary/30 active:scale-[0.98]"
+              onClick={() => setDetailAuth(a)}
+            >
               <div className="flex items-start gap-3">
                 <div className={cn("p-2.5 rounded-xl flex-shrink-0", cfg.color.split(' ')[0])}>
                   <Shield className={cn("h-5 w-5", cfg.color.split(' ').slice(1).join(' '))} />
@@ -344,25 +348,104 @@ const ResidentAuthorizations = () => {
                       <span>até {format(new Date(a.authorized_until), 'dd/MM/yyyy', { locale: ptBR })}</span>
                     )}
                   </div>
-                  {a.vehicle_plate && (
-                    <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
-                      <Car className="h-3 w-3" />
-                      <span>{a.vehicle_plate}</span>
-                    </div>
-                  )}
-                  {a.purpose && <p className="text-xs text-muted-foreground mt-1.5">{a.purpose}</p>}
-                  {a.staff_notes && (
-                    <div className="flex items-start gap-1.5 mt-2 bg-muted/50 rounded-lg px-2.5 py-1.5">
-                      <MessageSquare className="h-3 w-3 mt-0.5 text-muted-foreground" />
-                      <p className="text-xs text-muted-foreground">Portaria: {a.staff_notes}</p>
-                    </div>
-                  )}
+                  {a.purpose && <p className="text-xs text-muted-foreground mt-1.5 truncate">{a.purpose}</p>}
                 </div>
               </div>
             </div>
           );
         })
       )}
+
+      {/* Detail Dialog */}
+      <Dialog open={!!detailAuth} onOpenChange={(o) => { if (!o) setDetailAuth(null); }}>
+        <DialogContent className="rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-primary" />
+              Detalhes da Autorização
+            </DialogTitle>
+          </DialogHeader>
+          {detailAuth && (() => {
+            const cfg = statusConfig[detailAuth.status || 'pending'];
+            return (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Badge variant={cfg.variant} className={cn("text-sm", cfg.color)}>
+                    {cfg.label}
+                  </Badge>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2.5">
+                    <User className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Visitante</p>
+                      <p className="font-medium text-foreground">{detailAuth.visitor_name}</p>
+                    </div>
+                  </div>
+
+                  {detailAuth.visitor_document && (
+                    <div className="flex items-center gap-2.5">
+                      <FileText className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Documento</p>
+                        <p className="text-sm text-foreground">{detailAuth.visitor_document}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2.5">
+                    <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Data autorizada</p>
+                      <p className="text-sm text-foreground">
+                        {format(new Date(detailAuth.authorized_date), 'dd/MM/yyyy', { locale: ptBR })}
+                        {detailAuth.authorized_until && ` até ${format(new Date(detailAuth.authorized_until), 'dd/MM/yyyy', { locale: ptBR })}`}
+                      </p>
+                    </div>
+                  </div>
+
+                  {detailAuth.vehicle_plate && (
+                    <div className="flex items-center gap-2.5">
+                      <Car className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Veículo</p>
+                        <p className="text-sm text-foreground">{detailAuth.vehicle_plate}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {detailAuth.purpose && (
+                    <div className="flex items-start gap-2.5">
+                      <FileText className="h-4 w-4 text-muted-foreground mt-0.5" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Motivo / Título</p>
+                        <p className="text-sm text-foreground">{detailAuth.purpose}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {detailAuth.staff_notes && (
+                    <div className="bg-muted/50 rounded-xl px-3 py-2.5">
+                      <div className="flex items-start gap-2">
+                        <MessageSquare className="h-4 w-4 text-muted-foreground mt-0.5" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">Observação da portaria</p>
+                          <p className="text-sm text-foreground">{detailAuth.staff_notes}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <Button variant="secondary" className="w-full rounded-xl" onClick={() => setDetailAuth(null)}>
+                  Fechar
+                </Button>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

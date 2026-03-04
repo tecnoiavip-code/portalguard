@@ -62,30 +62,16 @@ const parseCSV = (text: string): any[] => {
 export const Settings = () => {
   const { residents } = useResidents();
   const [isIntegrationsUnlocked, setIsIntegrationsUnlocked] = useState(false);
-  const [isCheckingRole, setIsCheckingRole] = useState(true);
-  
+  const [integrationPassword, setIntegrationPassword] = useState('');
+  const [passwordError, setPasswordError] = useState(false);
 
-  useEffect(() => {
-    checkAdminRole();
-  }, []);
-
-  const checkAdminRole = async () => {
-    setIsCheckingRole(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (user) {
-      const { data: roleData } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user.id)
-        .eq('role', 'admin')
-        .single();
-      
-      if (roleData) {
-        setIsIntegrationsUnlocked(true);
-      }
+  const handleUnlockIntegrations = () => {
+    if (integrationPassword === 'admin') {
+      setIsIntegrationsUnlocked(true);
+      setPasswordError(false);
+    } else {
+      setPasswordError(true);
     }
-    setIsCheckingRole(false);
   };
 
 

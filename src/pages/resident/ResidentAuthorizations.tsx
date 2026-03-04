@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Shield, Plus, Clock, CalendarDays, Car, MessageSquare, Users, Trash2 } from 'lucide-react';
+import { Shield, Plus, Clock, CalendarDays, Car, MessageSquare, Users, Trash2, FileText, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';

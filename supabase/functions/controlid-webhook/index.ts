@@ -524,31 +524,21 @@ async function processIdentificationEvent(supabaseClient: any, payload: any, dev
   const userName = extractUserName(payload);
   const displayName = userName || userId || cardValue || 'Desconhecido';
 
-  // Try to match resident
   const resident = await matchResident(supabaseClient, displayName);
 
-  const entryData: any = {
-    visitor_name: sanitizeString(resident ? resident.name : displayName, 200),
-    visitor_document: sanitizeString(cardValue || userId || 'Auto', 50),
-    visitor_type: 'visitor',
-    apartment: resident ? resident.apartment : 'N/A',
-    purpose: 'Identificação Online',
-    entry_time: new Date().toISOString(),
-    auto_recognized: true,
-    notes: sanitizeString(`Device: ${deviceId}, Online Mode`, 500)
-  };
+  // Only create realtime_event for dashboard monitoring — NOT access_entries
+  await supabaseClient.from('realtime_events').insert({
+    type: 'entry',
+    description: sanitizeString(
+      resident
+        ? `Acesso reconhecido: ${resident.name} - Apto ${resident.apartment}`
+        : `Identificação: ${displayName} - Device ${deviceId}`,
+      200
+    ),
+    priority: resident ? 'low' : 'medium'
+  });
 
-  if (resident) {
-    entryData.resident_id = resident.id;
-    entryData.resident_name = resident.name;
-  }
-
-  const { error } = await supabaseClient.from('access_entries').insert(entryData);
-  if (error) {
-    console.error('Error creating access entry from identification:', error);
-  } else {
-    console.log('Identification entry created', resident ? `(matched: ${resident.name})` : '(no match)');
-  }
+  console.log('Realtime event created from identification', resident ? `(matched: ${resident.name})` : '(no match)');
 }
 
 async function updateDeviceStatus(supabaseClient: any, deviceId: string, reqIp?: string) {

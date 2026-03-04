@@ -48,6 +48,8 @@ const StaffAuthorizations = () => {
   const [reviewId, setReviewId] = useState<string | null>(null);
   const [staffNotes, setStaffNotes] = useState('');
   const [expandedLists, setExpandedLists] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const loadAuths = async () => {
     const { data } = await supabase

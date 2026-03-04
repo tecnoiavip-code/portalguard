@@ -48,7 +48,7 @@ const ResidentAuthorizations = () => {
 
   // Guest list state
   const [guests, setGuests] = useState<GuestItem[]>([{ name: '', document: '' }]);
-  const [guestListForm, setGuestListForm] = useState({ authorized_date: '', authorized_until: '', purpose: '', vehicle_plate: '' });
+  const [guestListForm, setGuestListForm] = useState({ title: '', authorized_date: '', vehicle_plate: '' });
 
   const loadAuths = async (rid: string) => {
     const { data } = await supabase

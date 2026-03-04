@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
+import { translateAuthError } from '@/lib/translate-auth-error';
 import appLogo from '@/assets/app-icon-v18-preview.png';
 
 export const Auth = () => {
@@ -34,7 +35,7 @@ export const Auth = () => {
         redirectTo: `${window.location.origin}/reset-password`,
       });
       if (error) {
-        toast.error(error.message);
+        toast.error(translateAuthError(error.message));
         return;
       }
       toast.success('Email de recuperação enviado! Verifique sua caixa de entrada.');
@@ -55,11 +56,7 @@ export const Auth = () => {
       const { error } = await signIn(loginEmail, loginPassword);
       
       if (error) {
-        if (error.message.includes('Invalid login credentials')) {
-          toast.error('Email ou senha incorretos');
-        } else {
-          toast.error(error.message);
-        }
+        toast.error(translateAuthError(error.message));
         return;
       }
 
@@ -102,11 +99,7 @@ export const Auth = () => {
       const { error } = await signUp(signupEmail, signupPassword, signupFullName);
       
       if (error) {
-        if (error.message.includes('already registered')) {
-          toast.error('Este email já está cadastrado');
-        } else {
-          toast.error(error.message);
-        }
+        toast.error(translateAuthError(error.message));
         return;
       }
 

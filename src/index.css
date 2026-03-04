@@ -101,6 +101,12 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+    caret-color: transparent;
+  }
+
+  /* Only show caret in actual input elements */
+  input, textarea, [contenteditable="true"] {
+    caret-color: auto;
   }
 
   input:not([type="password"]):not([type="email"]),

@@ -62,30 +62,16 @@ const parseCSV = (text: string): any[] => {
 export const Settings = () => {
   const { residents } = useResidents();
   const [isIntegrationsUnlocked, setIsIntegrationsUnlocked] = useState(false);
-  const [isCheckingRole, setIsCheckingRole] = useState(true);
-  
+  const [integrationPassword, setIntegrationPassword] = useState('');
+  const [passwordError, setPasswordError] = useState(false);
 
-  useEffect(() => {
-    checkAdminRole();
-  }, []);
-
-  const checkAdminRole = async () => {
-    setIsCheckingRole(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (user) {
-      const { data: roleData } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user.id)
-        .eq('role', 'admin')
-        .single();
-      
-      if (roleData) {
-        setIsIntegrationsUnlocked(true);
-      }
+  const handleUnlockIntegrations = () => {
+    if (integrationPassword === 'admin') {
+      setIsIntegrationsUnlocked(true);
+      setPasswordError(false);
+    } else {
+      setPasswordError(true);
     }
-    setIsCheckingRole(false);
   };
 
 
@@ -571,26 +557,30 @@ export const Settings = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {isCheckingRole ? (
-              <div className="p-6 bg-muted rounded-lg space-y-4">
-                <div className="flex items-center justify-center">
-                  <Lock className="h-12 w-12 text-primary animate-pulse" />
-                </div>
-                <p className="text-center text-sm text-muted-foreground">
-                  Verificando permissões...
-                </p>
-              </div>
-            ) : !isIntegrationsUnlocked ? (
+            {!isIntegrationsUnlocked ? (
               <div className="p-6 bg-muted rounded-lg space-y-4">
                 <div className="flex items-center justify-center mb-4">
-                  <Lock className="h-12 w-12 text-destructive" />
+                  <Lock className="h-12 w-12 text-primary" />
                 </div>
                 <p className="text-center text-sm text-muted-foreground mb-4">
-                  Esta seção requer permissões de administrador. Apenas usuários com role "admin" podem acessar as configurações de integrações.
+                  Digite a senha para acessar as configurações de integrações.
                 </p>
-                <p className="text-center text-xs text-muted-foreground">
-                  Entre em contato com um administrador do sistema para obter acesso.
-                </p>
+                <div className="flex gap-2 max-w-sm mx-auto">
+                  <Input
+                    type="password"
+                    placeholder="Senha"
+                    value={integrationPassword}
+                    onChange={(e) => { setIntegrationPassword(e.target.value); setPasswordError(false); }}
+                    onKeyDown={(e) => e.key === 'Enter' && handleUnlockIntegrations()}
+                  />
+                  <Button onClick={handleUnlockIntegrations}>
+                    <Lock className="h-4 w-4 mr-2" />
+                    Desbloquear
+                  </Button>
+                </div>
+                {passwordError && (
+                  <p className="text-center text-sm text-destructive">Senha incorreta</p>
+                )}
               </div>
             ) : (
               <>

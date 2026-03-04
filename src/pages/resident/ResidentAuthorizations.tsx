@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Shield, Plus, Clock, CalendarDays, Car, MessageSquare } from 'lucide-react';
+import { Shield, Plus, Clock, CalendarDays, Car, MessageSquare, Users, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -25,6 +25,11 @@ interface Authorization {
   staff_notes: string | null;
 }
 
+interface GuestItem {
+  name: string;
+  document: string;
+}
+
 const statusConfig: Record<string, { label: string; color: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   pending: { label: 'Pendente', color: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30', variant: 'outline' },
   approved: { label: 'Aprovada', color: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30', variant: 'default' },
@@ -38,7 +43,12 @@ const ResidentAuthorizations = () => {
   const [residentId, setResidentId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [guestListOpen, setGuestListOpen] = useState(false);
   const [form, setForm] = useState({ visitor_name: '', visitor_document: '', authorized_date: '', authorized_until: '', purpose: '', vehicle_plate: '' });
+
+  // Guest list state
+  const [guests, setGuests] = useState<GuestItem[]>([{ name: '', document: '' }]);
+  const [guestListForm, setGuestListForm] = useState({ authorized_date: '', authorized_until: '', purpose: '', vehicle_plate: '' });
 
   const loadAuths = async (rid: string) => {
     const { data } = await supabase
@@ -113,6 +123,72 @@ const ResidentAuthorizations = () => {
     }
   };
 
+  const addGuest = () => {
+    setGuests([...guests, { name: '', document: '' }]);
+  };
+
+  const removeGuest = (index: number) => {
+    if (guests.length <= 1) return;
+    setGuests(guests.filter((_, i) => i !== index));
+  };
+
+  const updateGuest = (index: number, field: keyof GuestItem, value: string) => {
+    const updated = [...guests];
+    updated[index] = { ...updated[index], [field]: value };
+    setGuests(updated);
+  };
+
+  const handleGuestListSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!residentId) return;
+
+    const validGuests = guests.filter(g => g.name.trim());
+    if (validGuests.length === 0) {
+      toast.error('Adicione pelo menos um convidado com nome.');
+      return;
+    }
+
+    if (!guestListForm.authorized_date) {
+      toast.error('Informe a data autorizada.');
+      return;
+    }
+
+    const insertData = validGuests.map(g => ({
+      resident_id: residentId,
+      visitor_name: g.name.trim(),
+      visitor_document: g.document.trim() || null,
+      authorized_date: guestListForm.authorized_date,
+      authorized_until: guestListForm.authorized_until || null,
+      purpose: guestListForm.purpose || null,
+      vehicle_plate: guestListForm.vehicle_plate || null,
+    }));
+
+    const { error } = await supabase.from('visitor_authorizations').insert(insertData as any);
+    if (error) { toast.error('Erro ao enviar lista de convidados'); return; }
+
+    toast.success(`${validGuests.length} convidado(s) autorizado(s) com sucesso!`);
+    setGuestListOpen(false);
+    setGuests([{ name: '', document: '' }]);
+    setGuestListForm({ authorized_date: '', authorized_until: '', purpose: '', vehicle_plate: '' });
+    await loadAuths(residentId);
+
+    // Notify staff
+    const { data: staffRoles } = await supabase
+      .from('user_roles')
+      .select('user_id')
+      .in('role', ['admin', 'receptionist', 'security_guard'] as any);
+    if (staffRoles) {
+      const names = validGuests.map(g => g.name.trim()).join(', ');
+      const notifications = staffRoles.map((r: any) => ({
+        user_id: r.user_id,
+        title: 'Nova lista de convidados',
+        body: `Morador autorizou ${validGuests.length} convidado(s): ${names.substring(0, 80)}`,
+        type: 'authorization',
+      }));
+      await supabase.from('notifications').insert(notifications);
+    }
+  };
+
   if (loading) return (
     <div className="flex justify-center py-12">
       <Clock className="h-6 w-6 animate-spin text-primary" />
@@ -126,48 +202,123 @@ const ResidentAuthorizations = () => {
           <h2 className="text-xl font-bold text-foreground">Autorizações</h2>
           <p className="text-sm text-muted-foreground">Gerencie acessos de visitantes</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" className="rounded-xl gap-1.5">
-              <Plus className="h-4 w-4" />Nova
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="rounded-2xl" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
-            <DialogHeader><DialogTitle>Autorizar Visitante</DialogTitle></DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label>Nome do visitante *</Label>
-                <Input className="rounded-xl" value={form.visitor_name} onChange={(e) => setForm({ ...form, visitor_name: e.target.value })} required />
-              </div>
-              <div className="space-y-2">
-                <Label>Documento</Label>
-                <Input className="rounded-xl" value={form.visitor_document} onChange={(e) => setForm({ ...form, visitor_document: e.target.value })} />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-2">
-                  <Label>Data autorizada *</Label>
-                  <Input className="rounded-xl" type="date" value={form.authorized_date} onChange={(e) => setForm({ ...form, authorized_date: e.target.value })} required />
+        <div className="flex gap-2">
+          {/* Guest List Button */}
+          <Dialog open={guestListOpen} onOpenChange={setGuestListOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline" className="rounded-xl gap-1.5">
+                <Users className="h-4 w-4" />Lista de Convidados
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="rounded-2xl max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+              <DialogHeader><DialogTitle>Lista de Convidados</DialogTitle></DialogHeader>
+              <form onSubmit={handleGuestListSubmit} className="space-y-4">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-semibold">Convidados</Label>
+                    <Button type="button" size="sm" variant="ghost" className="rounded-xl gap-1 text-xs h-7" onClick={addGuest}>
+                      <Plus className="h-3 w-3" />Adicionar
+                    </Button>
+                  </div>
+                  {guests.map((guest, index) => (
+                    <div key={index} className="flex gap-2 items-start">
+                      <div className="flex-1 space-y-1">
+                        <Input
+                          className="rounded-xl text-sm"
+                          placeholder="Nome do convidado *"
+                          value={guest.name}
+                          onChange={(e) => updateGuest(index, 'name', e.target.value)}
+                          required
+                        />
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <Input
+                          className="rounded-xl text-sm"
+                          placeholder="Documento (opcional)"
+                          value={guest.document}
+                          onChange={(e) => updateGuest(index, 'document', e.target.value)}
+                        />
+                      </div>
+                      {guests.length > 1 && (
+                        <Button type="button" size="icon" variant="ghost" className="h-9 w-9 shrink-0 text-destructive hover:text-destructive" onClick={() => removeGuest(index)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                  <p className="text-xs text-muted-foreground">{guests.filter(g => g.name.trim()).length} convidado(s) adicionado(s)</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-2">
+                    <Label>Data autorizada *</Label>
+                    <Input className="rounded-xl" type="date" value={guestListForm.authorized_date} onChange={(e) => setGuestListForm({ ...guestListForm, authorized_date: e.target.value })} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Válido até</Label>
+                    <Input className="rounded-xl" type="date" value={guestListForm.authorized_until} onChange={(e) => setGuestListForm({ ...guestListForm, authorized_until: e.target.value })} />
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Válido até</Label>
-                  <Input className="rounded-xl" type="date" value={form.authorized_until} onChange={(e) => setForm({ ...form, authorized_until: e.target.value })} />
+                  <Label>Motivo</Label>
+                  <Textarea className="rounded-xl" value={guestListForm.purpose} onChange={(e) => setGuestListForm({ ...guestListForm, purpose: e.target.value })} />
                 </div>
-              </div>
-              <div className="space-y-2">
-                <Label>Motivo</Label>
-                <Textarea className="rounded-xl" value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label>Placa do veículo</Label>
-                <Input className="rounded-xl" value={form.vehicle_plate} onChange={(e) => setForm({ ...form, vehicle_plate: e.target.value })} />
-              </div>
-              <div className="flex space-x-2">
-                <Button type="submit" className="flex-1 rounded-xl">Enviar à Portaria</Button>
-                <Button type="button" variant="secondary" className="rounded-xl" onClick={() => { setOpen(false); setForm({ visitor_name: '', visitor_document: '', authorized_date: '', authorized_until: '', purpose: '', vehicle_plate: '' }); }}>Cancelar</Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+                <div className="space-y-2">
+                  <Label>Placa do veículo</Label>
+                  <Input className="rounded-xl" value={guestListForm.vehicle_plate} onChange={(e) => setGuestListForm({ ...guestListForm, vehicle_plate: e.target.value })} />
+                </div>
+                <div className="flex space-x-2">
+                  <Button type="submit" className="flex-1 rounded-xl">Enviar Lista à Portaria</Button>
+                  <Button type="button" variant="secondary" className="rounded-xl" onClick={() => { setGuestListOpen(false); setGuests([{ name: '', document: '' }]); setGuestListForm({ authorized_date: '', authorized_until: '', purpose: '', vehicle_plate: '' }); }}>Cancelar</Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          {/* Single Authorization Button */}
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" className="rounded-xl gap-1.5">
+                <Plus className="h-4 w-4" />Nova
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="rounded-2xl" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+              <DialogHeader><DialogTitle>Autorizar Visitante</DialogTitle></DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Nome do visitante *</Label>
+                  <Input className="rounded-xl" value={form.visitor_name} onChange={(e) => setForm({ ...form, visitor_name: e.target.value })} required />
+                </div>
+                <div className="space-y-2">
+                  <Label>Documento</Label>
+                  <Input className="rounded-xl" value={form.visitor_document} onChange={(e) => setForm({ ...form, visitor_document: e.target.value })} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-2">
+                    <Label>Data autorizada *</Label>
+                    <Input className="rounded-xl" type="date" value={form.authorized_date} onChange={(e) => setForm({ ...form, authorized_date: e.target.value })} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Válido até</Label>
+                    <Input className="rounded-xl" type="date" value={form.authorized_until} onChange={(e) => setForm({ ...form, authorized_until: e.target.value })} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Motivo</Label>
+                  <Textarea className="rounded-xl" value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Placa do veículo</Label>
+                  <Input className="rounded-xl" value={form.vehicle_plate} onChange={(e) => setForm({ ...form, vehicle_plate: e.target.value })} />
+                </div>
+                <div className="flex space-x-2">
+                  <Button type="submit" className="flex-1 rounded-xl">Enviar à Portaria</Button>
+                  <Button type="button" variant="secondary" className="rounded-xl" onClick={() => { setOpen(false); setForm({ visitor_name: '', visitor_document: '', authorized_date: '', authorized_until: '', purpose: '', vehicle_plate: '' }); }}>Cancelar</Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {auths.length === 0 ? (

@@ -489,10 +489,11 @@ async function processIdentificationEvent(supabaseClient: any, payload: any, dev
   }
 }
 
-async function updateDeviceStatus(supabaseClient: any, deviceId: string) {
+async function updateDeviceStatus(supabaseClient: any, deviceId: string, reqIp?: string) {
   console.log('Updating device status - alive:', deviceId);
   const now = new Date().toISOString();
 
+  // Try match by serial_number first
   const { data: deviceBySerial } = await supabaseClient
     .from('devices')
     .select('id')
@@ -505,19 +506,34 @@ async function updateDeviceStatus(supabaseClient: any, deviceId: string) {
       .update({ last_sync: now, status: 'online' })
       .eq('id', deviceBySerial.id);
   } else {
-    const { data: deviceByName } = await supabaseClient
+    // Try match by ip_address
+    const { data: deviceByIp } = await supabaseClient
       .from('devices')
       .select('id')
-      .ilike('name', `%${deviceId}%`)
+      .eq('ip_address', deviceId)
       .maybeSingle();
 
-    if (deviceByName) {
+    if (deviceByIp) {
       await supabaseClient
         .from('devices')
         .update({ last_sync: now, status: 'online' })
-        .eq('id', deviceByName.id);
+        .eq('id', deviceByIp.id);
     } else {
-      console.log('No matching device found for:', deviceId);
+      // Fallback: try match by name
+      const { data: deviceByName } = await supabaseClient
+        .from('devices')
+        .select('id')
+        .ilike('name', `%${deviceId}%`)
+        .maybeSingle();
+
+      if (deviceByName) {
+        await supabaseClient
+          .from('devices')
+          .update({ last_sync: now, status: 'online' })
+          .eq('id', deviceByName.id);
+      } else {
+        console.log('No matching device found for:', deviceId);
+      }
     }
   }
 

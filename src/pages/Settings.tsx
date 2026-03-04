@@ -65,7 +65,9 @@ export const Settings = () => {
   const [isCheckingRole, setIsCheckingRole] = useState(true);
   
 
-
+  useEffect(() => {
+    checkAdminRole();
+  }, []);
 
   const checkAdminRole = async () => {
     setIsCheckingRole(true);
@@ -84,63 +86,6 @@ export const Settings = () => {
       }
     }
     setIsCheckingRole(false);
-  };
-
-  const loadControlIdConfigs = async () => {
-    const { data, error } = await supabase
-      .from('controlid_config')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      console.error('Error loading Control iD configs:', error);
-    } else {
-      setExistingConfigs(data || []);
-    }
-  };
-
-  const handleSaveControlIdConfig = async () => {
-    if (!controlIdName.trim() || !controlIdIp.trim()) {
-      toast.error('Preencha nome e IP do dispositivo');
-      return;
-    }
-
-    const webhookUrl = `${window.location.origin.replace('https://', 'https://kxdqffkkufgsizszchvw.supabase.co')}/functions/v1/controlid-webhook`;
-
-    const { error } = await supabase
-      .from('controlid_config')
-      .insert({
-        device_name: controlIdName,
-        device_ip: controlIdIp,
-        device_port: controlIdPort,
-        device_id: controlIdDeviceId || null,
-        is_active: true
-      });
-
-    if (error) {
-      toast.error('Erro ao salvar configuração');
-    } else {
-      toast.success('Configuração salva! Configure o webhook no dispositivo: ' + webhookUrl);
-      setControlIdName('');
-      setControlIdIp('');
-      setControlIdPort('80');
-      setControlIdDeviceId('');
-      loadControlIdConfigs();
-    }
-  };
-
-  const handleDeleteConfig = async (id: string) => {
-    const { error } = await supabase
-      .from('controlid_config')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      toast.error('Erro ao excluir configuração');
-    } else {
-      toast.success('Configuração excluída');
-      loadControlIdConfigs();
-    }
   };
 
 

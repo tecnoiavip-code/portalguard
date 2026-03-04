@@ -598,9 +598,33 @@ export const Settings = () => {
                   <span className="text-sm font-medium text-success">🔓 Acesso de administrador concedido</span>
                 </div>
                 
-                
+                <div className="p-4 bg-muted rounded-lg space-y-3">
+                  <Label className="text-base font-semibold mb-2 block">Control iD - Webhook</Label>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Informações para configurar nos dispositivos Control iD.
+                  </p>
+                  <div className="p-3 bg-primary/10 rounded-lg space-y-3">
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Hostname:</p>
+                      <code className="text-xs bg-background p-2 rounded block">kxdqffkkufgsizszchvw.supabase.co</code>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Porta:</p>
+                      <code className="text-xs bg-background p-2 rounded block">443</code>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Endpoint:</p>
+                      <code className="text-xs bg-background p-2 rounded block">/functions/v1/controlid-webhook/push</code>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">URL completa do Webhook:</p>
+                      <code className="text-xs bg-background p-2 rounded block overflow-x-auto">
+                        https://kxdqffkkufgsizszchvw.supabase.co/functions/v1/controlid-webhook
+                      </code>
+                    </div>
+                  </div>
+                </div>
 
-                
                 <div className="p-4 bg-muted rounded-lg">
                   <Label className="text-base font-semibold mb-2 block">WhatsApp Business API</Label>
                   <p className="text-sm text-muted-foreground mb-3">

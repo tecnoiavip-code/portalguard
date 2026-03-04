@@ -50,6 +50,7 @@ const StaffAuthorizations = () => {
   const [staffNotes, setStaffNotes] = useState('');
   const [expandedLists, setExpandedLists] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
+  const [guestPage, setGuestPage] = useState(1);
   const PAGE_SIZE = 10;
 
   const loadAuths = async () => {

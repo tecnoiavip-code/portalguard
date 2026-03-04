@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Shield, Plus, Clock, CalendarDays, Car, MessageSquare, Users, Trash2, FileText, User } from 'lucide-react';
+import { Shield, Plus, Clock, CalendarDays, Car, MessageSquare, Users, Trash2, FileText, User, AlertTriangle } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -188,6 +189,15 @@ const ResidentAuthorizations = () => {
       }));
       await supabase.from('notifications').insert(notifications);
     }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!residentId) return;
+    const { error } = await supabase.from('visitor_authorizations').delete().eq('id', id);
+    if (error) { toast.error('Erro ao excluir autorização'); return; }
+    toast.success('Autorização excluída!');
+    setDetailAuth(null);
+    await loadAuths(residentId);
   };
 
   if (loading) return (
@@ -437,6 +447,30 @@ const ResidentAuthorizations = () => {
                     </div>
                   )}
                 </div>
+
+                {detailAuth.status === 'pending' && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="destructive" className="w-full rounded-xl gap-1.5">
+                        <Trash2 className="h-4 w-4" /> Excluir Autorização
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent className="rounded-2xl">
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Excluir autorização?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          A autorização de <strong>{detailAuth.visitor_name}</strong> será removida permanentemente.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
+                        <AlertDialogAction className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => handleDelete(detailAuth.id)}>
+                          Excluir
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
 
                 <Button variant="secondary" className="w-full rounded-xl" onClick={() => setDetailAuth(null)}>
                   Fechar

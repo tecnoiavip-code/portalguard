@@ -448,6 +448,30 @@ const ResidentAuthorizations = () => {
                   )}
                 </div>
 
+                {detailAuth.status === 'pending' && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="destructive" className="w-full rounded-xl gap-1.5">
+                        <Trash2 className="h-4 w-4" /> Excluir Autorização
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent className="rounded-2xl">
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Excluir autorização?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          A autorização de <strong>{detailAuth.visitor_name}</strong> será removida permanentemente.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
+                        <AlertDialogAction className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => handleDelete(detailAuth.id)}>
+                          Excluir
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+
                 <Button variant="secondary" className="w-full rounded-xl" onClick={() => setDetailAuth(null)}>
                   Fechar
                 </Button>

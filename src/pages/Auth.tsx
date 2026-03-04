@@ -102,7 +102,6 @@ export const Auth = () => {
         toast.error(translateAuthError(error.message));
         return;
       }
-      }
 
       toast.success('Conta criada com sucesso! Você já pode fazer login.');
       // Switch to login tab

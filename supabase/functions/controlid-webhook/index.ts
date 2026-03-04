@@ -417,6 +417,59 @@ Deno.serve(async (req) => {
   }
 });
 
+/**
+ * Try to find a resident by parsing the Control iD user name format.
+ * Common formats: "35 - ELISABETE SILVA", "110 - DANIELA MARCO", "Simone Ferreira"
+ */
+async function matchResident(supabaseClient: any, userName: string) {
+  if (!userName || userName === 'Desconhecido') return null;
+
+  // Try format "APT - NAME" (e.g., "35 - ELISABETE SILVA")
+  const aptNameMatch = userName.match(/^(\d+)\s*[-–]\s*(.+)$/);
+  if (aptNameMatch) {
+    const apartment = aptNameMatch[1].trim();
+    const name = aptNameMatch[2].trim();
+
+    const { data } = await supabaseClient
+      .from('residents')
+      .select('id, name, apartment')
+      .eq('apartment', apartment)
+      .ilike('name', `%${name}%`)
+      .maybeSingle();
+
+    if (data) return data;
+
+    // Fallback: match just by apartment
+    const { data: byApt } = await supabaseClient
+      .from('residents')
+      .select('id, name, apartment')
+      .eq('apartment', apartment)
+      .maybeSingle();
+
+    if (byApt) return byApt;
+  }
+
+  // Try match by name alone (case-insensitive)
+  const { data: byName } = await supabaseClient
+    .from('residents')
+    .select('id, name, apartment')
+    .ilike('name', `%${userName}%`)
+    .limit(1)
+    .maybeSingle();
+
+  return byName || null;
+}
+
+/**
+ * Extract the best available user name from a Control iD payload.
+ */
+const extractUserName = (values: any): string => {
+  // Try various fields the device might send
+  return sanitizeString(
+    values.user_name || values.name || values.userName || values.user || '', 200
+  );
+};
+
 async function processAccessLogs(supabaseClient: any, objectChanges: any[], deviceId: string) {
   console.log('Processing access logs from Control iD, changes:', objectChanges.length);
 
@@ -428,6 +481,7 @@ async function processAccessLogs(supabaseClient: any, objectChanges: any[], devi
       const cardValue = sanitizeString(values.card_value, 100);
       const eventDesc = sanitizeString(values.event, 100);
       const portalId = sanitizeString(values.portal_id, 50);
+      const userName = extractUserName(values);
 
       let entryTime = new Date().toISOString();
       if (values.time) {
@@ -439,29 +493,48 @@ async function processAccessLogs(supabaseClient: any, objectChanges: any[], devi
         } catch { /* use default */ }
       }
 
-      const entryData = {
-        visitor_name: sanitizeString(`Control iD - ${userId || cardValue || 'Desconhecido'}`, 200),
-        visitor_document: sanitizeString(cardValue || userId || 'N/A', 50),
+      // Try to match resident by name or apartment-name pattern
+      const displayName = userName || userId || cardValue || 'Desconhecido';
+      const resident = await matchResident(supabaseClient, displayName);
+
+      const entryData: any = {
+        visitor_name: sanitizeString(resident ? resident.name : displayName, 200),
+        visitor_document: sanitizeString(cardValue || userId || 'Auto', 50),
         visitor_type: 'visitor',
-        apartment: 'N/A',
+        apartment: resident ? resident.apartment : 'N/A',
         purpose: sanitizeString(`Evento: ${eventDesc || 'acesso'}`, 100),
         entry_time: entryTime,
         auto_recognized: true,
-        notes: sanitizeString(`Device: ${deviceId}, Portal: ${portalId}`, 500)
+        notes: sanitizeString(`Device: ${deviceId}, Portal: ${portalId}`, 500),
       };
+
+      if (resident) {
+        entryData.resident_id = resident.id;
+        entryData.resident_name = resident.name;
+      }
 
       const { error } = await supabaseClient.from('access_entries').insert(entryData);
 
       if (error) {
         console.error('Error creating access entry:', error);
       } else {
-        console.log('Access entry created from Control iD event');
+        console.log('Access entry created from Control iD event', resident ? `(matched: ${resident.name})` : '(no match)');
         await supabaseClient.from('realtime_events').insert({
           type: 'entry',
-          description: sanitizeString(`Acesso automático - Device ${deviceId}`, 200),
-          priority: 'medium'
+          description: sanitizeString(
+            resident
+              ? `Acesso reconhecido: ${resident.name} - Apto ${resident.apartment}`
+              : `Acesso automático - Device ${deviceId}`,
+            200
+          ),
+          priority: resident ? 'low' : 'medium'
         });
       }
+    }
+
+    // Also process user sync events from device (users table changes)
+    if (change.object === 'users' && (change.type === 'inserted' || change.type === 'updated')) {
+      console.log('Control iD user sync event:', change.values?.name || change.values?.id);
     }
   }
 }
@@ -471,21 +544,33 @@ async function processIdentificationEvent(supabaseClient: any, payload: any, dev
 
   const userId = sanitizeString(payload.user_id, 100);
   const cardValue = sanitizeString(payload.card, 100);
+  const userName = extractUserName(payload);
+  const displayName = userName || userId || cardValue || 'Desconhecido';
 
-  const entryData = {
-    visitor_name: sanitizeString(`Control iD Online - ${userId || cardValue || 'Desconhecido'}`, 200),
-    visitor_document: sanitizeString(cardValue || userId || 'N/A', 50),
+  // Try to match resident
+  const resident = await matchResident(supabaseClient, displayName);
+
+  const entryData: any = {
+    visitor_name: sanitizeString(resident ? resident.name : displayName, 200),
+    visitor_document: sanitizeString(cardValue || userId || 'Auto', 50),
     visitor_type: 'visitor',
-    apartment: 'N/A',
+    apartment: resident ? resident.apartment : 'N/A',
     purpose: 'Identificação Online',
     entry_time: new Date().toISOString(),
     auto_recognized: true,
     notes: sanitizeString(`Device: ${deviceId}, Online Mode`, 500)
   };
 
+  if (resident) {
+    entryData.resident_id = resident.id;
+    entryData.resident_name = resident.name;
+  }
+
   const { error } = await supabaseClient.from('access_entries').insert(entryData);
   if (error) {
     console.error('Error creating access entry from identification:', error);
+  } else {
+    console.log('Identification entry created', resident ? `(matched: ${resident.name})` : '(no match)');
   }
 }
 

@@ -649,7 +649,7 @@ export const Settings = () => {
                   Verificando permissões...
                 </p>
               </div>
-            ) : (
+            ) : !isIntegrationsUnlocked ? (
               <div className="p-6 bg-muted rounded-lg space-y-4">
                 <div className="flex items-center justify-center mb-4">
                   <Lock className="h-12 w-12 text-destructive" />
@@ -661,8 +661,7 @@ export const Settings = () => {
                   Entre em contato com um administrador do sistema para obter acesso.
                 </p>
               </div>
-            )}
-            {false && (
+            ) : (
               <>
                 <div className="flex items-center justify-between mb-4 p-3 bg-success/10 border border-success rounded-lg">
                   <span className="text-sm font-medium text-success">🔓 Acesso de administrador concedido</span>

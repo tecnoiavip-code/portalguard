@@ -649,7 +649,7 @@ export const Settings = () => {
                   Verificando permissões...
                 </p>
               </div>
-            ) : (
+            ) : !isIntegrationsUnlocked ? (
               <div className="p-6 bg-muted rounded-lg space-y-4">
                 <div className="flex items-center justify-center mb-4">
                   <Lock className="h-12 w-12 text-destructive" />
@@ -661,8 +661,7 @@ export const Settings = () => {
                   Entre em contato com um administrador do sistema para obter acesso.
                 </p>
               </div>
-            )}
-            {false && (
+            ) : (
               <>
                 <div className="flex items-center justify-between mb-4 p-3 bg-success/10 border border-success rounded-lg">
                   <span className="text-sm font-medium text-success">🔓 Acesso de administrador concedido</span>
@@ -735,13 +734,28 @@ export const Settings = () => {
                     </div>
                   )}
 
-                  <div className="mt-4 p-3 bg-primary/10 rounded-lg">
-                    <p className="text-xs font-semibold mb-1">URL do Webhook:</p>
-                    <code className="text-xs bg-background p-2 rounded block overflow-x-auto">
-                      https://kxdqffkkufgsizszchvw.supabase.co/functions/v1/controlid-webhook
-                    </code>
+                  <div className="mt-4 p-3 bg-primary/10 rounded-lg space-y-3">
+                    <p className="text-xs font-semibold mb-1">Configuração para o Dispositivo (Push Server):</p>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Hostname:</p>
+                      <code className="text-xs bg-background p-2 rounded block">kxdqffkkufgsizszchvw.supabase.co</code>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Porta:</p>
+                      <code className="text-xs bg-background p-2 rounded block">443</code>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Endpoint:</p>
+                      <code className="text-xs bg-background p-2 rounded block">/functions/v1/controlid-webhook/push</code>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">URL completa do Webhook:</p>
+                      <code className="text-xs bg-background p-2 rounded block overflow-x-auto">
+                        https://kxdqffkkufgsizszchvw.supabase.co/functions/v1/controlid-webhook
+                      </code>
+                    </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      Configure este endpoint no seu dispositivo Control iD para receber eventos automaticamente.
+                      Configure estes parâmetros no seu dispositivo Control iD para receber eventos automaticamente.
                     </p>
                   </div>
                 </div>

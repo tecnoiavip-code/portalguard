@@ -64,22 +64,8 @@ export const Settings = () => {
   const [isIntegrationsUnlocked, setIsIntegrationsUnlocked] = useState(false);
   const [isCheckingRole, setIsCheckingRole] = useState(true);
   
-  // Control iD config
-  const [controlIdName, setControlIdName] = useState('');
-  const [controlIdIp, setControlIdIp] = useState('');
-  const [controlIdPort, setControlIdPort] = useState('80');
-  const [controlIdDeviceId, setControlIdDeviceId] = useState('');
-  const [existingConfigs, setExistingConfigs] = useState<any[]>([]);
 
-  useEffect(() => {
-    checkAdminRole();
-  }, []);
 
-  useEffect(() => {
-    if (isIntegrationsUnlocked) {
-      loadControlIdConfigs();
-    }
-  }, [isIntegrationsUnlocked]);
 
   const checkAdminRole = async () => {
     setIsCheckingRole(true);

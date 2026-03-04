@@ -208,20 +208,20 @@ const ResidentAuthorizations = () => {
 
   return (
     <div className="space-y-5 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-foreground">Autorizações</h2>
           <p className="text-sm text-muted-foreground">Gerencie acessos de visitantes</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 w-full sm:w-auto">
           {/* Guest List Button */}
           <Dialog open={guestListOpen} onOpenChange={setGuestListOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" variant="outline" className="rounded-xl gap-1.5">
-                <Users className="h-4 w-4" />Lista de Convidados
+              <Button size="sm" variant="outline" className="rounded-xl gap-1.5 flex-1 sm:flex-initial text-xs sm:text-sm">
+                <Users className="h-4 w-4 shrink-0" /><span className="truncate">Lista de Convidados</span>
               </Button>
             </DialogTrigger>
-            <DialogContent className="rounded-2xl max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+            <DialogContent className="rounded-2xl max-h-[90vh] overflow-y-auto w-[95vw] max-w-lg" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
               <DialogHeader><DialogTitle>Lista de Convidados</DialogTitle></DialogHeader>
               <form onSubmit={handleGuestListSubmit} className="space-y-4">
                 <div className="space-y-3">
@@ -232,29 +232,27 @@ const ResidentAuthorizations = () => {
                     </Button>
                   </div>
                   {guests.map((guest, index) => (
-                    <div key={index} className="flex gap-2 items-start">
-                      <div className="flex-1 space-y-1">
+                    <div key={index} className="space-y-2 border border-border/50 rounded-xl p-2.5">
+                      <div className="flex items-center gap-2">
                         <Input
-                          className="rounded-xl text-sm"
+                          className="rounded-xl text-sm flex-1"
                           placeholder="Nome do convidado *"
                           value={guest.name}
                           onChange={(e) => updateGuest(index, 'name', e.target.value)}
                           required
                         />
+                        {guests.length > 1 && (
+                          <Button type="button" size="icon" variant="ghost" className="h-9 w-9 shrink-0 text-destructive hover:text-destructive" onClick={() => removeGuest(index)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
-                      <div className="flex-1 space-y-1">
-                        <Input
-                          className="rounded-xl text-sm"
-                          placeholder="Documento (opcional)"
-                          value={guest.document}
-                          onChange={(e) => updateGuest(index, 'document', e.target.value)}
-                        />
-                      </div>
-                      {guests.length > 1 && (
-                        <Button type="button" size="icon" variant="ghost" className="h-9 w-9 shrink-0 text-destructive hover:text-destructive" onClick={() => removeGuest(index)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
+                      <Input
+                        className="rounded-xl text-sm"
+                        placeholder="Documento (opcional)"
+                        value={guest.document}
+                        onChange={(e) => updateGuest(index, 'document', e.target.value)}
+                      />
                     </div>
                   ))}
                   <p className="text-xs text-muted-foreground">{guests.filter(g => g.name.trim()).length} convidado(s) adicionado(s)</p>
@@ -283,11 +281,11 @@ const ResidentAuthorizations = () => {
           {/* Single Authorization Button */}
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" className="rounded-xl gap-1.5">
-                <Plus className="h-4 w-4" />Nova
+              <Button size="sm" className="rounded-xl gap-1.5 flex-1 sm:flex-initial">
+                <Plus className="h-4 w-4 shrink-0" />Nova
               </Button>
             </DialogTrigger>
-            <DialogContent className="rounded-2xl" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+            <DialogContent className="rounded-2xl w-[95vw] max-w-lg" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
               <DialogHeader><DialogTitle>Autorizar Visitante</DialogTitle></DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
@@ -368,7 +366,7 @@ const ResidentAuthorizations = () => {
 
       {/* Detail Dialog */}
       <Dialog open={!!detailAuth} onOpenChange={(o) => { if (!o) setDetailAuth(null); }}>
-        <DialogContent className="rounded-2xl">
+        <DialogContent className="rounded-2xl w-[95vw] max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Shield className="h-5 w-5 text-primary" />

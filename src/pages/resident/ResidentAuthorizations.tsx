@@ -191,6 +191,15 @@ const ResidentAuthorizations = () => {
     }
   };
 
+  const handleDelete = async (id: string) => {
+    if (!residentId) return;
+    const { error } = await supabase.from('visitor_authorizations').delete().eq('id', id);
+    if (error) { toast.error('Erro ao excluir autorização'); return; }
+    toast.success('Autorização excluída!');
+    setDetailAuth(null);
+    await loadAuths(residentId);
+  };
+
   if (loading) return (
     <div className="flex justify-center py-12">
       <Clock className="h-6 w-6 animate-spin text-primary" />

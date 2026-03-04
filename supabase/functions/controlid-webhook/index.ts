@@ -480,7 +480,6 @@ async function processAccessLogs(supabaseClient: any, objectChanges: any[], devi
       const userId = sanitizeString(values.user_id, 100);
       const cardValue = sanitizeString(values.card_value, 100);
       const eventDesc = sanitizeString(values.event, 100);
-      const portalId = sanitizeString(values.portal_id, 50);
       const userName = extractUserName(values);
 
       let entryTime = new Date().toISOString();
@@ -493,46 +492,24 @@ async function processAccessLogs(supabaseClient: any, objectChanges: any[], devi
         } catch { /* use default */ }
       }
 
-      // Try to match resident by name or apartment-name pattern
       const displayName = userName || userId || cardValue || 'Desconhecido';
       const resident = await matchResident(supabaseClient, displayName);
 
-      const entryData: any = {
-        visitor_name: sanitizeString(resident ? resident.name : displayName, 200),
-        visitor_document: sanitizeString(cardValue || userId || 'Auto', 50),
-        visitor_type: 'visitor',
-        apartment: resident ? resident.apartment : 'N/A',
-        purpose: sanitizeString(`Evento: ${eventDesc || 'acesso'}`, 100),
-        entry_time: entryTime,
-        auto_recognized: true,
-        notes: sanitizeString(`Device: ${deviceId}, Portal: ${portalId}`, 500),
-      };
+      // Only create realtime_event for dashboard monitoring — NOT access_entries
+      await supabaseClient.from('realtime_events').insert({
+        type: 'entry',
+        description: sanitizeString(
+          resident
+            ? `Acesso reconhecido: ${resident.name} - Apto ${resident.apartment}`
+            : `Acesso dispositivo: ${displayName} - Device ${deviceId}`,
+          200
+        ),
+        priority: resident ? 'low' : 'medium'
+      });
 
-      if (resident) {
-        entryData.resident_id = resident.id;
-        entryData.resident_name = resident.name;
-      }
-
-      const { error } = await supabaseClient.from('access_entries').insert(entryData);
-
-      if (error) {
-        console.error('Error creating access entry:', error);
-      } else {
-        console.log('Access entry created from Control iD event', resident ? `(matched: ${resident.name})` : '(no match)');
-        await supabaseClient.from('realtime_events').insert({
-          type: 'entry',
-          description: sanitizeString(
-            resident
-              ? `Acesso reconhecido: ${resident.name} - Apto ${resident.apartment}`
-              : `Acesso automático - Device ${deviceId}`,
-            200
-          ),
-          priority: resident ? 'low' : 'medium'
-        });
-      }
+      console.log('Realtime event created from Control iD', resident ? `(matched: ${resident.name})` : '(no match)');
     }
 
-    // Also process user sync events from device (users table changes)
     if (change.object === 'users' && (change.type === 'inserted' || change.type === 'updated')) {
       console.log('Control iD user sync event:', change.values?.name || change.values?.id);
     }
@@ -547,31 +524,21 @@ async function processIdentificationEvent(supabaseClient: any, payload: any, dev
   const userName = extractUserName(payload);
   const displayName = userName || userId || cardValue || 'Desconhecido';
 
-  // Try to match resident
   const resident = await matchResident(supabaseClient, displayName);
 
-  const entryData: any = {
-    visitor_name: sanitizeString(resident ? resident.name : displayName, 200),
-    visitor_document: sanitizeString(cardValue || userId || 'Auto', 50),
-    visitor_type: 'visitor',
-    apartment: resident ? resident.apartment : 'N/A',
-    purpose: 'Identificação Online',
-    entry_time: new Date().toISOString(),
-    auto_recognized: true,
-    notes: sanitizeString(`Device: ${deviceId}, Online Mode`, 500)
-  };
+  // Only create realtime_event for dashboard monitoring — NOT access_entries
+  await supabaseClient.from('realtime_events').insert({
+    type: 'entry',
+    description: sanitizeString(
+      resident
+        ? `Acesso reconhecido: ${resident.name} - Apto ${resident.apartment}`
+        : `Identificação: ${displayName} - Device ${deviceId}`,
+      200
+    ),
+    priority: resident ? 'low' : 'medium'
+  });
 
-  if (resident) {
-    entryData.resident_id = resident.id;
-    entryData.resident_name = resident.name;
-  }
-
-  const { error } = await supabaseClient.from('access_entries').insert(entryData);
-  if (error) {
-    console.error('Error creating access entry from identification:', error);
-  } else {
-    console.log('Identification entry created', resident ? `(matched: ${resident.name})` : '(no match)');
-  }
+  console.log('Realtime event created from identification', resident ? `(matched: ${resident.name})` : '(no match)');
 }
 
 async function updateDeviceStatus(supabaseClient: any, deviceId: string, reqIp?: string) {

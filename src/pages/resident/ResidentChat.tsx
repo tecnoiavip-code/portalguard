@@ -111,7 +111,7 @@ const ResidentChat = () => {
       </div>
       
       <div className="flex-1 overflow-hidden bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl">
-        <div ref={scrollRef} className="h-full overflow-y-auto p-4 space-y-3">
+        <div ref={scrollRef} className="h-full overflow-y-auto p-4 space-y-3 flex flex-col justify-end">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <MessageCircle className="h-12 w-12 text-muted-foreground/30 mb-3" />

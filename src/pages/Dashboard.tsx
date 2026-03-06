@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Users, Mail, UserCheck, Clock, Activity, Radio, CheckCheck, User } from 'lucide-react';
+import { Users, Mail, UserCheck, Clock, Activity, Radio, CheckCheck, User, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { StatsCard } from '@/components/StatsCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -249,42 +249,72 @@ export const Dashboard = () => {
                   const fullTimeStr = eventTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
                   const dateStr = eventTime.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
                   
+                  const isAccess = log.event_type === 'dao' || log.event_type === 'access_photo';
+                  const isRecognized = isAccess && !!userName;
+                  const isUnidentified = isAccess && !userName;
+                  const isSystemEvent = !isAccess;
+
                   const displayName = userName || (log.event_type === 'device_is_alive' ? 'Dispositivo online' : log.event_type === 'door' ? 'Evento de porta' : 'Acesso pela interface web');
                   const displayLabel = apartment && userName ? `${apartment} - ${userName.toUpperCase()}` : displayName.toUpperCase();
-                  const isAccess = log.event_type === 'dao' || log.event_type === 'access_photo';
+
+                  // Visual config based on recognition status
+                  const borderColor = isRecognized ? 'border-success' : isUnidentified ? 'border-warning' : 'border-muted';
+                  const bgHover = isRecognized ? 'hover:bg-success/5' : isUnidentified ? 'hover:bg-warning/5' : 'hover:bg-muted/40';
+                  const avatarBg = isRecognized ? 'bg-success/10 text-success' : isUnidentified ? 'bg-warning/10 text-warning' : 'bg-muted text-muted-foreground';
+                  const nameColor = isRecognized ? 'text-foreground' : isUnidentified ? 'text-warning' : 'text-muted-foreground';
+                  const timeColor = isRecognized ? 'text-success' : isUnidentified ? 'text-warning' : 'text-muted-foreground';
 
                   return (
                     <div
                       key={log.id}
-                      className="flex items-start gap-3 py-3 px-2 relative z-10 group hover:bg-muted/40 rounded-lg transition-colors"
+                      className={`flex items-start gap-3 py-3 px-2 relative z-10 group rounded-lg transition-colors ${bgHover}`}
                     >
                       {/* Date & Time */}
                       <div className="flex-shrink-0 w-[40px] text-right pt-2">
                         <p className="text-[10px] text-muted-foreground leading-none">{dateStr}</p>
-                        <p className={`text-lg font-bold leading-tight ${isAccess ? 'text-primary' : 'text-muted-foreground'}`}>
+                        <p className={`text-lg font-bold leading-tight ${timeColor}`}>
                           {timeStr}
                         </p>
                       </div>
 
                       {/* Avatar */}
-                      <div className="flex-shrink-0 z-10">
-                        <Avatar className={`h-16 w-16 border-2 ${isAccess ? 'border-primary' : 'border-muted'}`}>
+                      <div className="flex-shrink-0 z-10 relative">
+                        <Avatar className={`h-16 w-16 border-2 ${borderColor}`}>
                           {photoUrl ? (
                             <AvatarImage src={photoUrl} alt={displayName} className="object-cover" />
                           ) : null}
-                          <AvatarFallback className={`text-base font-bold ${isAccess ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                          <AvatarFallback className={`text-base font-bold ${avatarBg}`}>
                             {userName ? userName.substring(0, 2).toUpperCase() : <User className="h-5 w-5" />}
                           </AvatarFallback>
                         </Avatar>
+                        {/* Recognition badge */}
+                        {isAccess && (
+                          <div className={`absolute -bottom-1 -right-1 rounded-full p-0.5 ${isRecognized ? 'bg-success text-success-foreground' : 'bg-warning text-warning-foreground'}`}>
+                            {isRecognized ? <ShieldCheck className="h-3.5 w-3.5" /> : <ShieldAlert className="h-3.5 w-3.5" />}
+                          </div>
+                        )}
                       </div>
 
                       {/* Info */}
                       <div className="flex-1 min-w-0 pt-1">
-                        <p className={`text-sm font-bold truncate leading-tight ${isAccess ? 'text-foreground' : 'text-muted-foreground'}`}>
-                          {displayLabel}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className={`text-sm font-bold truncate leading-tight ${nameColor}`}>
+                            {displayLabel}
+                          </p>
+                          {isAccess && (
+                            <Badge variant={isRecognized ? 'default' : 'secondary'} className={`text-[9px] px-1.5 py-0 shrink-0 ${isRecognized ? 'bg-success/15 text-success border-success/30 hover:bg-success/20' : 'bg-warning/15 text-warning border-warning/30 hover:bg-warning/20'}`}>
+                              {isRecognized ? 'Identificado' : 'Não identificado'}
+                            </Badge>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1 mt-1">
-                          <CheckCheck className="h-3 w-3 text-success flex-shrink-0" />
+                          {isRecognized ? (
+                            <CheckCheck className="h-3 w-3 text-success flex-shrink-0" />
+                          ) : isUnidentified ? (
+                            <ShieldAlert className="h-3 w-3 text-warning flex-shrink-0" />
+                          ) : (
+                            <Radio className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                          )}
                           <p className="text-[11px] text-muted-foreground truncate">
                             {location}
                           </p>

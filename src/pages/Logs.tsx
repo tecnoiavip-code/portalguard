@@ -22,6 +22,8 @@ export const Logs = () => {
   const { entries: allEntries } = useAccessEntries();
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [blockDialog, setBlockDialog] = useState<{ open: boolean; name: string; document: string }>({ open: false, name: '', document: '' });
   const [blockReason, setBlockReason] = useState('');

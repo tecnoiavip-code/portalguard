@@ -22,6 +22,8 @@ export const Logs = () => {
   const { entries: allEntries } = useAccessEntries();
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [blockDialog, setBlockDialog] = useState<{ open: boolean; name: string; document: string }>({ open: false, name: '', document: '' });
   const [blockReason, setBlockReason] = useState('');
@@ -33,13 +35,19 @@ export const Logs = () => {
     (a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime()
   );
 
-  const filteredEntries = entries.filter(
-    (entry) =>
+  const filteredEntries = entries.filter((entry) => {
+    const matchesSearch =
       entry.visitorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       entry.residentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       entry.apartment.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      entry.visitorDocument.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+      entry.visitorDocument.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const entryDate = new Date(entry.entryTime);
+    const matchesDateFrom = dateFrom ? entryDate >= new Date(dateFrom + 'T00:00:00') : true;
+    const matchesDateTo = dateTo ? entryDate <= new Date(dateTo + 'T23:59:59') : true;
+
+    return matchesSearch && matchesDateFrom && matchesDateTo;
+  });
 
   const totalPages = Math.ceil(filteredEntries.length / itemsPerPage);
   const paginatedEntries = filteredEntries.slice(
@@ -132,7 +140,7 @@ export const Logs = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="mb-6">
+          <div className="mb-6 space-y-3">
             <div className="relative">
               <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
               <Input
@@ -144,6 +152,31 @@ export const Logs = () => {
                 }}
                 className="pl-10"
               />
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-muted-foreground whitespace-nowrap">De:</label>
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => { setDateFrom(e.target.value); setCurrentPage(1); }}
+                  className="w-auto"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-muted-foreground whitespace-nowrap">Até:</label>
+                <Input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => { setDateTo(e.target.value); setCurrentPage(1); }}
+                  className="w-auto"
+                />
+              </div>
+              {(dateFrom || dateTo) && (
+                <Button variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); setCurrentPage(1); }}>
+                  Limpar datas
+                </Button>
+              )}
             </div>
           </div>
 

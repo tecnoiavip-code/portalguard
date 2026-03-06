@@ -761,17 +761,31 @@ export const MailManagement = () => {
                       />
                     </PaginationItem>
 
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                      <PaginationItem key={page}>
-                        <PaginationLink
-                          onClick={() => setCurrentPage(page)}
-                          isActive={currentPage === page}
-                          className="cursor-pointer"
-                        >
-                          {page}
-                        </PaginationLink>
-                      </PaginationItem>
-                    ))}
+                    {(() => {
+                      const pages: (number | 'ellipsis')[] = [];
+                      if (totalPages <= 5) {
+                        for (let i = 1; i <= totalPages; i++) pages.push(i);
+                      } else {
+                        pages.push(1);
+                        if (currentPage > 3) pages.push('ellipsis');
+                        for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) pages.push(i);
+                        if (currentPage < totalPages - 2) pages.push('ellipsis');
+                        pages.push(totalPages);
+                      }
+                      return pages.map((page, idx) =>
+                        page === 'ellipsis' ? (
+                          <PaginationItem key={`ellipsis-${idx}`}>
+                            <span className="flex h-9 w-9 items-center justify-center text-muted-foreground">…</span>
+                          </PaginationItem>
+                        ) : (
+                          <PaginationItem key={page}>
+                            <PaginationLink onClick={() => setCurrentPage(page)} isActive={currentPage === page} className="cursor-pointer">
+                              {page}
+                            </PaginationLink>
+                          </PaginationItem>
+                        )
+                      );
+                    })()}
 
                     <PaginationItem>
                       <PaginationNext

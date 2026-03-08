@@ -205,56 +205,62 @@ const ResidentAuthorizations = () => {
                 <Users className="h-4 w-4 shrink-0" /><span className="truncate">Lista de Convidados</span>
               </Button>
             </DialogTrigger>
-            <DialogContent className="rounded-2xl max-h-[90vh] overflow-y-auto w-[95vw] max-w-lg" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
-              <DialogHeader><DialogTitle>Lista de Convidados</DialogTitle></DialogHeader>
-              <form onSubmit={handleGuestListSubmit} className="space-y-4">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm font-semibold">Convidados</Label>
-                    <Button type="button" size="sm" variant="ghost" className="rounded-xl gap-1 text-xs h-7" onClick={addGuest}>
-                      <Plus className="h-3 w-3" />Adicionar
-                    </Button>
-                  </div>
-                  {guests.map((guest, index) => (
-                    <div key={index} className="space-y-2 border border-border/50 rounded-xl p-2.5">
-                      <div className="flex items-center gap-2">
-                        <Input
-                          className="rounded-xl text-sm flex-1"
-                          placeholder="Nome do convidado *"
-                          value={guest.name}
-                          onChange={(e) => updateGuest(index, 'name', e.target.value)}
-                          required
-                        />
-                        {guests.length > 1 && (
-                          <Button type="button" size="icon" variant="ghost" className="h-9 w-9 shrink-0 text-destructive hover:text-destructive" onClick={() => removeGuest(index)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
-                      <Input
-                        className="rounded-xl text-sm"
-                        placeholder="Documento (opcional)"
-                        value={guest.document}
-                        onChange={(e) => updateGuest(index, 'document', e.target.value)}
-                      />
+            <DialogContent className="rounded-2xl w-[95vw] max-w-lg max-h-[90vh] flex flex-col p-0" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+              <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
+                <DialogTitle>Lista de Convidados</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleGuestListSubmit} className="flex flex-col flex-1 overflow-hidden">
+                <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-2">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-semibold">Convidados</Label>
+                      <Button type="button" size="sm" variant="ghost" className="rounded-xl gap-1 text-xs h-7" onClick={addGuest}>
+                        <Plus className="h-3 w-3" />Adicionar
+                      </Button>
                     </div>
-                  ))}
-                  <p className="text-xs text-muted-foreground">{guests.filter(g => g.name.trim()).length} convidado(s) adicionado(s)</p>
-                </div>
+                    <div className="space-y-2">
+                      {guests.map((guest, index) => (
+                        <div key={index} className="border border-border/50 rounded-xl p-2.5 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Input
+                              className="rounded-xl text-sm flex-1"
+                              placeholder="Nome do convidado *"
+                              value={guest.name}
+                              onChange={(e) => updateGuest(index, 'name', e.target.value)}
+                              required
+                            />
+                            {guests.length > 1 && (
+                              <Button type="button" size="icon" variant="ghost" className="h-9 w-9 shrink-0 text-destructive hover:text-destructive" onClick={() => removeGuest(index)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                          <Input
+                            className="rounded-xl text-sm"
+                            placeholder="Documento (opcional)"
+                            value={guest.document}
+                            onChange={(e) => updateGuest(index, 'document', e.target.value)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{guests.filter(g => g.name.trim()).length} convidado(s) adicionado(s)</p>
+                  </div>
 
-                <div className="space-y-2">
-                  <Label>Título da lista *</Label>
-                  <Input className="rounded-xl" placeholder="Ex: Aniversário, Churrasco..." value={guestListForm.title} onChange={(e) => setGuestListForm({ ...guestListForm, title: e.target.value })} required />
+                  <div className="space-y-2">
+                    <Label>Título da lista *</Label>
+                    <Input className="rounded-xl" placeholder="Ex: Aniversário, Churrasco..." value={guestListForm.title} onChange={(e) => setGuestListForm({ ...guestListForm, title: e.target.value })} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Data autorizada *</Label>
+                    <Input className="rounded-xl" type="date" value={guestListForm.authorized_date} onChange={(e) => setGuestListForm({ ...guestListForm, authorized_date: e.target.value })} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Placa do veículo (opcional)</Label>
+                    <Input className="rounded-xl" value={guestListForm.vehicle_plate} onChange={(e) => setGuestListForm({ ...guestListForm, vehicle_plate: e.target.value })} />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Data autorizada *</Label>
-                  <Input className="rounded-xl" type="date" value={guestListForm.authorized_date} onChange={(e) => setGuestListForm({ ...guestListForm, authorized_date: e.target.value })} required />
-                </div>
-                <div className="space-y-2">
-                  <Label>Placa do veículo (opcional)</Label>
-                  <Input className="rounded-xl" value={guestListForm.vehicle_plate} onChange={(e) => setGuestListForm({ ...guestListForm, vehicle_plate: e.target.value })} />
-                </div>
-                <div className="flex space-x-2">
+                <div className="flex space-x-2 px-6 py-4 border-t border-border/50 shrink-0">
                   <Button type="submit" className="flex-1 rounded-xl">Enviar Lista à Portaria</Button>
                   <Button type="button" variant="secondary" className="rounded-xl" onClick={() => { setGuestListOpen(false); setGuests([{ name: '', document: '' }]); setGuestListForm({ title: '', authorized_date: '', vehicle_plate: '' }); }}>Cancelar</Button>
                 </div>

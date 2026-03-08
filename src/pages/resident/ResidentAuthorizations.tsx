@@ -110,19 +110,11 @@ const ResidentAuthorizations = () => {
     setForm({ visitor_name: '', visitor_document: '', authorized_date: '', authorized_until: '', purpose: '', vehicle_plate: '' });
     await loadAuths(residentId);
 
-    const { data: staffRoles } = await supabase
-      .from('user_roles')
-      .select('user_id')
-      .in('role', ['admin', 'receptionist', 'security_guard'] as any);
-    if (staffRoles) {
-      const notifications = staffRoles.map((r: any) => ({
-        user_id: r.user_id,
-        title: 'Nova autorização de visitante',
-        body: `Morador autorizou a entrada de ${form.visitor_name}`,
-        type: 'authorization',
-      }));
-      await supabase.from('notifications').insert(notifications);
-    }
+    await supabase.rpc('notify_all_staff', {
+      _title: 'Nova autorização de visitante',
+      _body: `Morador autorizou a entrada de ${form.visitor_name}`,
+      _type: 'authorization',
+    });
   };
 
   const addGuest = () => {

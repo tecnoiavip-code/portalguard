@@ -885,6 +885,15 @@ export type Database = {
         }
         Returns: boolean
       }
+      notify_all_staff: {
+        Args: {
+          _body: string
+          _related_id?: string
+          _title: string
+          _type: string
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       app_role: "admin" | "security_guard" | "receptionist" | "resident"

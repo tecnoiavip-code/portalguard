@@ -167,20 +167,12 @@ const ResidentAuthorizations = () => {
     await loadAuths(residentId);
 
     // Notify staff
-    const { data: staffRoles } = await supabase
-      .from('user_roles')
-      .select('user_id')
-      .in('role', ['admin', 'receptionist', 'security_guard'] as any);
-    if (staffRoles) {
-      const names = validGuests.map(g => g.name.trim()).join(', ');
-      const notifications = staffRoles.map((r: any) => ({
-        user_id: r.user_id,
-        title: 'Nova lista de convidados',
-        body: `Morador autorizou ${validGuests.length} convidado(s): ${names.substring(0, 80)}`,
-        type: 'authorization',
-      }));
-      await supabase.from('notifications').insert(notifications);
-    }
+    const names = validGuests.map(g => g.name.trim()).join(', ');
+    await supabase.rpc('notify_all_staff', {
+      _title: 'Nova lista de convidados',
+      _body: `Morador autorizou ${validGuests.length} convidado(s): ${names.substring(0, 80)}`,
+      _type: 'authorization',
+    });
   };
 
   const handleDelete = async (id: string) => {

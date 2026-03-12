@@ -16,6 +16,20 @@ const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 const RATE_LIMIT_WINDOW = 60000;
 const MAX_REQUESTS_PER_WINDOW = 200;
 
+// Throttle heartbeat logging: only log once per device per interval
+const heartbeatLogMap = new Map<string, number>();
+const HEARTBEAT_LOG_INTERVAL = 300000; // 5 minutes
+
+const shouldLogHeartbeat = (deviceId: string): boolean => {
+  const now = Date.now();
+  const last = heartbeatLogMap.get(deviceId) || 0;
+  if (now - last >= HEARTBEAT_LOG_INTERVAL) {
+    heartbeatLogMap.set(deviceId, now);
+    return true;
+  }
+  return false;
+};
+
 const checkRateLimit = (deviceId: string): boolean => {
   const now = Date.now();
   const limit = rateLimitMap.get(deviceId);
@@ -166,13 +180,16 @@ Deno.serve(async (req) => {
     const eventType = detectEventType(url, payload);
     const deviceId = extractDeviceId(url, payload, req);
 
-    console.log('Control iD webhook received:', {
-      method: req.method,
-      path: url.pathname,
-      event_type: eventType,
-      device_id: deviceId || 'unknown',
-      timestamp: new Date().toISOString()
-    });
+    // Only log non-heartbeat events to reduce noise
+    if (eventType !== 'device_is_alive') {
+      console.log('Control iD webhook received:', {
+        method: req.method,
+        path: url.pathname,
+        event_type: eventType,
+        device_id: deviceId || 'unknown',
+        timestamp: new Date().toISOString()
+      });
+    }
 
     // ===== PUSH MODE: Device polls for commands (GET /push) =====
     // This is how iDSecure works: device sends GET /push periodically,
@@ -412,25 +429,25 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ===== Handle device_is_alive.fcgi (Online mode) =====
-    if (eventType === 'device_is_alive' && url.pathname.includes('.fcgi')) {
-      console.log('Online mode device_is_alive from:', deviceId);
-      
+    // ===== Handle device_is_alive.fcgi (Push/Online mode heartbeat) =====
+    if (eventType === 'device_is_alive') {
       if (deviceId) {
         await updateDeviceStatus(supabaseClient, deviceId);
-        await supabaseClient.from('controlid_logs').insert({
-          device_id: deviceId || 'unknown',
-          event_type: 'device_is_alive',
-          payload: payload,
-          processed: true
-        });
+
+        // Only log heartbeat every 5 minutes to avoid flooding
+        if (shouldLogHeartbeat(deviceId)) {
+          await supabaseClient.from('controlid_logs').insert({
+            device_id: deviceId,
+            event_type: 'device_is_alive',
+            payload: { access_logs: payload?.access_logs || 0 },
+            processed: true
+          });
+          console.log('Heartbeat logged for device:', deviceId);
+        }
       }
 
-      const accessLogs = payload?.access_logs || 0;
-      return new Response(
-        JSON.stringify({ connected: true, access_logs: accessLogs }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      // Push mode: return empty 200 (iDSecure protocol)
+      return new Response('', { status: 200, headers: corsHeaders });
     }
 
     // For events without device_id
@@ -458,13 +475,9 @@ Deno.serve(async (req) => {
       console.error('Error saving Control iD log:', logError);
     }
 
-    // Process specific events
+    // Process specific events (device_is_alive already handled above with early return)
     if (eventType === 'dao' && payload.object_changes) {
       await processAccessLogs(supabaseClient, payload.object_changes, effectiveDeviceId);
-    } else if (eventType === 'device_is_alive') {
-      if (effectiveDeviceId !== 'unknown-device') {
-        await updateDeviceStatus(supabaseClient, effectiveDeviceId);
-      }
     } else if (eventType === 'identification_event') {
       await processIdentificationEvent(supabaseClient, payload, effectiveDeviceId);
     }

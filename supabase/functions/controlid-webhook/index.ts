@@ -15,31 +15,32 @@ const parseFormEncodedPayload = (raw: string): Record<string, string> => {
   const params = new URLSearchParams(raw);
   const entries = Array.from(params.entries()).filter(([key]) => key && key.trim().length > 0);
 
-  if (!entries.length) return {};
+  if (entries.length > 0) {
+    return Object.fromEntries(
+      entries.map(([key, value]) => [sanitizeString(key, 100), sanitizeString(value, 500)])
+    );
+  }
 
-  return Object.fromEntries(
-    entries.map(([key, value]) => [sanitizeString(key, 100), sanitizeString(value, 500)])
-  );
+  // Fallback parser for non-standard payloads (plain text key=value&key2=value2)
+  if (!raw.includes('=')) return {};
+
+  const result: Record<string, string> = {};
+  for (const pair of raw.split('&')) {
+    const [rawKey, ...rawValueParts] = pair.split('=');
+    if (!rawKey) continue;
+
+    const key = sanitizeString(decodeURIComponent(rawKey.replace(/\+/g, ' ')), 100);
+    const value = sanitizeString(decodeURIComponent(rawValueParts.join('=').replace(/\+/g, ' ')), 500);
+    if (key) result[key] = value;
+  }
+
+  return result;
 };
 
 // Rate limiting map
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 const RATE_LIMIT_WINDOW = 60000;
 const MAX_REQUESTS_PER_WINDOW = 200;
-
-// Throttle heartbeat logging: only log once per device per interval
-const heartbeatLogMap = new Map<string, number>();
-const HEARTBEAT_LOG_INTERVAL = 300000; // 5 minutes
-
-const shouldLogHeartbeat = (deviceId: string): boolean => {
-  const now = Date.now();
-  const last = heartbeatLogMap.get(deviceId) || 0;
-  if (now - last >= HEARTBEAT_LOG_INTERVAL) {
-    heartbeatLogMap.set(deviceId, now);
-    return true;
-  }
-  return false;
-};
 
 const checkRateLimit = (deviceId: string): boolean => {
   const now = Date.now();
@@ -112,6 +113,9 @@ const detectEventType = (url: URL, payload: any): string => {
   if (path.includes('device_is_alive.fcgi') || path.includes('/device_is_alive')) return 'device_is_alive';
   if (path.includes('identification_event.fcgi') || path.includes('new_user_identified.fcgi')) return 'identification_event';
   if (path.includes('session_is_valid.fcgi')) return 'session_is_valid';
+
+  // Some devices send heartbeat as POST /push with access_logs in payload
+  if (path.includes('/push') && payload?.access_logs !== undefined) return 'device_is_alive';
 
   // Generic push polling route
   if (path.endsWith('/push') || (path.includes('/push') && !path.includes('.fcgi'))) {
@@ -209,11 +213,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    // ===== PUSH MODE: Device polls for commands (GET /push) =====
-    // This is how iDSecure works: device sends GET /push periodically,
-    // server responds with command or empty. Device executes and POST /push/result.
-    if (eventType === 'push_request' && req.method === 'GET') {
-      console.log('Push poll from device:', deviceId);
+    // ===== PUSH MODE: Device polls for commands (GET/POST /push) =====
+    // Some models send POST /push with access_logs as heartbeat signal.
+    if (eventType === 'push_request' && (req.method === 'GET' || req.method === 'POST')) {
+      if (deviceId) {
+        await updateDeviceStatus(supabaseClient, deviceId);
+      }
 
       // Fetch oldest pending command from DB queue
       const { data: pendingCmd, error: fetchErr } = await supabaseClient
@@ -230,20 +235,18 @@ Deno.serve(async (req) => {
       }
 
       if (pendingCmd) {
-        // Mark as executing
         await supabaseClient
           .from('push_command_queue')
           .update({ status: 'executing', executed_at: new Date().toISOString() })
           .eq('id', pendingCmd.id);
 
-        console.log('Sending push command to device:', deviceId, pendingCmd.command);
         return new Response(
           JSON.stringify(pendingCmd.command),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      // No pending commands - return empty (iDSecure protocol)
+      // No pending commands - return empty acknowledgement
       return new Response('', { status: 200, headers: corsHeaders });
     }
 
@@ -447,24 +450,13 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ===== Handle device_is_alive.fcgi (Push/Online mode heartbeat) =====
+    // ===== Handle device_is_alive.fcgi and POST /push heartbeat =====
     if (eventType === 'device_is_alive') {
       if (deviceId) {
         await updateDeviceStatus(supabaseClient, deviceId);
-
-        // Only log heartbeat every 5 minutes to avoid flooding
-        if (shouldLogHeartbeat(deviceId)) {
-          await supabaseClient.from('controlid_logs').insert({
-            device_id: deviceId,
-            event_type: 'device_is_alive',
-            payload: { access_logs: payload?.access_logs || 0 },
-            processed: true
-          });
-          console.log('Heartbeat logged for device:', deviceId);
-        }
       }
 
-      // Push mode: return empty 200 (iDSecure protocol)
+      // Heartbeat must not create access noise; only acknowledge
       return new Response('', { status: 200, headers: corsHeaders });
     }
 

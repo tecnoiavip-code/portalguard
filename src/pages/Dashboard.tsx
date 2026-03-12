@@ -271,7 +271,9 @@ export const Dashboard = () => {
                       if (!apartment) apartment = matchedResident.apartment;
                     }
                   }
-                  const location = changes.portal_name || p.portal_name || p.location || 'area interna condomínio';
+                  // Resolve device name from controlid_config
+                  const rawLocation = changes.portal_name || p.portal_name || p.location || '';
+                  const location = rawLocation || deviceNames[log.device_id] || deviceNames[log.device_id?.toLowerCase()] || log.device_id || 'Dispositivo desconhecido';
                   
                   const eventTime = new Date(log.received_at);
                   const timeStr = eventTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });

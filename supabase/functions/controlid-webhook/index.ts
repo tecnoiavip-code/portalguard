@@ -607,30 +607,6 @@ async function processAccessLogs(supabaseClient: any, objectChanges: any[], devi
   }
 }
 
-async function processIdentificationEvent(supabaseClient: any, payload: any, deviceId: string) {
-  console.log('Processing online identification event from:', deviceId);
-
-  const userId = sanitizeString(payload.user_id, 100);
-  const cardValue = sanitizeString(payload.card, 100);
-  const userName = extractUserName(payload);
-  const displayName = userName || userId || cardValue || 'Desconhecido';
-
-  const resident = await matchResident(supabaseClient, displayName);
-
-  await supabaseClient.from('realtime_events').insert({
-    type: 'entry',
-    description: sanitizeString(
-      resident
-        ? `Acesso reconhecido: ${resident.name} - Apto ${resident.apartment}`
-        : `Identificação: ${displayName} - Device ${deviceId}`,
-      200
-    ),
-    priority: resident ? 'low' : 'medium'
-  });
-
-  console.log('Realtime event created from identification', resident ? `(matched: ${resident.name})` : '(no match)');
-}
-
 async function updateDeviceStatus(supabaseClient: any, deviceId: string) {
   console.log('Updating device status - alive:', deviceId);
   const now = new Date().toISOString();

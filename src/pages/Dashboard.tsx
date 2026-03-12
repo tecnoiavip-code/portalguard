@@ -53,7 +53,10 @@ export const Dashboard = () => {
         schema: 'public',
         table: 'controlid_logs',
       }, (payload) => {
-        setControlidLogs(prev => [payload.new as ControlidLog, ...prev].slice(0, 50));
+        const newLog = payload.new as ControlidLog;
+        if (newLog.event_type === 'dao' || newLog.event_type === 'access_photo') {
+          setControlidLogs(prev => [newLog, ...prev].slice(0, 50));
+        }
       })
       .subscribe();
 

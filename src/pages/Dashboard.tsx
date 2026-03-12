@@ -46,6 +46,19 @@ export const Dashboard = () => {
   useEffect(() => {
     loadStats();
     loadControlidLogs();
+    // Load device names from controlid_config
+    supabase.from('controlid_config').select('device_id, device_name, device_ip').then(({ data }) => {
+      if (data) {
+        const map: Record<string, string> = {};
+        data.forEach(d => {
+          if (d.device_id) map[d.device_id] = d.device_name;
+          if (d.device_ip) map[d.device_ip] = d.device_name;
+          // Also map by name lowercase for fallback
+          map[d.device_name.toLowerCase()] = d.device_name;
+        });
+        setDeviceNames(map);
+      }
+    });
     const interval = setInterval(loadStats, 30000);
     const channel = supabase
       .channel('controlid-realtime')

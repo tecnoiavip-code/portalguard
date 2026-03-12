@@ -11,6 +11,17 @@ const sanitizeString = (val: any, maxLength = 255): string => {
   return String(val).trim().substring(0, maxLength);
 };
 
+const parseFormEncodedPayload = (raw: string): Record<string, string> => {
+  const params = new URLSearchParams(raw);
+  const entries = Array.from(params.entries()).filter(([key]) => key && key.trim().length > 0);
+
+  if (!entries.length) return {};
+
+  return Object.fromEntries(
+    entries.map(([key, value]) => [sanitizeString(key, 100), sanitizeString(value, 500)])
+  );
+};
+
 // Rate limiting map
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 const RATE_LIMIT_WINDOW = 60000;
@@ -171,14 +182,21 @@ Deno.serve(async (req) => {
         try {
           payload = JSON.parse(rawPayload);
         } catch {
-          console.log('Non-JSON payload received, treating as raw data');
-          payload = { raw_data: rawPayload.substring(0, 1000) };
+          const formPayload = parseFormEncodedPayload(rawPayload);
+
+          if (Object.keys(formPayload).length > 0) {
+            payload = formPayload;
+          } else {
+            console.log('Non-JSON payload received, treating as raw data');
+            payload = { raw_data: rawPayload.substring(0, 1000) };
+          }
         }
       }
     }
 
     const eventType = detectEventType(url, payload);
     const deviceId = extractDeviceId(url, payload, req);
+    const isFcgiCallback = url.pathname.toLowerCase().includes('.fcgi');
 
     // Only log non-heartbeat events to reduce noise
     if (eventType !== 'device_is_alive') {
@@ -478,8 +496,11 @@ Deno.serve(async (req) => {
     // Process specific events (device_is_alive already handled above with early return)
     if (eventType === 'dao' && payload.object_changes) {
       await processAccessLogs(supabaseClient, payload.object_changes, effectiveDeviceId);
-    } else if (eventType === 'identification_event') {
-      await processIdentificationEvent(supabaseClient, payload, effectiveDeviceId);
+    }
+
+    // Control iD .fcgi callbacks expect empty 200 acknowledgements
+    if (isFcgiCallback) {
+      return new Response('', { status: 200, headers: corsHeaders });
     }
 
     return new Response(
@@ -584,30 +605,6 @@ async function processAccessLogs(supabaseClient: any, objectChanges: any[], devi
       console.log('Control iD user sync event:', change.values?.name || change.values?.id);
     }
   }
-}
-
-async function processIdentificationEvent(supabaseClient: any, payload: any, deviceId: string) {
-  console.log('Processing online identification event from:', deviceId);
-
-  const userId = sanitizeString(payload.user_id, 100);
-  const cardValue = sanitizeString(payload.card, 100);
-  const userName = extractUserName(payload);
-  const displayName = userName || userId || cardValue || 'Desconhecido';
-
-  const resident = await matchResident(supabaseClient, displayName);
-
-  await supabaseClient.from('realtime_events').insert({
-    type: 'entry',
-    description: sanitizeString(
-      resident
-        ? `Acesso reconhecido: ${resident.name} - Apto ${resident.apartment}`
-        : `Identificação: ${displayName} - Device ${deviceId}`,
-      200
-    ),
-    priority: resident ? 'low' : 'medium'
-  });
-
-  console.log('Realtime event created from identification', resident ? `(matched: ${resident.name})` : '(no match)');
 }
 
 async function updateDeviceStatus(supabaseClient: any, deviceId: string) {

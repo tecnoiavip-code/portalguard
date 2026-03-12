@@ -11,6 +11,17 @@ const sanitizeString = (val: any, maxLength = 255): string => {
   return String(val).trim().substring(0, maxLength);
 };
 
+const parseFormEncodedPayload = (raw: string): Record<string, string> => {
+  const params = new URLSearchParams(raw);
+  const entries = Array.from(params.entries()).filter(([key]) => key && key.trim().length > 0);
+
+  if (!entries.length) return {};
+
+  return Object.fromEntries(
+    entries.map(([key, value]) => [sanitizeString(key, 100), sanitizeString(value, 500)])
+  );
+};
+
 // Rate limiting map
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 const RATE_LIMIT_WINDOW = 60000;

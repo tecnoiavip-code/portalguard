@@ -51,15 +51,29 @@ export const Dashboard = () => {
     loadStats();
     loadControlidLogs();
     // Load device names from devices table only (registered in project)
-    supabase.from('devices').select('id, name, serial_number, ip_address').then(({ data }) => {
+    supabase.from('devices').select('id, name, serial_number, ip_address, last_sync').then(({ data }) => {
       if (data) {
         const map: Record<string, string> = {};
-        data.forEach(d => {
-          if (d.serial_number) map[d.serial_number] = d.name;
-          if (d.ip_address) map[d.ip_address] = d.name;
-          map[d.id] = d.name;
-          map[d.name.toLowerCase()] = d.name;
+
+        data.forEach((d) => {
+          const keys = [d.id, d.serial_number, d.ip_address, d.name];
+
+          keys.forEach((key) => {
+            const normalized = normalizeDeviceKey(key);
+            const compact = compactDeviceKey(key);
+
+            if (normalized) map[normalized] = d.name;
+            if (compact) map[compact] = d.name;
+          });
         });
+
+        const sortedBySync = [...data].sort((a, b) => {
+          const aTime = a.last_sync ? new Date(a.last_sync).getTime() : 0;
+          const bTime = b.last_sync ? new Date(b.last_sync).getTime() : 0;
+          return bTime - aTime;
+        });
+
+        setFallbackDeviceName(sortedBySync[0]?.name || '');
         setDeviceNames(map);
       }
     });

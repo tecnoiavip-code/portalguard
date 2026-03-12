@@ -536,6 +536,33 @@ export type Database = {
         }
         Relationships: []
       }
+      push_command_queue: {
+        Row: {
+          command: Json
+          created_at: string
+          device_id: string
+          executed_at: string | null
+          id: string
+          status: string
+        }
+        Insert: {
+          command: Json
+          created_at?: string
+          device_id: string
+          executed_at?: string | null
+          id?: string
+          status?: string
+        }
+        Update: {
+          command?: Json
+          created_at?: string
+          device_id?: string
+          executed_at?: string | null
+          id?: string
+          status?: string
+        }
+        Relationships: []
+      }
       push_subscriptions: {
         Row: {
           auth: string

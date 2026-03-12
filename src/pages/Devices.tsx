@@ -61,6 +61,99 @@ export const Devices = () => {
     }
   };
 
+  const handleLocalConfig = async (device: Device) => {
+    if (!device.ipAddress) {
+      toast.error('Dispositivo sem IP configurado');
+      return;
+    }
+
+    setLocalConfigLoading(device.id);
+    const ip = device.ipAddress;
+    const port = '80';
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+    let hostname = '';
+    try {
+      hostname = new URL(supabaseUrl).hostname;
+    } catch {
+      hostname = 'kxdqffkkufgsizszchvw.supabase.co';
+    }
+
+    const monitorConfig = {
+      monitor: {
+        request_timeout: '5000',
+        hostname: hostname,
+        port: '443',
+        path: 'functions/v1/controlid-webhook',
+      },
+    };
+
+    const pushConfig = {
+      push_server: {
+        push_remote_address: `https://${hostname}/functions/v1/controlid-webhook/push`,
+        push_request_timeout: '30000',
+        push_request_period: '5',
+      },
+    };
+
+    const fullConfig = { ...monitorConfig, ...pushConfig };
+
+    try {
+      // Step 1: Login
+      const loginResp = await fetch(`http://${ip}:${port}/login.fcgi`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ login: 'admin', password: 'admin' }),
+      });
+
+      if (!loginResp.ok) {
+        throw new Error(`Login falhou (status ${loginResp.status}). Verifique as credenciais do dispositivo.`);
+      }
+
+      const loginData = await loginResp.json();
+      const session = loginData.session;
+      if (!session) throw new Error('Sessão não retornada pelo dispositivo');
+
+      // Step 2: Set configuration
+      const configResp = await fetch(`http://${ip}:${port}/set_configuration.fcgi?session=${session}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fullConfig),
+      });
+
+      if (!configResp.ok) {
+        throw new Error(`Erro ao aplicar configuração (status ${configResp.status})`);
+      }
+
+      // Step 3: Verify
+      let verifyData: any = null;
+      try {
+        const verifyResp = await fetch(`http://${ip}:${port}/get_configuration.fcgi?session=${session}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ monitor: true, push_server: true }),
+        });
+        if (verifyResp.ok) verifyData = await verifyResp.json();
+      } catch { /* ignore */ }
+
+      const appliedHostname = verifyData?.monitor?.hostname || '';
+      const appliedPush = verifyData?.push_server?.push_remote_address || '';
+
+      toast.success('Configuração aplicada com sucesso via rede local!', {
+        duration: 6000,
+        description: `Monitor: ${appliedHostname || hostname} | Push: ${appliedPush ? 'OK' : 'verificar'}`,
+      });
+
+      console.log('Local config applied:', { sent: fullConfig, verified: verifyData });
+    } catch (err: any) {
+      console.error('Error configuring device locally:', err);
+      toast.error('Erro ao configurar dispositivo via rede local', {
+        duration: 6000,
+        description: err.message || 'Verifique se o dispositivo está acessível na rede e tente novamente.',
+      });
+    } finally {
+      setLocalConfigLoading(null);
+    }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     

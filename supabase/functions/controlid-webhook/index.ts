@@ -208,11 +208,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    // ===== PUSH MODE: Device polls for commands (GET /push) =====
-    // This is how iDSecure works: device sends GET /push periodically,
-    // server responds with command or empty. Device executes and POST /push/result.
-    if (eventType === 'push_request' && req.method === 'GET') {
-      console.log('Push poll from device:', deviceId);
+    // ===== PUSH MODE: Device polls for commands (GET/POST /push) =====
+    // Some models send POST /push with access_logs as heartbeat signal.
+    if (eventType === 'push_request' && (req.method === 'GET' || req.method === 'POST')) {
+      if (deviceId) {
+        await updateDeviceStatus(supabaseClient, deviceId);
+      }
 
       // Fetch oldest pending command from DB queue
       const { data: pendingCmd, error: fetchErr } = await supabaseClient
@@ -229,20 +230,18 @@ Deno.serve(async (req) => {
       }
 
       if (pendingCmd) {
-        // Mark as executing
         await supabaseClient
           .from('push_command_queue')
           .update({ status: 'executing', executed_at: new Date().toISOString() })
           .eq('id', pendingCmd.id);
 
-        console.log('Sending push command to device:', deviceId, pendingCmd.command);
         return new Response(
           JSON.stringify(pendingCmd.command),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      // No pending commands - return empty (iDSecure protocol)
+      // No pending commands - return empty acknowledgement
       return new Response('', { status: 200, headers: corsHeaders });
     }
 

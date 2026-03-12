@@ -182,8 +182,14 @@ Deno.serve(async (req) => {
         try {
           payload = JSON.parse(rawPayload);
         } catch {
-          console.log('Non-JSON payload received, treating as raw data');
-          payload = { raw_data: rawPayload.substring(0, 1000) };
+          const formPayload = parseFormEncodedPayload(rawPayload);
+
+          if (Object.keys(formPayload).length > 0) {
+            payload = formPayload;
+          } else {
+            console.log('Non-JSON payload received, treating as raw data');
+            payload = { raw_data: rawPayload.substring(0, 1000) };
+          }
         }
       }
     }

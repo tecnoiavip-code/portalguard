@@ -18,6 +18,9 @@ interface ControlidLog {
   received_at: string;
 }
 
+const normalizeDeviceKey = (value: unknown): string => String(value ?? '').trim().toLowerCase();
+const compactDeviceKey = (value: unknown): string => normalizeDeviceKey(value).replace(/[^a-z0-9]/g, '');
+
 export const Dashboard = () => {
   const [stats, setStats] = useState<DashboardStats>({
     totalResidents: 0,

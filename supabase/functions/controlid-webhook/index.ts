@@ -180,13 +180,16 @@ Deno.serve(async (req) => {
     const eventType = detectEventType(url, payload);
     const deviceId = extractDeviceId(url, payload, req);
 
-    console.log('Control iD webhook received:', {
-      method: req.method,
-      path: url.pathname,
-      event_type: eventType,
-      device_id: deviceId || 'unknown',
-      timestamp: new Date().toISOString()
-    });
+    // Only log non-heartbeat events to reduce noise
+    if (eventType !== 'device_is_alive') {
+      console.log('Control iD webhook received:', {
+        method: req.method,
+        path: url.pathname,
+        event_type: eventType,
+        device_id: deviceId || 'unknown',
+        timestamp: new Date().toISOString()
+      });
+    }
 
     // ===== PUSH MODE: Device polls for commands (GET /push) =====
     // This is how iDSecure works: device sends GET /push periodically,

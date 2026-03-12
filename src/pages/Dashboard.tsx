@@ -18,6 +18,9 @@ interface ControlidLog {
   received_at: string;
 }
 
+const normalizeDeviceKey = (value: unknown): string => String(value ?? '').trim().toLowerCase();
+const compactDeviceKey = (value: unknown): string => normalizeDeviceKey(value).replace(/[^a-z0-9]/g, '');
+
 export const Dashboard = () => {
   const [stats, setStats] = useState<DashboardStats>({
     totalResidents: 0,
@@ -32,6 +35,7 @@ export const Dashboard = () => {
   const [controlidLogs, setControlidLogs] = useState<ControlidLog[]>([]);
   const [residents, setResidents] = useState<Resident[]>([]);
   const [deviceNames, setDeviceNames] = useState<Record<string, string>>({});
+  const [fallbackDeviceName, setFallbackDeviceName] = useState('');
 
   const loadControlidLogs = useCallback(async () => {
     const { data } = await supabase
@@ -47,15 +51,29 @@ export const Dashboard = () => {
     loadStats();
     loadControlidLogs();
     // Load device names from devices table only (registered in project)
-    supabase.from('devices').select('id, name, serial_number, ip_address').then(({ data }) => {
+    supabase.from('devices').select('id, name, serial_number, ip_address, last_sync').then(({ data }) => {
       if (data) {
         const map: Record<string, string> = {};
-        data.forEach(d => {
-          if (d.serial_number) map[d.serial_number] = d.name;
-          if (d.ip_address) map[d.ip_address] = d.name;
-          map[d.id] = d.name;
-          map[d.name.toLowerCase()] = d.name;
+
+        data.forEach((d) => {
+          const keys = [d.id, d.serial_number, d.ip_address, d.name];
+
+          keys.forEach((key) => {
+            const normalized = normalizeDeviceKey(key);
+            const compact = compactDeviceKey(key);
+
+            if (normalized) map[normalized] = d.name;
+            if (compact) map[compact] = d.name;
+          });
         });
+
+        const sortedBySync = [...data].sort((a, b) => {
+          const aTime = a.last_sync ? new Date(a.last_sync).getTime() : 0;
+          const bTime = b.last_sync ? new Date(b.last_sync).getTime() : 0;
+          return bTime - aTime;
+        });
+
+        setFallbackDeviceName(sortedBySync[0]?.name || '');
         setDeviceNames(map);
       }
     });
@@ -271,9 +289,24 @@ export const Dashboard = () => {
                       if (!apartment) apartment = matchedResident.apartment;
                     }
                   }
-                  // Resolve device name from controlid_config
-                  const rawLocation = changes.portal_name || p.portal_name || p.location || '';
-                  const location = rawLocation || deviceNames[log.device_id] || deviceNames[log.device_id?.toLowerCase()] || log.device_id || 'Dispositivo desconhecido';
+                  const deviceCandidates = [
+                    log.device_id,
+                    p.device_id,
+                    p.deviceId,
+                    p.serial,
+                    p.serial_number,
+                    p.ip_address,
+                    p.ip,
+                  ];
+
+                  const mappedDeviceName = deviceCandidates
+                    .map((candidate) => deviceNames[normalizeDeviceKey(candidate)] || deviceNames[compactDeviceKey(candidate)])
+                    .find(Boolean);
+
+                  const location =
+                    mappedDeviceName ||
+                    (/^\d+$/.test(String(log.device_id || '').trim()) ? fallbackDeviceName : '') ||
+                    'Dispositivo não cadastrado';
                   
                   const eventTime = new Date(log.received_at);
                   const timeStr = eventTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });

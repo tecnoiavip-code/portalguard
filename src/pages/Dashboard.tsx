@@ -289,9 +289,24 @@ export const Dashboard = () => {
                       if (!apartment) apartment = matchedResident.apartment;
                     }
                   }
-                  // Resolve device name from controlid_config
-                  const rawLocation = changes.portal_name || p.portal_name || p.location || '';
-                  const location = rawLocation || deviceNames[log.device_id] || deviceNames[log.device_id?.toLowerCase()] || log.device_id || 'Dispositivo desconhecido';
+                  const deviceCandidates = [
+                    log.device_id,
+                    p.device_id,
+                    p.deviceId,
+                    p.serial,
+                    p.serial_number,
+                    p.ip_address,
+                    p.ip,
+                  ];
+
+                  const mappedDeviceName = deviceCandidates
+                    .map((candidate) => deviceNames[normalizeDeviceKey(candidate)] || deviceNames[compactDeviceKey(candidate)])
+                    .find(Boolean);
+
+                  const location =
+                    mappedDeviceName ||
+                    (/^\d+$/.test(String(log.device_id || '').trim()) ? fallbackDeviceName : '') ||
+                    'Dispositivo não cadastrado';
                   
                   const eventTime = new Date(log.received_at);
                   const timeStr = eventTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });

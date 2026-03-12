@@ -244,8 +244,19 @@ export const Dashboard = () => {
                   const changes = p.object_changes?.[0]?.values || {};
                   
                   const userName = changes.user_name || p.user_name || p.name || '';
-                  const apartment = changes.apartment || changes.user_id || p.apartment || p.house || '';
                   const photoUrl = changes.photo_url || p.photo_url || p.photo || '';
+                  
+                  // Try to find resident by name to get apartment
+                  let apartment = changes.apartment || changes.user_id || p.apartment || p.house || '';
+                  let matchedResident: Resident | undefined;
+                  if (userName && residents.length > 0) {
+                    matchedResident = residents.find(r => 
+                      r.name.toLowerCase().trim() === userName.toLowerCase().trim()
+                    );
+                    if (matchedResident) {
+                      if (!apartment) apartment = matchedResident.apartment;
+                    }
+                  }
                   const location = changes.portal_name || p.portal_name || p.location || 'area interna condomínio';
                   
                   const eventTime = new Date(log.received_at);

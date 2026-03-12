@@ -16,6 +16,20 @@ const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 const RATE_LIMIT_WINDOW = 60000;
 const MAX_REQUESTS_PER_WINDOW = 200;
 
+// Throttle heartbeat logging: only log once per device per interval
+const heartbeatLogMap = new Map<string, number>();
+const HEARTBEAT_LOG_INTERVAL = 300000; // 5 minutes
+
+const shouldLogHeartbeat = (deviceId: string): boolean => {
+  const now = Date.now();
+  const last = heartbeatLogMap.get(deviceId) || 0;
+  if (now - last >= HEARTBEAT_LOG_INTERVAL) {
+    heartbeatLogMap.set(deviceId, now);
+    return true;
+  }
+  return false;
+};
+
 const checkRateLimit = (deviceId: string): boolean => {
   const now = Date.now();
   const limit = rateLimitMap.get(deviceId);

@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Wifi, WifiOff, Camera, Tag, CreditCard, Pencil, Trash2, Plus, Settings2, Loader2 } from 'lucide-react';
+import { Wifi, WifiOff, Camera, Tag, CreditCard, Pencil, Trash2, Plus, Settings2, Loader2, Network } from 'lucide-react';
 import { Device } from '@/types';
 import { useDevices } from '@/hooks/useDevices';
 import { toast } from 'sonner';

@@ -445,24 +445,13 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ===== Handle device_is_alive.fcgi (Push/Online mode heartbeat) =====
+    // ===== Handle device_is_alive.fcgi and POST /push heartbeat =====
     if (eventType === 'device_is_alive') {
       if (deviceId) {
         await updateDeviceStatus(supabaseClient, deviceId);
-
-        // Only log heartbeat every 5 minutes to avoid flooding
-        if (shouldLogHeartbeat(deviceId)) {
-          await supabaseClient.from('controlid_logs').insert({
-            device_id: deviceId,
-            event_type: 'device_is_alive',
-            payload: { access_logs: payload?.access_logs || 0 },
-            processed: true
-          });
-          console.log('Heartbeat logged for device:', deviceId);
-        }
       }
 
-      // Push mode: return empty 200 (iDSecure protocol)
+      // Heartbeat must not create access noise; only acknowledge
       return new Response('', { status: 200, headers: corsHeaders });
     }
 

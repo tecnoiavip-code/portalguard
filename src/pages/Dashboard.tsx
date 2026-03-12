@@ -36,7 +36,7 @@ export const Dashboard = () => {
     const { data } = await supabase
       .from('controlid_logs')
       .select('*')
-      .in('event_type', ['dao', 'access_photo'])
+      .in('event_type', ['dao', 'access_photo', 'identification_event'])
       .order('received_at', { ascending: false })
       .limit(50);
     if (data) setControlidLogs(data as ControlidLog[]);
@@ -54,7 +54,7 @@ export const Dashboard = () => {
         table: 'controlid_logs',
       }, (payload) => {
         const newLog = payload.new as ControlidLog;
-        if (newLog.event_type === 'dao' || newLog.event_type === 'access_photo') {
+        if (newLog.event_type === 'dao' || newLog.event_type === 'access_photo' || newLog.event_type === 'identification_event') {
           setControlidLogs(prev => [newLog, ...prev].slice(0, 50));
         }
       })
@@ -253,7 +253,7 @@ export const Dashboard = () => {
                   const fullTimeStr = eventTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
                   const dateStr = eventTime.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
                   
-                  const isAccess = log.event_type === 'dao' || log.event_type === 'access_photo';
+                  const isAccess = log.event_type === 'dao' || log.event_type === 'access_photo' || log.event_type === 'identification_event';
                   const isRecognized = isAccess && !!userName;
                   const isUnidentified = isAccess && !userName;
                   const isSystemEvent = !isAccess;

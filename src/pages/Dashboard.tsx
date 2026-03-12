@@ -253,7 +253,7 @@ export const Dashboard = () => {
                   const fullTimeStr = eventTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
                   const dateStr = eventTime.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
                   
-                  const isAccess = log.event_type === 'dao' || log.event_type === 'access_photo';
+                  const isAccess = log.event_type === 'dao' || log.event_type === 'access_photo' || log.event_type === 'identification_event';
                   const isRecognized = isAccess && !!userName;
                   const isUnidentified = isAccess && !userName;
                   const isSystemEvent = !isAccess;

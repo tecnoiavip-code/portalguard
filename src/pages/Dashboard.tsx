@@ -31,6 +31,7 @@ export const Dashboard = () => {
   const [realtimeEvents, setRealtimeEvents] = useState<RealtimeEvent[]>([]);
   const [controlidLogs, setControlidLogs] = useState<ControlidLog[]>([]);
   const [residents, setResidents] = useState<Resident[]>([]);
+  const [deviceNames, setDeviceNames] = useState<Record<string, string>>({});
 
   const loadControlidLogs = useCallback(async () => {
     const { data } = await supabase
@@ -45,6 +46,19 @@ export const Dashboard = () => {
   useEffect(() => {
     loadStats();
     loadControlidLogs();
+    // Load device names from controlid_config
+    supabase.from('controlid_config').select('device_id, device_name, device_ip').then(({ data }) => {
+      if (data) {
+        const map: Record<string, string> = {};
+        data.forEach(d => {
+          if (d.device_id) map[d.device_id] = d.device_name;
+          if (d.device_ip) map[d.device_ip] = d.device_name;
+          // Also map by name lowercase for fallback
+          map[d.device_name.toLowerCase()] = d.device_name;
+        });
+        setDeviceNames(map);
+      }
+    });
     const interval = setInterval(loadStats, 30000);
     const channel = supabase
       .channel('controlid-realtime')
@@ -257,7 +271,9 @@ export const Dashboard = () => {
                       if (!apartment) apartment = matchedResident.apartment;
                     }
                   }
-                  const location = changes.portal_name || p.portal_name || p.location || 'area interna condomínio';
+                  // Resolve device name from controlid_config
+                  const rawLocation = changes.portal_name || p.portal_name || p.location || '';
+                  const location = rawLocation || deviceNames[log.device_id] || deviceNames[log.device_id?.toLowerCase()] || log.device_id || 'Dispositivo desconhecido';
                   
                   const eventTime = new Date(log.received_at);
                   const timeStr = eventTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });

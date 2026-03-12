@@ -38,6 +38,11 @@ const parseFormEncodedPayload = (raw: string): Record<string, string> => {
 };
 
 // Rate limiting map
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_WINDOW = 60000;
+const MAX_REQUESTS_PER_WINDOW = 200;
+
+const checkRateLimit = (deviceId: string): boolean => {
   const now = Date.now();
   const limit = rateLimitMap.get(deviceId);
   if (!limit || now > limit.resetTime) {

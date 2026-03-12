@@ -109,6 +109,9 @@ const detectEventType = (url: URL, payload: any): string => {
   if (path.includes('identification_event.fcgi') || path.includes('new_user_identified.fcgi')) return 'identification_event';
   if (path.includes('session_is_valid.fcgi')) return 'session_is_valid';
 
+  // Some devices send heartbeat as POST /push with access_logs in payload
+  if (path.includes('/push') && payload?.access_logs !== undefined) return 'device_is_alive';
+
   // Generic push polling route
   if (path.endsWith('/push') || (path.includes('/push') && !path.includes('.fcgi'))) {
     return 'push_request';

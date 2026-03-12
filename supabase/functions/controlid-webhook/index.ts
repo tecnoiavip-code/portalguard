@@ -496,8 +496,11 @@ Deno.serve(async (req) => {
     // Process specific events (device_is_alive already handled above with early return)
     if (eventType === 'dao' && payload.object_changes) {
       await processAccessLogs(supabaseClient, payload.object_changes, effectiveDeviceId);
-    } else if (eventType === 'identification_event') {
-      await processIdentificationEvent(supabaseClient, payload, effectiveDeviceId);
+    }
+
+    // Control iD .fcgi callbacks expect empty 200 acknowledgements
+    if (isFcgiCallback) {
+      return new Response('', { status: 200, headers: corsHeaders });
     }
 
     return new Response(

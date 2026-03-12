@@ -31,6 +31,7 @@ export const Dashboard = () => {
   const [realtimeEvents, setRealtimeEvents] = useState<RealtimeEvent[]>([]);
   const [controlidLogs, setControlidLogs] = useState<ControlidLog[]>([]);
   const [residents, setResidents] = useState<Resident[]>([]);
+  const [deviceNames, setDeviceNames] = useState<Record<string, string>>({});
 
   const loadControlidLogs = useCallback(async () => {
     const { data } = await supabase

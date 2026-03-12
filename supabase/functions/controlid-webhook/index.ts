@@ -475,13 +475,9 @@ Deno.serve(async (req) => {
       console.error('Error saving Control iD log:', logError);
     }
 
-    // Process specific events
+    // Process specific events (device_is_alive already handled above with early return)
     if (eventType === 'dao' && payload.object_changes) {
       await processAccessLogs(supabaseClient, payload.object_changes, effectiveDeviceId);
-    } else if (eventType === 'device_is_alive') {
-      if (effectiveDeviceId !== 'unknown-device') {
-        await updateDeviceStatus(supabaseClient, effectiveDeviceId);
-      }
     } else if (eventType === 'identification_event') {
       await processIdentificationEvent(supabaseClient, payload, effectiveDeviceId);
     }

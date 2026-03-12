@@ -153,6 +153,7 @@ export const Devices = () => {
     } finally {
       setLocalConfigLoading(null);
     }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

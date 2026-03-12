@@ -515,7 +515,15 @@ Deno.serve(async (req) => {
       await processAccessLogs(supabaseClient, payload.object_changes, effectiveDeviceId);
     }
 
-    // Control iD .fcgi callbacks expect empty 200 acknowledgements
+    // Online identification events expect a JSON return message
+    if (eventType === 'identification_event') {
+      return new Response(
+        JSON.stringify(buildIdentificationResponse(payload)),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Other Control iD .fcgi callbacks expect empty 200 acknowledgements
     if (isFcgiCallback) {
       return new Response('', { status: 200, headers: corsHeaders });
     }

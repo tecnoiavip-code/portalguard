@@ -421,6 +421,23 @@ export const Devices = () => {
                     )}
                     Enviar Config
                   </Button>
+                  {device.ipAddress && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleLocalConfig(device)}
+                      disabled={localConfigLoading === device.id}
+                      className="flex-1"
+                      title="Configurar via rede local (navegador → dispositivo)"
+                    >
+                      {localConfigLoading === device.id ? (
+                        <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                      ) : (
+                        <Network className="h-3.5 w-3.5 mr-1" />
+                      )}
+                      Config Local
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="outline"

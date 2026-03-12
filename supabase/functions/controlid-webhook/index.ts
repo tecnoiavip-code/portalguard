@@ -15,33 +15,29 @@ const parseFormEncodedPayload = (raw: string): Record<string, string> => {
   const params = new URLSearchParams(raw);
   const entries = Array.from(params.entries()).filter(([key]) => key && key.trim().length > 0);
 
-  if (!entries.length) return {};
+  if (entries.length > 0) {
+    return Object.fromEntries(
+      entries.map(([key, value]) => [sanitizeString(key, 100), sanitizeString(value, 500)])
+    );
+  }
 
-  return Object.fromEntries(
-    entries.map(([key, value]) => [sanitizeString(key, 100), sanitizeString(value, 500)])
-  );
+  // Fallback parser for non-standard payloads (plain text key=value&key2=value2)
+  if (!raw.includes('=')) return {};
+
+  const result: Record<string, string> = {};
+  for (const pair of raw.split('&')) {
+    const [rawKey, ...rawValueParts] = pair.split('=');
+    if (!rawKey) continue;
+
+    const key = sanitizeString(decodeURIComponent(rawKey.replace(/\+/g, ' ')), 100);
+    const value = sanitizeString(decodeURIComponent(rawValueParts.join('=').replace(/\+/g, ' ')), 500);
+    if (key) result[key] = value;
+  }
+
+  return result;
 };
 
 // Rate limiting map
-const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
-const RATE_LIMIT_WINDOW = 60000;
-const MAX_REQUESTS_PER_WINDOW = 200;
-
-// Throttle heartbeat logging: only log once per device per interval
-const heartbeatLogMap = new Map<string, number>();
-const HEARTBEAT_LOG_INTERVAL = 300000; // 5 minutes
-
-const shouldLogHeartbeat = (deviceId: string): boolean => {
-  const now = Date.now();
-  const last = heartbeatLogMap.get(deviceId) || 0;
-  if (now - last >= HEARTBEAT_LOG_INTERVAL) {
-    heartbeatLogMap.set(deviceId, now);
-    return true;
-  }
-  return false;
-};
-
-const checkRateLimit = (deviceId: string): boolean => {
   const now = Date.now();
   const limit = rateLimitMap.get(deviceId);
   if (!limit || now > limit.resetTime) {

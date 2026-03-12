@@ -155,6 +155,31 @@ const extractDeviceId = (url: URL, payload: any, req: Request): string => {
   return '';
 };
 
+const buildIdentificationResponse = (payload: any) => {
+  const userId = Number.parseInt(String(payload?.user_id ?? '0'), 10);
+  const portalId = Number.parseInt(String(payload?.portal_id ?? '1'), 10);
+  const incomingEvent = Number.parseInt(String(payload?.event ?? '0'), 10);
+  const userName = sanitizeString(payload?.user_name || payload?.name || '', 200);
+
+  const isIdentified = (Number.isFinite(userId) && userId > 0) || userName.length > 0;
+  const isDeniedByDevice = incomingEvent === 3 || incomingEvent === 6;
+  const granted = isIdentified && !isDeniedByDevice;
+
+  const resolvedPortal = Number.isFinite(portalId) && portalId > 0 ? portalId : 1;
+
+  return {
+    result: {
+      event: granted ? 7 : 6,
+      user_id: Number.isFinite(userId) ? userId : 0,
+      user_name: userName || 'Desconhecido',
+      user_image: payload?.user_has_image === 1 || payload?.user_has_image === '1',
+      portal_id: resolvedPortal,
+      message: granted ? 'Acesso autorizado' : 'Acesso negado',
+      actions: granted ? [{ action: 'door', parameters: `door=${resolvedPortal}` }] : []
+    }
+  };
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });

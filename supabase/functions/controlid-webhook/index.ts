@@ -196,6 +196,7 @@ Deno.serve(async (req) => {
 
     const eventType = detectEventType(url, payload);
     const deviceId = extractDeviceId(url, payload, req);
+    const isFcgiCallback = url.pathname.toLowerCase().includes('.fcgi');
 
     // Only log non-heartbeat events to reduce noise
     if (eventType !== 'device_is_alive') {

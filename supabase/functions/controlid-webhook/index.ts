@@ -78,23 +78,26 @@ const getPushServerConfig = () => {
 const detectEventType = (url: URL, payload: any): string => {
   const path = url.pathname.toLowerCase();
 
-  if (path.includes('/push') && !path.includes('/push-config')) {
-    // POST /push/result => push result
-    if (path.includes('/result')) return 'push_result';
-    return 'push_request';
-  }
-  
+  // Explicit config routes first
   if (path.includes('/push-config')) return 'push_config';
   if (path.includes('/send-config')) return 'send_config';
 
+  // Push sub-routes that must be handled before generic /push
+  if (path.includes('/push/result')) return 'push_result';
+  if (path.includes('device_is_alive.fcgi') || path.includes('/device_is_alive')) return 'device_is_alive';
+  if (path.includes('identification_event.fcgi') || path.includes('new_user_identified.fcgi')) return 'identification_event';
+  if (path.includes('session_is_valid.fcgi')) return 'session_is_valid';
+
+  // Generic push polling route
+  if (path.endsWith('/push') || (path.includes('/push') && !path.includes('.fcgi'))) {
+    return 'push_request';
+  }
+
   if (path.includes('/dao')) return 'dao';
-  if (path.includes('/device_is_alive') || path.includes('device_is_alive.fcgi')) return 'device_is_alive';
   if (path.includes('/operation_mode')) return 'operation_mode';
   if (path.includes('/door')) return 'door';
   if (path.includes('/catra_event')) return 'catra_event';
   if (path.includes('/access_photo')) return 'access_photo';
-  if (path.includes('session_is_valid.fcgi')) return 'session_is_valid';
-  if (path.includes('identification_event.fcgi')) return 'identification_event';
 
   if (payload?.object_changes) return 'dao';
   if (payload?.access_logs !== undefined) return 'device_is_alive';

@@ -46,18 +46,30 @@ export const Dashboard = () => {
   useEffect(() => {
     loadStats();
     loadControlidLogs();
-    // Load device names from controlid_config
-    supabase.from('controlid_config').select('device_id, device_name, device_ip').then(({ data }) => {
-      if (data) {
-        const map: Record<string, string> = {};
-        data.forEach(d => {
+    // Load device names from controlid_config AND devices table
+    Promise.all([
+      supabase.from('controlid_config').select('device_id, device_name, device_ip'),
+      supabase.from('devices').select('id, name, serial_number, ip_address'),
+    ]).then(([configRes, devicesRes]) => {
+      const map: Record<string, string> = {};
+      // Map from devices table first (registered devices)
+      if (devicesRes.data) {
+        devicesRes.data.forEach(d => {
+          if (d.serial_number) map[d.serial_number] = d.name;
+          if (d.ip_address) map[d.ip_address] = d.name;
+          map[d.id] = d.name;
+          map[d.name.toLowerCase()] = d.name;
+        });
+      }
+      // Map from controlid_config (overrides if exists)
+      if (configRes.data) {
+        configRes.data.forEach(d => {
           if (d.device_id) map[d.device_id] = d.device_name;
           if (d.device_ip) map[d.device_ip] = d.device_name;
-          // Also map by name lowercase for fallback
           map[d.device_name.toLowerCase()] = d.device_name;
         });
-        setDeviceNames(map);
       }
+      setDeviceNames(map);
     });
     const interval = setInterval(loadStats, 30000);
     const channel = supabase

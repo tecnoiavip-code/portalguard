@@ -28,16 +28,12 @@ const checkRateLimit = (deviceId: string): boolean => {
   return true;
 };
 
-// Queue of pending push commands per device
-const pushCommandQueue = new Map<string, Array<{ verb: string; endpoint: string; body?: any }>>();
-
 /**
  * Get the correct monitor configuration for a device.
  * Uses the Supabase project hostname.
  */
 const getMonitorConfig = () => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-  // Extract hostname from SUPABASE_URL (e.g., https://xxx.supabase.co -> xxx.supabase.co)
   let hostname = '';
   try {
     hostname = new URL(supabaseUrl).hostname;
@@ -56,19 +52,41 @@ const getMonitorConfig = () => {
 };
 
 /**
+ * Get the push server configuration (like iDSecure does).
+ */
+const getPushServerConfig = () => {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  let hostname = '';
+  try {
+    hostname = new URL(supabaseUrl).hostname;
+  } catch {
+    hostname = 'kxdqffkkufgsizszchvw.supabase.co';
+  }
+
+  return {
+    push_server: {
+      push_remote_address: `https://${hostname}/functions/v1/controlid-webhook/push`,
+      push_request_timeout: "30000",
+      push_request_period: "5"
+    }
+  };
+};
+
+/**
  * Detect event type from URL path and payload.
  */
 const detectEventType = (url: URL, payload: any): string => {
   const path = url.pathname.toLowerCase();
 
-  // Push mode endpoint
-  if (path.includes('/push') && !path.includes('/push-config')) return 'push_request';
+  if (path.includes('/push') && !path.includes('/push-config')) {
+    // POST /push/result => push result
+    if (path.includes('/result')) return 'push_result';
+    return 'push_request';
+  }
   
-  // Push config management endpoints
   if (path.includes('/push-config')) return 'push_config';
   if (path.includes('/send-config')) return 'send_config';
 
-  // Monitor mode endpoints
   if (path.includes('/dao')) return 'dao';
   if (path.includes('/device_is_alive') || path.includes('device_is_alive.fcgi')) return 'device_is_alive';
   if (path.includes('/operation_mode')) return 'operation_mode';
@@ -78,7 +96,6 @@ const detectEventType = (url: URL, payload: any): string => {
   if (path.includes('session_is_valid.fcgi')) return 'session_is_valid';
   if (path.includes('identification_event.fcgi')) return 'identification_event';
 
-  // Fallback: detect from payload content
   if (payload?.object_changes) return 'dao';
   if (payload?.access_logs !== undefined) return 'device_is_alive';
   if (payload?.operation_mode) return 'operation_mode';
@@ -119,7 +136,6 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // Accept GET for push mode, device_is_alive.fcgi, session_is_valid.fcgi
     if (req.method !== 'POST' && req.method !== 'GET') {
       return new Response(
         JSON.stringify({ error: 'Method not allowed' }),
@@ -132,7 +148,6 @@ Deno.serve(async (req) => {
     let rawPayload = '';
     
     if (req.method === 'POST') {
-      const contentType = req.headers.get('content-type') || '';
       rawPayload = await req.text();
       
       if (rawPayload && rawPayload.trim()) {
@@ -156,30 +171,79 @@ Deno.serve(async (req) => {
       timestamp: new Date().toISOString()
     });
 
-    // ===== PUSH MODE: Device polls for commands =====
-    // GET /push?deviceId=XXX
+    // ===== PUSH MODE: Device polls for commands (GET /push) =====
+    // This is how iDSecure works: device sends GET /push periodically,
+    // server responds with command or empty. Device executes and POST /push/result.
     if (eventType === 'push_request' && req.method === 'GET') {
-      console.log('Push request from device:', deviceId);
+      console.log('Push poll from device:', deviceId);
 
-      // Check if there are pending commands for this device
-      const queue = pushCommandQueue.get(deviceId);
-      if (queue && queue.length > 0) {
-        const command = queue.shift()!;
-        if (queue.length === 0) pushCommandQueue.delete(deviceId);
+      // Fetch oldest pending command from DB queue
+      const { data: pendingCmd, error: fetchErr } = await supabaseClient
+        .from('push_command_queue')
+        .select('id, command')
+        .eq('device_id', deviceId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
 
-        console.log('Sending push command to device:', deviceId, command.endpoint);
+      if (fetchErr) {
+        console.error('Error fetching push queue:', fetchErr);
+      }
+
+      if (pendingCmd) {
+        // Mark as executing
+        await supabaseClient
+          .from('push_command_queue')
+          .update({ status: 'executing', executed_at: new Date().toISOString() })
+          .eq('id', pendingCmd.id);
+
+        console.log('Sending push command to device:', deviceId, pendingCmd.command);
         return new Response(
-          JSON.stringify(command),
+          JSON.stringify(pendingCmd.command),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      // No pending commands - return empty response
+      // No pending commands - return empty (iDSecure protocol)
+      return new Response('', { status: 200, headers: corsHeaders });
+    }
+
+    // ===== PUSH RESULT: Device sends back result of executed command =====
+    // POST /push/result or POST /push with result payload
+    if (eventType === 'push_result' && req.method === 'POST') {
+      console.log('Push result from device:', deviceId, JSON.stringify(payload).substring(0, 200));
+
+      // Mark the oldest executing command as done
+      const { data: executingCmd } = await supabaseClient
+        .from('push_command_queue')
+        .select('id')
+        .eq('device_id', deviceId)
+        .eq('status', 'executing')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (executingCmd) {
+        await supabaseClient
+          .from('push_command_queue')
+          .update({ status: 'done', executed_at: new Date().toISOString() })
+          .eq('id', executingCmd.id);
+      }
+
+      // Log the result
+      await supabaseClient.from('controlid_logs').insert({
+        device_id: deviceId || 'unknown',
+        event_type: 'push_result',
+        payload: payload,
+        processed: true,
+      });
+
+      // Return empty (iDSecure protocol)
       return new Response('', { status: 200, headers: corsHeaders });
     }
 
     // ===== SEND CONFIG: Push monitor config directly to device IP =====
-    // POST /send-config { device_ip, device_serial }
     if (eventType === 'send_config' && req.method === 'POST') {
       const targetIp = payload.device_ip;
       const targetPort = payload.device_port || '80';
@@ -195,12 +259,12 @@ Deno.serve(async (req) => {
       console.log('Sending monitor config to device:', targetIp);
 
       const monitorConfig = getMonitorConfig();
+      const pushConfig = getPushServerConfig();
+      // Send both monitor and push_server configs
+      const fullConfig = { ...monitorConfig, ...pushConfig };
 
       try {
-        // Step 1: Login to get session
         const loginUrl = `http://${targetIp}:${targetPort}/login.fcgi`;
-        console.log('Logging in to device:', loginUrl);
-        
         const loginResp = await fetch(loginUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -225,56 +289,44 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Step 2: Set monitor configuration
         const configUrl = `http://${targetIp}:${targetPort}/set_configuration.fcgi?session=${session}`;
-        console.log('Setting configuration:', configUrl, JSON.stringify(monitorConfig));
-
         const configResp = await fetch(configUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(monitorConfig),
+          body: JSON.stringify(fullConfig),
           signal: AbortSignal.timeout(10000),
         });
 
         const configResult = configResp.ok ? await configResp.text() : 'Failed';
-        console.log('Config response:', configResult);
 
-        // Step 3: Verify with get_configuration
+        // Verify
         const verifyUrl = `http://${targetIp}:${targetPort}/get_configuration.fcgi?session=${session}`;
         let verifyData: any = null;
         try {
           const verifyResp = await fetch(verifyUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ monitor: true }),
+            body: JSON.stringify({ monitor: true, push_server: true }),
             signal: AbortSignal.timeout(10000),
           });
-          if (verifyResp.ok) {
-            verifyData = await verifyResp.json();
-          }
+          if (verifyResp.ok) verifyData = await verifyResp.json();
         } catch (e) {
           console.log('Could not verify config:', e);
         }
 
-        // Log the config push
         await supabaseClient.from('controlid_logs').insert({
           device_id: targetSerial || targetIp,
           event_type: 'config_push',
-          payload: { 
-            sent_config: monitorConfig, 
-            verify_result: verifyData,
-            config_response: configResult,
-            target_ip: targetIp 
-          },
+          payload: { sent_config: fullConfig, verify_result: verifyData, config_response: configResult, target_ip: targetIp },
           processed: true,
         });
 
         return new Response(
           JSON.stringify({ 
             success: configResp.ok, 
-            message: configResp.ok ? 'Monitor configuration sent successfully' : 'Failed to set configuration',
-            sent_config: monitorConfig,
-            current_config: verifyData?.monitor || null
+            message: configResp.ok ? 'Configuration sent successfully (monitor + push)' : 'Failed to set configuration',
+            sent_config: fullConfig,
+            current_config: verifyData || null
           }),
           { status: configResp.ok ? 200 : 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -292,8 +344,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ===== PUSH CONFIG: Queue set_configuration command for device via Push mode =====
-    // POST /push-config { device_id }
+    // ===== PUSH CONFIG: Queue set_configuration command via Push mode (DB-backed) =====
     if (eventType === 'push_config' && req.method === 'POST') {
       const targetDeviceId = payload.device_id || payload.deviceId || deviceId;
       
@@ -305,33 +356,46 @@ Deno.serve(async (req) => {
       }
 
       const monitorConfig = getMonitorConfig();
+      const pushConfig = getPushServerConfig();
+      const fullConfig = { ...monitorConfig, ...pushConfig };
 
-      // Queue the set_configuration command for this device
       const command = {
         verb: 'POST',
         endpoint: 'set_configuration.fcgi',
-        body: monitorConfig
+        body: fullConfig
       };
 
-      const queue = pushCommandQueue.get(targetDeviceId) || [];
-      queue.push(command);
-      pushCommandQueue.set(targetDeviceId, queue);
+      // Persist to DB instead of in-memory queue
+      const { error: insertErr } = await supabaseClient
+        .from('push_command_queue')
+        .insert({
+          device_id: targetDeviceId,
+          command: command,
+          status: 'pending',
+        });
 
-      console.log('Queued monitor config push for device:', targetDeviceId);
+      if (insertErr) {
+        console.error('Error queuing push command:', insertErr);
+        return new Response(
+          JSON.stringify({ error: 'Failed to queue command', details: insertErr.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
 
-      // Log
+      console.log('Queued push config for device (DB-backed):', targetDeviceId);
+
       await supabaseClient.from('controlid_logs').insert({
         device_id: targetDeviceId,
         event_type: 'config_push_queued',
-        payload: { queued_config: monitorConfig },
+        payload: { queued_config: fullConfig },
         processed: false,
       });
 
       return new Response(
         JSON.stringify({ 
           success: true, 
-          message: 'Monitor configuration queued for push. The device will receive it on the next push poll.',
-          config: monitorConfig
+          message: 'Configuration queued for push (persistent). Device will receive it on next poll.',
+          config: fullConfig
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -339,7 +403,6 @@ Deno.serve(async (req) => {
 
     // ===== Handle session_is_valid.fcgi =====
     if (eventType === 'session_is_valid') {
-      console.log('Session validation request - responding OK');
       return new Response(
         JSON.stringify({ session_is_valid: true }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -419,12 +482,10 @@ Deno.serve(async (req) => {
 
 /**
  * Try to find a resident by parsing the Control iD user name format.
- * Common formats: "35 - ELISABETE SILVA", "110 - DANIELA MARCO", "Simone Ferreira"
  */
 async function matchResident(supabaseClient: any, userName: string) {
   if (!userName || userName === 'Desconhecido') return null;
 
-  // Try format "APT - NAME" (e.g., "35 - ELISABETE SILVA")
   const aptNameMatch = userName.match(/^(\d+)\s*[-–]\s*(.+)$/);
   if (aptNameMatch) {
     const apartment = aptNameMatch[1].trim();
@@ -439,7 +500,6 @@ async function matchResident(supabaseClient: any, userName: string) {
 
     if (data) return data;
 
-    // Fallback: match just by apartment
     const { data: byApt } = await supabaseClient
       .from('residents')
       .select('id, name, apartment')
@@ -449,7 +509,6 @@ async function matchResident(supabaseClient: any, userName: string) {
     if (byApt) return byApt;
   }
 
-  // Try match by name alone (case-insensitive)
   const { data: byName } = await supabaseClient
     .from('residents')
     .select('id, name, apartment')
@@ -460,11 +519,7 @@ async function matchResident(supabaseClient: any, userName: string) {
   return byName || null;
 }
 
-/**
- * Extract the best available user name from a Control iD payload.
- */
 const extractUserName = (values: any): string => {
-  // Try various fields the device might send
   return sanitizeString(
     values.user_name || values.name || values.userName || values.user || '', 200
   );
@@ -495,7 +550,6 @@ async function processAccessLogs(supabaseClient: any, objectChanges: any[], devi
       const displayName = userName || userId || cardValue || 'Desconhecido';
       const resident = await matchResident(supabaseClient, displayName);
 
-      // Only create realtime_event for dashboard monitoring — NOT access_entries
       await supabaseClient.from('realtime_events').insert({
         type: 'entry',
         description: sanitizeString(
@@ -526,7 +580,6 @@ async function processIdentificationEvent(supabaseClient: any, payload: any, dev
 
   const resident = await matchResident(supabaseClient, displayName);
 
-  // Only create realtime_event for dashboard monitoring — NOT access_entries
   await supabaseClient.from('realtime_events').insert({
     type: 'entry',
     description: sanitizeString(
@@ -541,11 +594,10 @@ async function processIdentificationEvent(supabaseClient: any, payload: any, dev
   console.log('Realtime event created from identification', resident ? `(matched: ${resident.name})` : '(no match)');
 }
 
-async function updateDeviceStatus(supabaseClient: any, deviceId: string, reqIp?: string) {
+async function updateDeviceStatus(supabaseClient: any, deviceId: string) {
   console.log('Updating device status - alive:', deviceId);
   const now = new Date().toISOString();
 
-  // Try match by serial_number first
   const { data: deviceBySerial } = await supabaseClient
     .from('devices')
     .select('id')
@@ -558,7 +610,6 @@ async function updateDeviceStatus(supabaseClient: any, deviceId: string, reqIp?:
       .update({ last_sync: now, status: 'online' })
       .eq('id', deviceBySerial.id);
   } else {
-    // Try match by ip_address
     const { data: deviceByIp } = await supabaseClient
       .from('devices')
       .select('id')
@@ -571,7 +622,6 @@ async function updateDeviceStatus(supabaseClient: any, deviceId: string, reqIp?:
         .update({ last_sync: now, status: 'online' })
         .eq('id', deviceByIp.id);
     } else {
-      // Fallback: try match by name
       const { data: deviceByName } = await supabaseClient
         .from('devices')
         .select('id')

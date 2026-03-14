@@ -607,7 +607,7 @@ async function run() {
 
       const pushConfig = {
         push_server: {
-          push_remote_address: `https://${hostname}${isOlderFirmware ? webhookPath : pushPath}`,
+          push_remote_address: `https://${hostname}${webhookPath}`,
           push_request_timeout: '120000',
           push_request_period: '5',
         },

@@ -183,12 +183,22 @@ async function run() {
     await postConfig({ push_server: { push_remote_address: 'https://${hostname}/functions/v1/controlid-webhook/push', push_request_timeout: '30000', push_request_period: '5' } }, 'push_server');
     addLog('✓ Push Server configurado', 'ok');
 
-    addLog('5. Ativando modo online...', 'info');
-    const onlinePayload = serverId
-      ? { general: { online: '1', local_identification: '1' }, online_client: { extract_template: '0', max_request_attempts: '3' } }
-      : { general: { online: '1' } };
-    await postConfig(onlinePayload, 'general.online');
-    addLog('✓ Modo online atualizado', 'ok');
+    addLog('5. Configurando online_client (Servidor/Porta)...', 'info');
+    const onlineClientPayload = {
+      online_client: {
+        server_id: serverId || '',
+        server_address: '${hostname}',
+        server_port: '443',
+        extract_template: '0',
+        max_request_attempts: '3'
+      }
+    };
+    await postConfig(onlineClientPayload, 'online_client');
+    addLog('✓ online_client configurado (servidor: ${hostname}, porta: 443)', 'ok');
+
+    addLog('6. Ativando modo online...', 'info');
+    await postConfig({ general: { online: '1', local_identification: '1' } }, 'general.online');
+    addLog('✓ Modo online ativado', 'ok');
 
     addLog('6. Verificando...', 'info');
     const vr = await fetch(apiBase + '/get_configuration.fcgi?session=' + s, { method:'POST', headers: hdr, body: JSON.stringify({ general:true, monitor:true, push_server:true, online_client:true }) });

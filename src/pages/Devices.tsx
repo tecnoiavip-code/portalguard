@@ -183,22 +183,35 @@ async function run() {
     await postConfig({ push_server: { push_remote_address: 'https://${hostname}/functions/v1/controlid-webhook/push', push_request_timeout: '30000', push_request_period: '5' } }, 'push_server');
     addLog('✓ Push Server configurado', 'ok');
 
-    addLog('5. Configurando online_client (Servidor/Porta)...', 'info');
+    addLog('5. Configurando online_client...', 'info');
     const onlineClientPayload = {
       online_client: {
-        server_id: serverId || '',
-        server_address: '${hostname}',
-        server_port: '443',
         extract_template: '0',
         max_request_attempts: '3'
       }
     };
+    if (serverId) {
+      onlineClientPayload.online_client.server_id = serverId;
+    }
     await postConfig(onlineClientPayload, 'online_client');
-    addLog('✓ online_client configurado (servidor: ${hostname}, porta: 443)', 'ok');
+    addLog('✓ online_client configurado', 'ok');
 
     addLog('6. Ativando modo online...', 'info');
     await postConfig({ general: { online: '1', local_identification: '1' } }, 'general.online');
     addLog('✓ Modo online ativado', 'ok');
+
+    // Try updating the server object with correct address if we have an ID
+    if (serverId) {
+      addLog('6b. Atualizando objeto de servidor...', 'info');
+      try {
+        const updResp = await fetch(apiBase + '/modify_objects.fcgi?session=' + s, {
+          method: 'POST', headers: hdr,
+          body: JSON.stringify({ object: 'devices', values: { name: 'PortalGuard Cloud', ip: '${hostname}', port: '443' }, where: { devices: { id: serverId } } })
+        });
+        if (updResp.ok) addLog('✓ Servidor atualizado (ip: ${hostname}, port: 443)', 'ok');
+        else addLog('⚠ modify_objects retornou ' + updResp.status, 'info');
+      } catch(e) { addLog('⚠ modify_objects falhou: ' + e.message, 'info'); }
+    }
 
     addLog('7. Verificando...', 'info');
     const vr = await fetch(apiBase + '/get_configuration.fcgi?session=' + s, { method:'POST', headers: hdr, body: JSON.stringify({ general:true, monitor:true, push_server:true, online_client:true }) });

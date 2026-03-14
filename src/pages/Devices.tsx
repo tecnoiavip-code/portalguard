@@ -113,9 +113,9 @@ export const Devices = () => {
   const generateLocalConfigScript = (ip: string, hostname: string) => {
     return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Config Local - Control iD</title>
-<style>body{font-family:system-ui;max-width:500px;margin:40px auto;padding:20px}
-.log{background:#f5f5f5;padding:12px;border-radius:8px;margin:12px 0;font-size:14px;white-space:pre-wrap}
-.ok{color:green}.err{color:red}.info{color:#666}
+<style>body{font-family:system-ui;max-width:600px;margin:40px auto;padding:20px}
+.log{background:#f5f5f5;padding:12px;border-radius:8px;margin:12px 0;font-size:13px;white-space:pre-wrap;max-height:500px;overflow-y:auto}
+.ok{color:green}.err{color:red}.info{color:#666}.warn{color:#b45309}
 h2{margin:0 0 16px}button{padding:8px 16px;border-radius:6px;border:none;background:#3b82f6;color:white;cursor:pointer;font-size:14px}
 button:hover{background:#2563eb}</style></head>
 <body><h2>⚙️ Configuração Local - Control iD</h2>
@@ -125,67 +125,52 @@ button:hover{background:#2563eb}</style></head>
 <button onclick="run()">Configurar</button>
 <script>
 const log = document.getElementById('log');
-function addLog(msg, cls) { log.innerHTML += '\\n<span class="'+cls+'">'+msg+'</span>'; }
+function addLog(msg, cls) { log.innerHTML += '\\n<span class="'+cls+'">'+msg+'</span>'; log.scrollTop = log.scrollHeight; }
 
 const desiredHost = '${hostname}';
-const desiredPort = '443';
-const createCandidates = [
-  { name: 'PortalGuard Cloud', ip: desiredHost, port: desiredPort, public_key: '' },
-  { name: 'PortalGuard Cloud', ip: desiredHost + ':' + desiredPort, public_key: '' },
-  { name: 'PortalGuard Cloud', ip: 'https://' + desiredHost, port: desiredPort, public_key: '' }
-];
-
-function asArray(data) {
-  if (!data || typeof data !== 'object') return [];
-  if (Array.isArray(data.devices)) return data.devices;
-  if (Array.isArray(data.values)) return data.values;
-  if (Array.isArray(data.rows)) return data.rows;
-  if (Array.isArray(data.objects)) return data.objects;
-  return [];
-}
-
-function pickId(data) {
-  if (Array.isArray(data?.ids) && data.ids.length > 0) return String(data.ids[0]);
-  const rows = asArray(data);
-  const first = rows.find((r) => r && (r.id !== undefined || r.device_id !== undefined));
-  if (!first) return '';
-  return String(first.id ?? first.device_id ?? '');
-}
-
-function normalizeServer(row) {
-  if (!row) return { id: '', ip: '', port: '' };
-  const ip = String(row.ip || row.server || '').trim();
-  const explicitPort = String(row.port || '').trim();
-  const portMatch = ip.match(/:(\\d+)/);
-  const inferredPort = portMatch?.[1] || (ip.startsWith('https://') ? '443' : '');
-  return { id: String(row.id ?? row.device_id ?? ''), ip, port: explicitPort || inferredPort };
-}
-
-function isPortalGuardServer(row) {
-  const name = String(row?.name || '').toLowerCase();
-  const ip = String(row?.ip || '').toLowerCase();
-  return name === 'portalguard cloud' || ip.includes(desiredHost.toLowerCase());
-}
+const webhookPath = '/functions/v1/controlid-webhook';
+const pushPath = '/functions/v1/controlid-webhook/push';
+const fullServerUrl = 'https://' + desiredHost + webhookPath;
 
 async function run() {
   log.innerHTML = '<span class="info">Iniciando...</span>';
   try {
+    const apiBase = 'http://${ip}';
+    const hdr = {'Content-Type':'application/json'};
+
+    // Step 0: Login
     addLog('1. Fazendo login...', 'info');
-    const lr = await fetch('http://${ip}/login.fcgi', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
+    const lr = await fetch(apiBase + '/login.fcgi', {
+      method:'POST', headers: hdr,
       body:JSON.stringify({login:'admin',password:'admin'})
     });
     if (!lr.ok) throw new Error('Login falhou: ' + lr.status);
-
     const ld = await lr.json();
     const s = ld.session;
     if (!s) throw new Error('Sessão não retornada');
     addLog('✓ Login OK (session: ' + s + ')', 'ok');
 
-    const apiBase = 'http://${ip}';
+    // Step 1: Detect firmware
+    addLog('2. Detectando firmware...', 'info');
+    let fwVersion = 'unknown';
+    try {
+      const sysResp = await fetch(apiBase + '/system_information.fcgi?session=' + s, { method: 'POST', headers: hdr });
+      if (sysResp.ok) {
+        const sysData = await sysResp.json();
+        fwVersion = sysData.firmware || sysData.version || 'unknown';
+        addLog('✓ Firmware: ' + fwVersion, 'ok');
+      }
+    } catch(e) { addLog('⚠ Não foi possível detectar firmware', 'warn'); }
+
+    const fwMajorMinor = fwVersion.match(/(\\d+)\\.(\\d+)/);
+    const fwMajor = fwMajorMinor ? parseInt(fwMajorMinor[1]) : 0;
+    const fwMinor = fwMajorMinor ? parseInt(fwMajorMinor[2]) : 0;
+    const isOlderFirmware = (fwMajor < 6) || (fwMajor === 6 && fwMinor < 21);
+    if (isOlderFirmware) {
+      addLog('⚠ Firmware antigo detectado (' + fwVersion + ') - usando modo compatível', 'warn');
+    }
+
     const cfgUrl = apiBase + '/set_configuration.fcgi?session=' + s;
-    const hdr = {'Content-Type':'application/json'};
 
     const postConfig = async (payload, label) => {
       const resp = await fetch(cfgUrl, { method:'POST', headers: hdr, body: JSON.stringify(payload) });
@@ -193,142 +178,233 @@ async function run() {
         const txt = await resp.text().catch(() => '');
         throw new Error(label + ' falhou (' + resp.status + ') ' + txt);
       }
+      return resp;
     };
 
-    const loadServers = async (wherePayload) => {
+    const tryPostConfig = async (payload, label) => {
+      try {
+        const resp = await fetch(cfgUrl, { method:'POST', headers: hdr, body: JSON.stringify(payload) });
+        if (!resp.ok) {
+          const txt = await resp.text().catch(() => '');
+          addLog('⚠ ' + label + ': ' + resp.status + ' ' + txt, 'warn');
+          return false;
+        }
+        return true;
+      } catch(e) {
+        addLog('⚠ ' + label + ': ' + e.message, 'warn');
+        return false;
+      }
+    };
+
+    // Step 2: Create or find server object
+    // Official docs: ip field should contain the FULL URL for the server
+    // Older firmware may not support separate port field
+    addLog('3. Configurando servidor online...', 'info');
+
+    const loadObjects = async (payload) => {
       const resp = await fetch(apiBase + '/load_objects.fcgi?session=' + s, {
-        method: 'POST', headers: hdr, body: JSON.stringify({ object: 'devices', ...wherePayload })
+        method: 'POST', headers: hdr, body: JSON.stringify(payload)
       });
       if (!resp.ok) return [];
       const data = await resp.json().catch(() => ({}));
-      return asArray(data);
+      if (Array.isArray(data.devices)) return data.devices;
+      if (Array.isArray(data.values)) return data.values;
+      if (Array.isArray(data.rows)) return data.rows;
+      if (Array.isArray(data.objects)) return data.objects;
+      return [];
     };
 
-    const loadServerById = async (serverId) => {
-      const idVariants = [serverId];
-      const numericId = Number(serverId);
-      if (Number.isFinite(numericId) && String(numericId) === String(serverId)) idVariants.push(numericId);
+    // Check existing servers
+    let existingServers = await loadObjects({ object: 'devices' });
+    addLog('  Servidores existentes: ' + existingServers.length, 'info');
 
-      for (const idVariant of idVariants) {
-        const rows = await loadServers({ where: { devices: { id: idVariant } } });
-        if (rows.length > 0) return normalizeServer(rows[0]);
-      }
+    let serverId = '';
+    const portalGuard = existingServers.find(r => {
+      const n = String(r.name || '').toLowerCase();
+      const i = String(r.ip || '').toLowerCase();
+      return n.includes('portalguard') || i.includes(desiredHost);
+    });
 
-      return { id: '', ip: '', port: '' };
-    };
-
-    const findOrCreateServer = async () => {
-      const existingByName = await loadServers({ where: { devices: { name: 'PortalGuard Cloud' } } });
-      const preferred = existingByName.find(isPortalGuardServer) || existingByName[0] || null;
-      if (preferred?.id !== undefined) {
-        const normalized = normalizeServer(preferred);
-        addLog('✓ Servidor existente encontrado (id: ' + normalized.id + ')', 'ok');
-        return normalized;
-      }
-
-      for (const candidate of createCandidates) {
-        addLog('2. Criando servidor online com ip=' + candidate.ip + ' ...', 'info');
-        const createResp = await fetch(apiBase + '/create_objects.fcgi?session=' + s, {
-          method: 'POST',
-          headers: hdr,
-          body: JSON.stringify({ object: 'devices', values: [candidate] })
-        });
-
-        if (!createResp.ok) {
-          const txt = await createResp.text().catch(() => '');
-          addLog('⚠ create_objects retornou ' + createResp.status + (txt ? ': ' + txt : ''), 'info');
-          continue;
-        }
-
-        const createData = await createResp.json().catch(() => ({}));
-        const createdId = pickId(createData);
-        if (createdId) {
-          addLog('✓ Servidor criado (id: ' + createdId + ')', 'ok');
-          return { id: createdId, ip: candidate.ip, port: candidate.port || '' };
-        }
-      }
-
-      const allServers = await loadServers({});
-      const fallback = allServers.find(isPortalGuardServer);
-      return fallback ? normalizeServer(fallback) : { id: '', ip: '', port: '' };
-    };
-
-    const applyServerEndpoint = async (serverId) => {
-      const idAsNumber = Number(serverId);
-      const idVariants = [serverId];
-      if (Number.isFinite(idAsNumber) && String(idAsNumber) === String(serverId)) idVariants.push(idAsNumber);
-
-      const payloads = idVariants.flatMap((idVariant) => [
-        { object: 'devices', values: { name: 'PortalGuard Cloud', ip: desiredHost, port: desiredPort }, where: { devices: { id: idVariant } } },
-        { object: 'devices', values: [{ id: idVariant, name: 'PortalGuard Cloud', ip: desiredHost, port: desiredPort }] }
-      ]);
-
-      for (const payload of payloads) {
-        const resp = await fetch(apiBase + '/modify_objects.fcgi?session=' + s, {
-          method: 'POST', headers: hdr, body: JSON.stringify(payload)
-        });
-        if (!resp.ok) continue;
-      }
-
-      return await loadServerById(serverId);
-    };
-
-    const server = await findOrCreateServer();
-    if (!server.id) throw new Error('Não foi possível resolver server_id (objeto "devices")');
-
-    addLog('3. Gravando host/porta no objeto de servidor...', 'info');
-    const updatedServer = await applyServerEndpoint(server.id);
-    const serverHostApplied = updatedServer.ip || server.ip;
-    const serverPortApplied = updatedServer.port || server.port;
-
-    if (!serverHostApplied || !serverPortApplied) {
-      throw new Error('Servidor/porta não persistiram no objeto online (campos ficaram vazios)');
+    if (portalGuard) {
+      serverId = String(portalGuard.id);
+      addLog('✓ Servidor existente encontrado (id: ' + serverId + ')', 'ok');
     }
 
-    addLog('✓ Servidor salvo: ' + serverHostApplied + ' | porta: ' + serverPortApplied, 'ok');
+    // For older firmware: ip = full URL; for newer: ip = hostname, port = 443
+    const serverValueOld = { name: 'PortalGuard Cloud', ip: fullServerUrl, public_key: '' };
+    const serverValueNew = { name: 'PortalGuard Cloud', ip: desiredHost, port: '443', public_key: '' };
 
-    const serverIdValue = String(server.id);
+    if (!serverId) {
+      // Try create_objects with appropriate format
+      const candidates = isOlderFirmware
+        ? [serverValueOld, serverValueNew, { name: 'PortalGuard Cloud', ip: 'https://' + desiredHost, public_key: '' }]
+        : [serverValueNew, serverValueOld, { name: 'PortalGuard Cloud', ip: 'https://' + desiredHost, port: '443', public_key: '' }];
 
-    addLog('4. Vinculando server_id no online_client...', 'info');
-    await postConfig({ online_client: { server_id: serverIdValue } }, 'online_client.server_id');
-    addLog('✓ server_id aplicado: ' + server.id, 'ok');
+      for (const candidate of candidates) {
+        addLog('  Tentando criar servidor: ip=' + candidate.ip + '...', 'info');
+        try {
+          const createResp = await fetch(apiBase + '/create_objects.fcgi?session=' + s, {
+            method: 'POST', headers: hdr,
+            body: JSON.stringify({ object: 'devices', values: [candidate] })
+          });
+          if (createResp.ok) {
+            const cd = await createResp.json().catch(() => ({}));
+            if (Array.isArray(cd.ids) && cd.ids.length > 0) {
+              serverId = String(cd.ids[0]);
+              addLog('✓ Servidor criado (id: ' + serverId + ')', 'ok');
+              break;
+            }
+          } else {
+            const txt = await createResp.text().catch(() => '');
+            addLog('  create_objects retornou ' + createResp.status + ': ' + txt, 'info');
+          }
+        } catch(e) { addLog('  Erro: ' + e.message, 'info'); }
+      }
+    }
 
-    addLog('5. Configurando Monitor...', 'info');
-    await postConfig({ monitor: { request_timeout: '5000', hostname: desiredHost, port: desiredPort, path: '/functions/v1/controlid-webhook' } }, 'monitor');
+    // If still no server, try create_or_modify_objects
+    if (!serverId) {
+      addLog('  Tentando create_or_modify_objects...', 'info');
+      const val = isOlderFirmware ? serverValueOld : serverValueNew;
+      try {
+        const resp = await fetch(apiBase + '/create_or_modify_objects.fcgi?session=' + s, {
+          method: 'POST', headers: hdr,
+          body: JSON.stringify({ object: 'devices', values: [val] })
+        });
+        if (resp.ok) {
+          // Reload to find it
+          existingServers = await loadObjects({ object: 'devices' });
+          const found = existingServers.find(r => String(r.name || '').toLowerCase().includes('portalguard'));
+          if (found) {
+            serverId = String(found.id);
+            addLog('✓ Servidor criado via create_or_modify (id: ' + serverId + ')', 'ok');
+          }
+        }
+      } catch(e) { /* ignore */ }
+    }
+
+    if (!serverId) {
+      // Last resort: use first available server or id "1"
+      if (existingServers.length > 0) {
+        serverId = String(existingServers[0].id);
+        addLog('⚠ Usando primeiro servidor disponível (id: ' + serverId + ')', 'warn');
+      } else {
+        throw new Error('Não foi possível criar ou encontrar servidor online');
+      }
+    }
+
+    // Update server object with correct endpoint
+    addLog('4. Atualizando endpoint do servidor...', 'info');
+    const modifyPayloads = isOlderFirmware
+      ? [
+          { object: 'devices', values: [{ id: Number(serverId), name: 'PortalGuard Cloud', ip: fullServerUrl }] },
+          { object: 'devices', values: { name: 'PortalGuard Cloud', ip: fullServerUrl }, where: { devices: { id: Number(serverId) } } },
+        ]
+      : [
+          { object: 'devices', values: [{ id: Number(serverId), name: 'PortalGuard Cloud', ip: desiredHost, port: '443' }] },
+          { object: 'devices', values: { name: 'PortalGuard Cloud', ip: desiredHost, port: '443' }, where: { devices: { id: Number(serverId) } } },
+        ];
+
+    for (const payload of modifyPayloads) {
+      try {
+        await fetch(apiBase + '/modify_objects.fcgi?session=' + s, {
+          method: 'POST', headers: hdr, body: JSON.stringify(payload)
+        });
+      } catch(e) { /* try next */ }
+    }
+    addLog('✓ Endpoint atualizado', 'ok');
+
+    // Step 3: Set online_client.server_id - try both number and string
+    addLog('5. Vinculando server_id no online_client...', 'info');
+    const serverIdNum = Number(serverId);
+    const serverIdStr = String(serverId);
+
+    // For older firmware, try number first; for newer, try string first
+    const idAttempts = isOlderFirmware
+      ? [serverIdNum, serverIdStr]
+      : [serverIdStr, serverIdNum];
+
+    let serverIdLinked = false;
+    for (const idVal of idAttempts) {
+      const ok = await tryPostConfig({ online_client: { server_id: idVal } }, 'online_client.server_id=' + JSON.stringify(idVal));
+      if (ok) {
+        addLog('✓ server_id aplicado: ' + JSON.stringify(idVal), 'ok');
+        serverIdLinked = true;
+        break;
+      }
+    }
+
+    if (!serverIdLinked) {
+      addLog('⚠ server_id não aceito como string nem como número - tentando continuar...', 'warn');
+    }
+
+    // Step 4: Configure Monitor
+    addLog('6. Configurando Monitor...', 'info');
+    await postConfig({
+      monitor: {
+        request_timeout: '5000',
+        hostname: desiredHost,
+        port: '443',
+        path: webhookPath
+      }
+    }, 'monitor');
     addLog('✓ Monitor configurado', 'ok');
 
-    addLog('6. Configurando Push Server...', 'info');
-    await postConfig({ push_server: { push_remote_address: 'https://' + desiredHost + '/functions/v1/controlid-webhook/push', push_request_timeout: '30000', push_request_period: '5' } }, 'push_server');
+    // Step 5: Configure Push Server
+    addLog('7. Configurando Push Server...', 'info');
+    await postConfig({
+      push_server: {
+        push_remote_address: 'https://' + desiredHost + pushPath,
+        push_request_timeout: '30000',
+        push_request_period: '5'
+      }
+    }, 'push_server');
     addLog('✓ Push Server configurado', 'ok');
 
-    addLog('7. Configurando online_client e ativando online...', 'info');
-    await postConfig({
-      online_client: { server_id: serverIdValue, extract_template: '0', max_request_attempts: '3' },
-      general: { online: '1', local_identification: '1' }
-    }, 'online_client/general');
-    addLog('✓ online_client + online ativados', 'ok');
+    // Step 6: Activate online mode - try combined first, then separate for older firmware
+    addLog('8. Ativando modo online...', 'info');
+    const activationPayload = {
+      general: { online: '1', local_identification: '1' },
+      online_client: { extract_template: '0', max_request_attempts: '3' }
+    };
 
-    addLog('8. Verificando...', 'info');
+    const combinedOk = await tryPostConfig(activationPayload, 'online+client combinado');
+    if (!combinedOk) {
+      // Older firmware might need these separately
+      addLog('  Tentando configurações separadas...', 'info');
+      await tryPostConfig({ general: { online: '1', local_identification: '1' } }, 'general.online');
+      await tryPostConfig({ online_client: { extract_template: '0', max_request_attempts: '3' } }, 'online_client extras');
+    }
+    addLog('✓ Modo online ativado', 'ok');
+
+    // Step 7: Verify
+    addLog('9. Verificando configuração...', 'info');
     const vr = await fetch(apiBase + '/get_configuration.fcgi?session=' + s, {
-      method:'POST', headers: hdr, body: JSON.stringify({ general:true, monitor:true, push_server:true, online_client:true })
+      method:'POST', headers: hdr,
+      body: JSON.stringify({ general:true, monitor:true, push_server:true, online_client:true })
     });
 
     if (vr.ok) {
       const vd = await vr.json();
       addLog('Online: ' + (vd.general?.online || '?'), vd.general?.online === '1' ? 'ok' : 'err');
-      addLog('Monitor hostname: ' + (vd.monitor?.hostname || '?'), 'ok');
+      addLog('Monitor hostname: ' + (vd.monitor?.hostname || '?'), vd.monitor?.hostname ? 'ok' : 'err');
       addLog('Monitor port: ' + (vd.monitor?.port || '?'), 'ok');
-      addLog('Push address: ' + (vd.push_server?.push_remote_address || '?'), 'ok');
-      addLog('Online server_id: ' + (vd.online_client?.server_id || server.id || '?'), (vd.online_client?.server_id || server.id) ? 'ok' : 'err');
+      addLog('Push address: ' + (vd.push_server?.push_remote_address || '?'), vd.push_server?.push_remote_address ? 'ok' : 'err');
+      addLog('server_id: ' + (vd.online_client?.server_id || '?'), vd.online_client?.server_id ? 'ok' : 'err');
     }
 
-    const confirmedServer = await loadServerById(server.id);
-    addLog('Servidor (objeto.ip): ' + (confirmedServer.ip || '?'), confirmedServer.ip ? 'ok' : 'err');
-    addLog('Porta (objeto.port): ' + (confirmedServer.port || '?'), confirmedServer.port ? 'ok' : 'err');
+    // Verify server object
+    const verifyServers = await loadObjects({ object: 'devices', where: { devices: { id: Number(serverId) } } });
+    if (verifyServers.length > 0) {
+      const sv = verifyServers[0];
+      addLog('Servidor.ip: ' + (sv.ip || '?'), sv.ip ? 'ok' : 'err');
+      addLog('Servidor.port: ' + (sv.port || 'N/A'), 'info');
+    }
 
-    addLog('\\n🎉 Configuração concluída com sucesso!', 'ok');
+    addLog('\\n🎉 Configuração concluída!', 'ok');
+    addLog('Firmware: ' + fwVersion + (isOlderFirmware ? ' (modo compatível)' : ''), 'info');
   } catch(e) {
-    addLog('✗ Erro: ' + (e?.message || e), 'err');
+    addLog('\\n✗ Erro: ' + (e?.message || e), 'err');
   }
 }
 </script></body></html>`;

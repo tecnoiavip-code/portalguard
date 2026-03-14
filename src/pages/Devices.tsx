@@ -292,7 +292,7 @@ async function run() {
       addLog('Porta detectada no servidor: ' + detectedPort, 'ok');
     }
 
-    addLog('\n🎉 Configuração concluída com sucesso!', 'ok');
+    addLog('\\n🎉 Configuração concluída com sucesso!', 'ok');
   } catch(e) { addLog('✗ Erro: ' + (e?.message || e), 'err'); }
 }
 </script></body></html>`;

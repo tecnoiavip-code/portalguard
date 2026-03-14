@@ -436,6 +436,7 @@ async function run() {
             Novo Dispositivo
           </Button>
         </div>
+      </div>
 
       {showForm && (
         <Card>

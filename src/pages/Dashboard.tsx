@@ -276,7 +276,11 @@ export const Dashboard = () => {
                   const changes = p.object_changes?.[0]?.values || {};
                   
                   const userName = changes.user_name || p.user_name || p.name || '';
-                  const photoUrl = changes.photo_url || p.photo_url || p.photo || '';
+                  const rawPhotoUrl = changes.photo_url || p.photo_url || p.photo || '';
+                  const savedPhotoPath = p.saved_photo_path || '';
+                  const photoUrl = savedPhotoPath 
+                    ? photoSignedUrls[savedPhotoPath] || ''
+                    : rawPhotoUrl;
                   
                   // Try to find resident by name to get apartment
                   let apartment = changes.apartment || changes.user_id || p.apartment || p.house || '';

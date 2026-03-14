@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Users, Mail, UserCheck, Clock, Activity, Radio, CheckCheck, User, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Users, Mail, UserCheck, Clock, Activity, Radio, CheckCheck, User, ShieldCheck, ShieldAlert, X } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { StatsCard } from '@/components/StatsCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -37,6 +37,7 @@ export const Dashboard = () => {
   const [deviceNames, setDeviceNames] = useState<Record<string, string>>({});
   const [fallbackDeviceName, setFallbackDeviceName] = useState('');
   const [photoSignedUrls, setPhotoSignedUrls] = useState<Record<string, string>>({});
+  const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; name: string; time: string; location: string } | null>(null);
 
   // Generate signed URLs for access photos stored in the bucket
   useEffect(() => {
@@ -372,8 +373,11 @@ export const Dashboard = () => {
                       </div>
 
                       {/* Avatar */}
-                      <div className="flex-shrink-0 z-10 relative">
-                        <Avatar className={`h-16 w-16 border-2 ${borderColor}`}>
+                      <div 
+                        className={`flex-shrink-0 z-10 relative ${photoUrl ? 'cursor-pointer' : ''}`}
+                        onClick={() => photoUrl && setSelectedPhoto({ url: photoUrl, name: displayLabel, time: fullTimeStr, location })}
+                      >
+                        <Avatar className={`h-16 w-16 border-2 ${borderColor} ${photoUrl ? 'hover:ring-2 hover:ring-primary/50 transition-all' : ''}`}>
                           {photoUrl ? (
                             <AvatarImage src={photoUrl} alt={displayName} className="object-cover" />
                           ) : null}
@@ -423,6 +427,35 @@ export const Dashboard = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Photo Modal */}
+      {selectedPhoto && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+          onClick={() => setSelectedPhoto(null)}
+        >
+          <div 
+            className="relative max-w-lg w-full mx-4 rounded-xl overflow-hidden shadow-2xl border border-border bg-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setSelectedPhoto(null)}
+              className="absolute top-3 right-3 z-10 rounded-full bg-background/80 p-1.5 hover:bg-background transition-colors"
+            >
+              <X className="h-5 w-5 text-foreground" />
+            </button>
+            <img 
+              src={selectedPhoto.url} 
+              alt={selectedPhoto.name} 
+              className="w-full max-h-[70vh] object-contain bg-black"
+            />
+            <div className="p-4 space-y-1">
+              <p className="text-sm font-bold text-foreground">{selectedPhoto.name}</p>
+              <p className="text-xs text-muted-foreground">{selectedPhoto.location} • {selectedPhoto.time}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

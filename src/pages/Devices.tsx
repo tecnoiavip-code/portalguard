@@ -391,7 +391,7 @@ async function run() {
 
     // Step 5: Configure Push Server
     addLog('7. Configurando Push Server...', 'info');
-    const pushRemoteAddress = 'https://' + desiredHost + (isOlderFirmware ? legacyPushPath : pushPath);
+    const pushRemoteAddress = 'https://' + desiredHost + webhookPath;
     await postConfig({
       push_server: {
         push_remote_address: pushRemoteAddress,

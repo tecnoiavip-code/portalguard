@@ -37,6 +37,7 @@ export const Dashboard = () => {
   const [deviceNames, setDeviceNames] = useState<Record<string, string>>({});
   const [fallbackDeviceName, setFallbackDeviceName] = useState('');
   const [photoSignedUrls, setPhotoSignedUrls] = useState<Record<string, string>>({});
+  const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; name: string; time: string; location: string } | null>(null);
 
   // Generate signed URLs for access photos stored in the bucket
   useEffect(() => {

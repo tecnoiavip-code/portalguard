@@ -332,8 +332,9 @@ Deno.serve(async (req) => {
 
       const monitorConfig = getMonitorConfig();
       const pushConfig = getPushServerConfig();
-      // Send both monitor and push_server configs
-      const fullConfig = { ...monitorConfig, ...pushConfig };
+      const generalConfig = getGeneralConfig();
+      // Send monitor + push_server + online mode
+      const fullConfig = { ...monitorConfig, ...pushConfig, ...generalConfig };
 
       try {
         const loginUrl = `http://${targetIp}:${targetPort}/login.fcgi`;

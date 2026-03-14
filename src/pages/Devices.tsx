@@ -365,7 +365,7 @@ async function run() {
     addLog('6. Configurando Monitor...', 'info');
     await postConfig({
       monitor: {
-        request_timeout: '5000',
+        request_timeout: '15000',
         hostname: desiredHost,
         port: '443',
         path: webhookPath

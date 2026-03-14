@@ -499,34 +499,168 @@ async function run() {
         return [];
       };
 
-      const findServerInRows = (rows: any[]) =>
-        rows.find((row) => {
-          const name = String(row?.name || '').toLowerCase();
-          const ipValue = String(row?.ip || '').toLowerCase();
-          return name === 'portalguard cloud' || ipValue.includes(hostname.toLowerCase());
+      const normalizeServer = (row: any) => {
+        if (!row) return { id: '', ip: '', port: '' };
+        const ipValue = String(row.ip || row.server || '').trim();
+        const explicitPort = String(row.port || '').trim();
+        const portMatch = ipValue.match(/:(\d+)/);
+        const inferredPort = portMatch?.[1] || (ipValue.startsWith('https://') ? '443' : '');
+        return { id: String(row.id ?? row.device_id ?? ''), ip: ipValue, port: explicitPort || inferredPort };
+      };
+
+      const isPortalGuardServer = (row: any) => {
+        const name = String(row?.name || '').toLowerCase();
+        const ipValue = String(row?.ip || '').toLowerCase();
+        return name === 'portalguard cloud' || ipValue.includes(hostname.toLowerCase());
+      };
+
+      const loadServers = async (wherePayload?: Record<string, any>) => {
+        const response = await fetch(`${baseUrl}/load_objects.fcgi?session=${session}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ object: 'devices', ...(wherePayload || {}) }),
         });
 
-      const loadExistingServer = async () => {
-        const payloads = [
-          { object: 'devices', where: { devices: { name: 'PortalGuard Cloud' } } },
-          { object: 'devices' },
-        ];
+        if (!response.ok) return [];
+        const data = await response.json().catch(() => ({}));
+        return asArray(data);
+      };
+
+      const loadServerById = async (serverId: string) => {
+        const idVariants: Array<string | number> = [serverId];
+        const numericId = Number(serverId);
+        if (Number.isFinite(numericId) && String(numericId) === String(serverId)) {
+          idVariants.push(numericId);
+        }
+
+        for (const idVariant of idVariants) {
+          const rows = await loadServers({ where: { devices: { id: idVariant } } });
+          if (rows.length > 0) return normalizeServer(rows[0]);
+        }
+
+        return { id: '', ip: '', port: '' };
+      };
+
+      const createCandidates = [
+        { name: 'PortalGuard Cloud', ip: hostname, port: '443', public_key: '' },
+        { name: 'PortalGuard Cloud', ip: `${hostname}:443`, public_key: '' },
+        { name: 'PortalGuard Cloud', ip: `https://${hostname}`, port: '443', public_key: '' },
+      ];
+
+      const findOrCreateServer = async () => {
+        const existingByName = await loadServers({ where: { devices: { name: 'PortalGuard Cloud' } } });
+        const preferred = existingByName.find(isPortalGuardServer) || existingByName[0] || null;
+        if (preferred?.id !== undefined) return normalizeServer(preferred);
+
+        for (const candidate of createCandidates) {
+          const createResp = await fetch(`${baseUrl}/create_objects.fcgi?session=${session}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ object: 'devices', values: [candidate] }),
+          });
+
+          if (!createResp.ok) continue;
+          const createData = await createResp.json().catch(() => ({}));
+          const createdId =
+            Array.isArray(createData?.ids) && createData.ids.length > 0
+              ? String(createData.ids[0])
+              : '';
+
+          if (createdId) return { id: createdId, ip: candidate.ip, port: candidate.port || '' };
+        }
+
+        const fallback = (await loadServers({})).find(isPortalGuardServer);
+        return fallback ? normalizeServer(fallback) : { id: '', ip: '', port: '' };
+      };
+
+      const applyServerEndpoint = async (serverId: string) => {
+        const idAsNumber = Number(serverId);
+        const idVariants: Array<string | number> = [serverId];
+        if (Number.isFinite(idAsNumber) && String(idAsNumber) === String(serverId)) {
+          idVariants.push(idAsNumber);
+        }
+
+        const payloads = idVariants.flatMap((idVariant) => [
+          {
+            object: 'devices',
+            values: { name: 'PortalGuard Cloud', ip: hostname, port: '443' },
+            where: { devices: { id: idVariant } },
+          },
+          {
+            object: 'devices',
+            values: [{ id: idVariant, name: 'PortalGuard Cloud', ip: hostname, port: '443' }],
+          },
+        ]);
 
         for (const payload of payloads) {
-          const response = await fetch(`${baseUrl}/load_objects.fcgi?session=${session}`, {
+          const resp = await fetch(`${baseUrl}/modify_objects.fcgi?session=${session}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
           });
-
-          if (!response.ok) continue;
-          const data = await response.json().catch(() => ({}));
-          const found = findServerInRows(asArray(data));
-          if (found?.id !== undefined) return String(found.id);
+          if (!resp.ok) continue;
         }
 
-        return '';
+        return await loadServerById(serverId);
       };
+
+      const server = await findOrCreateServer();
+      if (!server.id) throw new Error('Não foi possível configurar server_id (objeto devices)');
+
+      const updatedServer = await applyServerEndpoint(server.id);
+      const serverHostApplied = updatedServer.ip || server.ip;
+      const serverPortApplied = updatedServer.port || server.port;
+
+      if (!serverHostApplied || !serverPortApplied) {
+        throw new Error('Servidor/porta não persistiram no objeto online (campos ficaram vazios)');
+      }
+
+      const serverIdNumber = Number(server.id);
+      const serverIdValue =
+        Number.isFinite(serverIdNumber) && String(serverIdNumber) === String(server.id)
+          ? serverIdNumber
+          : server.id;
+
+      await postConfig({ online_client: { server_id: serverIdValue } }, 'online_client.server_id');
+      await postConfig(monitorConfig, 'monitor');
+      await postConfig(pushConfig, 'push_server');
+      await postConfig(
+        {
+          online_client: { server_id: serverIdValue, extract_template: '0', max_request_attempts: '3' },
+          general: { online: '1', local_identification: '1' },
+        },
+        'online_client/general',
+      );
+
+      let verifyData: any = null;
+      try {
+        const verifyResp = await fetch(`${baseUrl}/get_configuration.fcgi?session=${session}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ general: true, monitor: true, push_server: true, online_client: true }),
+        });
+        if (verifyResp.ok) verifyData = await verifyResp.json();
+      } catch {
+        // ignore
+      }
+
+      const appliedHostname = verifyData?.monitor?.hostname || '';
+      const appliedPush = verifyData?.push_server?.push_remote_address || '';
+      const appliedOnline = verifyData?.general?.online || '';
+      const appliedServerId = verifyData?.online_client?.server_id || server.id;
+
+      toast.success('Configuração aplicada com sucesso via rede local!', {
+        duration: 7000,
+        description: `Online: ${appliedOnline || '?'} | Server ID: ${appliedServerId || '?'} | Servidor: ${serverHostApplied}:${serverPortApplied} | Monitor: ${appliedHostname || hostname} | Push: ${appliedPush ? 'OK' : 'verificar'}`,
+      });
+    } catch (err: any) {
+      console.error('Error configuring device locally:', err);
+      toast.error('Erro ao configurar dispositivo via rede local', {
+        duration: 7000,
+        description: err.message || 'Verifique se o dispositivo está acessível na rede.',
+      });
+    }
+  };
 
       let serverId = await loadExistingServer();
       if (!serverId) {

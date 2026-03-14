@@ -660,7 +660,45 @@ async function processAccessLogs(supabaseClient: any, objectChanges: any[], devi
   }
 }
 
-async function updateDeviceStatus(supabaseClient: any, deviceId: string) {
+/**
+ * Save a base64 photo from a Control iD device to Supabase Storage.
+ */
+async function saveAccessPhoto(supabaseClient: any, deviceId: string, base64Data: string): Promise<string | null> {
+  try {
+    // Remove data URI prefix if present
+    const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
+    
+    // Decode base64 to Uint8Array
+    const binaryStr = atob(cleanBase64);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+
+    const timestamp = Date.now();
+    const filePath = `${deviceId}/${timestamp}.jpg`;
+
+    const { error } = await supabaseClient.storage
+      .from('access-photos')
+      .upload(filePath, bytes, {
+        contentType: 'image/jpeg',
+        upsert: false,
+      });
+
+    if (error) {
+      console.error('Storage upload error:', error);
+      return null;
+    }
+
+    console.log('Access photo saved:', filePath);
+    return filePath;
+  } catch (e) {
+    console.error('Error in saveAccessPhoto:', e);
+    return null;
+  }
+}
+
+
   console.log('Updating device status - alive:', deviceId);
   const now = new Date().toISOString();
 

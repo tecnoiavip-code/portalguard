@@ -36,6 +36,32 @@ export const Dashboard = () => {
   const [residents, setResidents] = useState<Resident[]>([]);
   const [deviceNames, setDeviceNames] = useState<Record<string, string>>({});
   const [fallbackDeviceName, setFallbackDeviceName] = useState('');
+  const [photoSignedUrls, setPhotoSignedUrls] = useState<Record<string, string>>({});
+
+  // Generate signed URLs for access photos stored in the bucket
+  useEffect(() => {
+    const paths = controlidLogs
+      .map(l => l.payload?.saved_photo_path)
+      .filter((p): p is string => !!p && !photoSignedUrls[p]);
+    
+    if (paths.length === 0) return;
+    const uniquePaths = [...new Set(paths)];
+
+    Promise.all(
+      uniquePaths.map(async (path) => {
+        const { data } = await supabase.storage
+          .from('access-photos')
+          .createSignedUrl(path, 3600);
+        return [path, data?.signedUrl || ''] as const;
+      })
+    ).then(results => {
+      const newUrls: Record<string, string> = {};
+      results.forEach(([p, url]) => { if (url) newUrls[p] = url; });
+      if (Object.keys(newUrls).length > 0) {
+        setPhotoSignedUrls(prev => ({ ...prev, ...newUrls }));
+      }
+    });
+  }, [controlidLogs]);
 
   const loadControlidLogs = useCallback(async () => {
     const { data } = await supabase
@@ -276,7 +302,11 @@ export const Dashboard = () => {
                   const changes = p.object_changes?.[0]?.values || {};
                   
                   const userName = changes.user_name || p.user_name || p.name || '';
-                  const photoUrl = changes.photo_url || p.photo_url || p.photo || '';
+                  const rawPhotoUrl = changes.photo_url || p.photo_url || p.photo || '';
+                  const savedPhotoPath = p.saved_photo_path || '';
+                  const photoUrl = savedPhotoPath 
+                    ? photoSignedUrls[savedPhotoPath] || ''
+                    : rawPhotoUrl;
                   
                   // Try to find resident by name to get apartment
                   let apartment = changes.apartment || changes.user_id || p.apartment || p.house || '';

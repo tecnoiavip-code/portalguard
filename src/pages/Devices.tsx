@@ -314,15 +314,15 @@ async function run() {
     }
     addLog('✓ Endpoint atualizado', 'ok');
 
-    // Step 3: Set online_client.server_id - try both number and string
+    // Step 3: Set online_client.server_id - try string first, then number fallback
     addLog('5. Vinculando server_id no online_client...', 'info');
     const serverIdNum = Number(serverId);
     const serverIdStr = String(serverId);
 
-    // For older firmware, try number first; for newer, try string first
-    const idAttempts = isOlderFirmware
-      ? [serverIdNum, serverIdStr]
-      : [serverIdStr, serverIdNum];
+    const idAttempts = [serverIdStr];
+    if (Number.isFinite(serverIdNum) && String(serverIdNum) === serverIdStr) {
+      idAttempts.push(serverIdNum);
+    }
 
     let serverIdLinked = false;
     for (const idVal of idAttempts) {
@@ -688,14 +688,34 @@ async function run() {
         throw new Error('Servidor/porta não persistiram no objeto online (campos ficaram vazios)');
       }
 
-      const serverIdValue = String(server.id);
+      const serverIdString = String(server.id);
+      const serverIdNumber = Number(server.id);
+      const serverIdAttempts: Array<string | number> = [serverIdString];
+      if (Number.isFinite(serverIdNumber) && String(serverIdNumber) === serverIdString) {
+        serverIdAttempts.push(serverIdNumber);
+      }
 
-      await postConfig({ online_client: { server_id: serverIdValue } }, 'online_client.server_id');
+      let linkedServerIdValue: string | number | null = null;
+      let lastServerIdError: Error | null = null;
+      for (const candidateId of serverIdAttempts) {
+        try {
+          await postConfig({ online_client: { server_id: candidateId } }, `online_client.server_id (${typeof candidateId})`);
+          linkedServerIdValue = candidateId;
+          break;
+        } catch (error: any) {
+          lastServerIdError = error;
+        }
+      }
+
+      if (linkedServerIdValue === null) {
+        throw lastServerIdError || new Error('online_client.server_id não aceitou string nem número');
+      }
+
       await postConfig(monitorConfig, 'monitor');
       await postConfig(pushConfig, 'push_server');
       await postConfig(
         {
-          online_client: { server_id: serverIdValue, extract_template: '0', max_request_attempts: '3' },
+          online_client: { server_id: linkedServerIdValue, extract_template: '0', max_request_attempts: '3' },
           general: { online: '1', local_identification: '1' },
         },
         'online_client/general',

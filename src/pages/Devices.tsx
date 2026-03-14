@@ -272,7 +272,7 @@ async function run() {
     // If still no server, try create_or_modify_objects
     if (!serverId) {
       addLog('  Tentando create_or_modify_objects...', 'info');
-      const val = isOlderFirmware ? serverValueOld : serverValueNew;
+      const val = serverCandidates[0];
       try {
         const resp = await fetch(apiBase + '/create_or_modify_objects.fcgi?session=' + s, {
           method: 'POST', headers: hdr,

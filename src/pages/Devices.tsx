@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Wifi, WifiOff, Camera, Tag, CreditCard, Pencil, Trash2, Plus, Settings2, Loader2, Network } from 'lucide-react';
+import { Wifi, WifiOff, Camera, Tag, CreditCard, Pencil, Trash2, Plus, Settings2, Loader2, Network, Search } from 'lucide-react';
 import { Device } from '@/types';
 import { useDevices } from '@/hooks/useDevices';
 import { toast } from 'sonner';
@@ -151,6 +151,111 @@ async function run() {
   } catch(e) { addLog('✗ Erro: '+e.message, 'err'); }
 }
 </script></body></html>`;
+  };
+
+  const handleDiscoverSerials = () => {
+    const devicesWithIp = devices.filter(d => d.ipAddress);
+    if (devicesWithIp.length === 0) {
+      toast.error('Nenhum dispositivo com IP cadastrado');
+      return;
+    }
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+    const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
+    
+    const deviceEntries = devicesWithIp.map(d => `{id:"${d.id}",ip:"${d.ipAddress}",name:"${d.name}"}`).join(',');
+
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Descobrir Seriais - Control iD</title>
+<style>body{font-family:system-ui;max-width:600px;margin:40px auto;padding:20px}
+.log{background:#f5f5f5;padding:12px;border-radius:8px;margin:12px 0;font-size:13px;white-space:pre-wrap}
+.ok{color:green}.err{color:red}.info{color:#666}
+h2{margin:0 0 16px}button{padding:10px 20px;border-radius:6px;border:none;background:#3b82f6;color:white;cursor:pointer;font-size:14px;margin-top:8px}
+button:hover{background:#2563eb}table{width:100%;border-collapse:collapse;margin:16px 0}
+th,td{border:1px solid #ddd;padding:8px;text-align:left;font-size:13px}
+th{background:#f0f0f0}tr.found{background:#d4edda}</style></head>
+<body><h2>🔍 Descoberta de Seriais Numéricos</h2>
+<p>Este script consulta cada dispositivo para obter o serial numérico (device_id) e atualiza automaticamente no banco de dados.</p>
+<div id="log" class="log"><span class="info">Clique em "Descobrir" para iniciar...</span></div>
+<table id="results" style="display:none"><thead><tr><th>Nome</th><th>IP</th><th>Serial Numérico</th><th>Status</th></tr></thead><tbody id="tbody"></tbody></table>
+<button onclick="run()">Descobrir Seriais</button>
+<script>
+const devices = [${deviceEntries}];
+const log = document.getElementById('log');
+const tbody = document.getElementById('tbody');
+function addLog(msg, cls) { log.innerHTML += '\\n<span class="'+cls+'">'+msg+'</span>'; }
+
+async function updateSerial(deviceDbId, numericSerial) {
+  try {
+    const resp = await fetch('${supabaseUrl}/rest/v1/devices?id=eq.' + deviceDbId, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': '${supabaseKey}',
+        'Authorization': 'Bearer ${supabaseKey}',
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({ serial_number: numericSerial })
+    });
+    return resp.ok;
+  } catch(e) { return false; }
+}
+
+async function run() {
+  log.innerHTML = '<span class="info">Iniciando descoberta...</span>';
+  document.getElementById('results').style.display = 'table';
+  tbody.innerHTML = '';
+  
+  for (const dev of devices) {
+    addLog('\\nConsultando ' + dev.name + ' (' + dev.ip + ')...', 'info');
+    try {
+      const lr = await fetch('http://' + dev.ip + '/login.fcgi', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({login:'admin',password:'admin'})
+      });
+      if (!lr.ok) throw new Error('Login falhou');
+      const ld = await lr.json();
+      const s = ld.session;
+      
+      const sr = await fetch('http://' + dev.ip + '/system_information.fcgi?session=' + s);
+      if (!sr.ok) throw new Error('Consulta falhou');
+      const sd = await sr.json();
+      
+      const numSerial = sd.device_id || sd.serial || 'N/A';
+      addLog('✓ ' + dev.name + ': Serial numérico = ' + numSerial, 'ok');
+      
+      let dbStatus = 'Não atualizado';
+      if (numSerial && numSerial !== 'N/A') {
+        const ok = await updateSerial(dev.id, String(numSerial));
+        dbStatus = ok ? '✅ Atualizado no banco!' : '❌ Erro ao atualizar';
+        addLog(ok ? '  → Banco de dados atualizado!' : '  → Erro ao atualizar banco', ok ? 'ok' : 'err');
+      }
+      
+      tbody.innerHTML += '<tr class="found"><td>'+dev.name+'</td><td>'+dev.ip+'</td><td><strong>'+numSerial+'</strong></td><td>'+dbStatus+'</td></tr>';
+    } catch(e) {
+      addLog('✗ ' + dev.name + ': ' + e.message, 'err');
+      tbody.innerHTML += '<tr><td>'+dev.name+'</td><td>'+dev.ip+'</td><td>Erro</td><td>'+e.message+'</td></tr>';
+    }
+  }
+  addLog('\\n🎉 Descoberta concluída! Recarregue a página de dispositivos.', 'ok');
+}
+</script></body></html>`;
+
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'descobrir-seriais.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    toast.info('Arquivo de descoberta baixado!', {
+      duration: 10000,
+      description: 'Abra o arquivo "descobrir-seriais.html" no navegador e clique em "Descobrir". Os seriais serão atualizados automaticamente.',
+    });
   };
 
   const executeLocalConfig = async (ip: string, port: string, hostname: string) => {
@@ -321,10 +426,16 @@ async function run() {
           <h2 className="text-3xl font-bold text-foreground mb-2">Dispositivos</h2>
           <p className="text-muted-foreground">Gerencie os dispositivos de controle de acesso</p>
         </div>
-        <Button onClick={() => setShowForm(!showForm)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Novo Dispositivo
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleDiscoverSerials}>
+            <Search className="h-4 w-4 mr-2" />
+            Descobrir Seriais
+          </Button>
+          <Button onClick={() => setShowForm(!showForm)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Novo Dispositivo
+          </Button>
+        </div>
       </div>
 
       {showForm && (

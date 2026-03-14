@@ -430,12 +430,14 @@ Deno.serve(async (req) => {
 
       const monitorConfig = getMonitorConfig();
       const pushConfig = getPushServerConfig();
-      const fullConfig = { ...monitorConfig, ...pushConfig };
+      const generalConfig = getGeneralConfig();
+      const fullConfig = { ...monitorConfig, ...pushConfig, ...generalConfig };
 
       const command = {
         verb: 'POST',
-        endpoint: 'set_configuration.fcgi',
-        body: fullConfig
+        endpoint: 'set_configuration',
+        body: fullConfig,
+        contentType: 'application/json'
       };
 
       // Persist to DB instead of in-memory queue

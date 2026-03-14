@@ -592,7 +592,6 @@ async function run() {
       const isOlderFirmware = fwMajor < 6 || (fwMajor === 6 && fwMinor < 21);
 
       const webhookPath = '/functions/v1/controlid-webhook';
-      const pushPath = '/functions/v1/controlid-webhook/push';
       const fullServerUrl = `https://${hostname}${webhookPath}`;
 
       const monitorConfig = {

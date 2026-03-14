@@ -426,11 +426,16 @@ async function run() {
           <h2 className="text-3xl font-bold text-foreground mb-2">Dispositivos</h2>
           <p className="text-muted-foreground">Gerencie os dispositivos de controle de acesso</p>
         </div>
-        <Button onClick={() => setShowForm(!showForm)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Novo Dispositivo
-        </Button>
-      </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleDiscoverSerials}>
+            <Search className="h-4 w-4 mr-2" />
+            Descobrir Seriais
+          </Button>
+          <Button onClick={() => setShowForm(!showForm)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Novo Dispositivo
+          </Button>
+        </div>
 
       {showForm && (
         <Card>

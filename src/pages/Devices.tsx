@@ -231,9 +231,12 @@ async function run() {
     const success = await saveDevice(deviceData);
     if (success) {
       resetForm();
-      // Auto-sync config for new devices with serial number
-      if (isNew && deviceData.serialNumber) {
-        toast.info('Sincronizando configuração automaticamente...');
+      // Auto-configure new devices
+      if (isNew && deviceData.ipAddress) {
+        toast.info('Aplicando configuração do webhook automaticamente...');
+        await handleLocalConfig(deviceData);
+      } else if (isNew && deviceData.serialNumber) {
+        toast.info('Sincronizando configuração via push queue...');
         await handlePushConfig(deviceData);
       }
     }

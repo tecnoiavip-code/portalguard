@@ -496,13 +496,41 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Extract and save photo if present in payload
+    let savedPhotoPath: string | null = null;
+    const photoBase64 = payload?.user_image_hash || payload?.image || payload?.photo || payload?.user_image_data || payload?.face_image;
+    if (photoBase64 && typeof photoBase64 === 'string' && photoBase64.length > 100) {
+      try {
+        savedPhotoPath = await saveAccessPhoto(supabaseClient, effectiveDeviceId, photoBase64);
+      } catch (e) {
+        console.error('Error saving access photo:', e);
+      }
+    }
+
+    // For access_photo events, also check nested payload
+    if (eventType === 'access_photo') {
+      const nestedPhoto = payload?.access_photo?.image || payload?.access_photo?.photo;
+      if (nestedPhoto && typeof nestedPhoto === 'string' && nestedPhoto.length > 100 && !savedPhotoPath) {
+        try {
+          savedPhotoPath = await saveAccessPhoto(supabaseClient, effectiveDeviceId, nestedPhoto);
+        } catch (e) {
+          console.error('Error saving nested access photo:', e);
+        }
+      }
+    }
+
+    // Include photo path in the payload before saving log
+    const enrichedPayload = savedPhotoPath 
+      ? { ...payload, saved_photo_path: savedPhotoPath }
+      : payload;
+
     // Save log
     const { error: logError } = await supabaseClient
       .from('controlid_logs')
       .insert({
         device_id: effectiveDeviceId,
         event_type: eventType,
-        payload: payload,
+        payload: enrichedPayload,
         processed: false
       });
 
@@ -529,7 +557,7 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ success: true, event_type: eventType }),
+      JSON.stringify({ success: true, event_type: eventType, photo_saved: !!savedPhotoPath }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {

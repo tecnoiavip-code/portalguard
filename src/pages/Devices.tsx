@@ -308,17 +308,34 @@ async function run() {
       idVariants.push(serverIdNumForUpdate);
     }
 
+    const tryModifyObject = async (payload, label) => {
+      try {
+        const resp = await fetch(apiBase + '/modify_objects.fcgi?session=' + s, {
+          method: 'POST', headers: hdr, body: JSON.stringify(payload)
+        });
+        if (!resp.ok) {
+          const txt = await resp.text().catch(() => '');
+          addLog('⚠ ' + label + ': ' + resp.status + ' ' + txt, 'warn');
+          return false;
+        }
+        return true;
+      } catch (e) {
+        addLog('⚠ ' + label + ': ' + e.message, 'warn');
+        return false;
+      }
+    };
+
     let endpointUpdated = false;
     for (const candidate of serverCandidates) {
       for (const idVariant of idVariants) {
         const values = { name: 'PortalGuard Cloud', ip: candidate.ip, ...(candidate.port ? { port: candidate.port } : {}) };
 
-        const byWhere = await tryPostConfig(
+        const byWhere = await tryModifyObject(
           { object: 'devices', values, where: { devices: { id: idVariant } } },
           'modify by where (' + candidate.ip + ')'
         );
 
-        const byId = await tryPostConfig(
+        const byId = await tryModifyObject(
           { object: 'devices', values: [{ id: idVariant, ...values }] },
           'modify by id (' + candidate.ip + ')'
         );

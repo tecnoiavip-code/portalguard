@@ -776,7 +776,15 @@ async function saveAccessPhoto(supabaseClient: any, deviceId: string, base64Data
 
 async function updateDeviceStatus(supabaseClient: any, deviceId: string) {
   console.log('Updating device status - alive:', deviceId);
-  const now = new Date().toISOString();
+
+  const nowMs = Date.now();
+  const lastWriteMs = lastDeviceStatusWriteMap.get(deviceId) || 0;
+  if (nowMs - lastWriteMs < DEVICE_STATUS_WRITE_INTERVAL_MS) {
+    return;
+  }
+  lastDeviceStatusWriteMap.set(deviceId, nowMs);
+
+  const now = new Date(nowMs).toISOString();
 
   const { data: deviceBySerial } = await supabaseClient
     .from('devices')

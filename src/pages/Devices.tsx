@@ -375,14 +375,15 @@ async function run() {
 
     // Step 5: Configure Push Server
     addLog('7. Configurando Push Server...', 'info');
+    const pushRemoteAddress = 'https://' + desiredHost + (isOlderFirmware ? legacyPushPath : pushPath);
     await postConfig({
       push_server: {
-        push_remote_address: 'https://' + desiredHost + pushPath,
-        push_request_timeout: '30000',
+        push_remote_address: pushRemoteAddress,
+        push_request_timeout: '120000',
         push_request_period: '5'
       }
     }, 'push_server');
-    addLog('✓ Push Server configurado', 'ok');
+    addLog('✓ Push Server configurado (' + pushRemoteAddress + ')', 'ok');
 
     // Step 6: Activate online mode - try combined first, then separate for older firmware
     addLog('8. Ativando modo online...', 'info');

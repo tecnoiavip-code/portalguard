@@ -314,15 +314,15 @@ async function run() {
     }
     addLog('✓ Endpoint atualizado', 'ok');
 
-    // Step 3: Set online_client.server_id - try both number and string
+    // Step 3: Set online_client.server_id - try string first, then number fallback
     addLog('5. Vinculando server_id no online_client...', 'info');
     const serverIdNum = Number(serverId);
     const serverIdStr = String(serverId);
 
-    // For older firmware, try number first; for newer, try string first
-    const idAttempts = isOlderFirmware
-      ? [serverIdNum, serverIdStr]
-      : [serverIdStr, serverIdNum];
+    const idAttempts = [serverIdStr];
+    if (Number.isFinite(serverIdNum) && String(serverIdNum) === serverIdStr) {
+      idAttempts.push(serverIdNum);
+    }
 
     let serverIdLinked = false;
     for (const idVal of idAttempts) {

@@ -451,40 +451,88 @@ async function run() {
         }
       };
 
-      let serverId = '';
-      try {
-        const createResp = await fetch(`${baseUrl}/create_objects.fcgi?session=${session}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            object: 'devices',
-            values: [{ name: 'PortalGuard Cloud', ip: `https://${hostname}/functions/v1/controlid-webhook`, public_key: '' }],
-          }),
+      const asArray = (data: any): any[] => {
+        if (!data || typeof data !== 'object') return [];
+        if (Array.isArray(data.devices)) return data.devices;
+        if (Array.isArray(data.values)) return data.values;
+        if (Array.isArray(data.rows)) return data.rows;
+        if (Array.isArray(data.objects)) return data.objects;
+        return [];
+      };
+
+      const findServerInRows = (rows: any[]) =>
+        rows.find((row) => {
+          const name = String(row?.name || '').toLowerCase();
+          const ipValue = String(row?.ip || '').toLowerCase();
+          return name === 'portalguard cloud' || ipValue.includes(hostname.toLowerCase());
         });
 
-        if (createResp.ok) {
-          const createData = await createResp.json();
-          serverId = String(createData?.ids?.[0] ?? '');
+      const loadExistingServer = async () => {
+        const payloads = [
+          { object: 'devices', where: { devices: { name: 'PortalGuard Cloud' } } },
+          { object: 'devices' },
+        ];
+
+        for (const payload of payloads) {
+          const response = await fetch(`${baseUrl}/load_objects.fcgi?session=${session}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+
+          if (!response.ok) continue;
+          const data = await response.json().catch(() => ({}));
+          const found = findServerInRows(asArray(data));
+          if (found?.id !== undefined) return String(found.id);
         }
-      } catch {
-        // segue sem server_id novo
+
+        return '';
+      };
+
+      let serverId = await loadExistingServer();
+      if (!serverId) {
+        const serverCandidates = [
+          `${hostname}:443/functions/v1/controlid-webhook`,
+          `https://${hostname}/functions/v1/controlid-webhook`,
+        ];
+
+        for (const candidate of serverCandidates) {
+          const createResp = await fetch(`${baseUrl}/create_objects.fcgi?session=${session}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              object: 'devices',
+              values: [{ name: 'PortalGuard Cloud', ip: candidate, public_key: '' }],
+            }),
+          });
+
+          if (!createResp.ok) continue;
+          const createData = await createResp.json().catch(() => ({}));
+          if (Array.isArray(createData?.ids) && createData.ids.length > 0) {
+            serverId = String(createData.ids[0]);
+            break;
+          }
+        }
       }
 
-      if (serverId) {
-        await postConfig({ online_client: { server_id: serverId } }, 'online_client.server_id');
+      if (!serverId) {
+        serverId = await loadExistingServer();
       }
 
+      if (!serverId) {
+        throw new Error('Não foi possível configurar server_id (objeto devices)');
+      }
+
+      await postConfig({ online_client: { server_id: serverId } }, 'online_client.server_id');
       await postConfig(monitorConfig, 'monitor');
       await postConfig(pushConfig, 'push_server');
-
-      const onlinePayload = serverId
-        ? {
-            general: { online: '1', local_identification: '1' },
-            online_client: { extract_template: '0', max_request_attempts: '3' },
-          }
-        : { general: { online: '1' } };
-
-      await postConfig(onlinePayload, 'general.online');
+      await postConfig(
+        {
+          general: { online: '1', local_identification: '1' },
+          online_client: { server_id: serverId, extract_template: '0', max_request_attempts: '3' },
+        },
+        'general.online',
+      );
 
       let verifyData: any = null;
       try {

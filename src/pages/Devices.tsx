@@ -130,6 +130,7 @@ function addLog(msg, cls) { log.innerHTML += '\\n<span class="'+cls+'">'+msg+'</
 const desiredHost = '${hostname}';
 const webhookPath = '/functions/v1/controlid-webhook';
 const pushPath = '/functions/v1/controlid-webhook/push';
+const legacyPushPath = '/functions/v1/controlid-webhook';
 const fullServerUrl = 'https://' + desiredHost + webhookPath;
 
 async function run() {

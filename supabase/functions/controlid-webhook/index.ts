@@ -42,6 +42,10 @@ const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 const RATE_LIMIT_WINDOW = 60000;
 const MAX_REQUESTS_PER_WINDOW = 200;
 
+// Throttle status writes to keep push responses fast and stable
+const lastDeviceStatusWriteMap = new Map<string, number>();
+const DEVICE_STATUS_WRITE_INTERVAL_MS = 10000;
+
 const checkRateLimit = (deviceId: string): boolean => {
   const now = Date.now();
   const limit = rateLimitMap.get(deviceId);

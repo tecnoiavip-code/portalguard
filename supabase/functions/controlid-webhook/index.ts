@@ -121,11 +121,17 @@ const detectEventType = (url: URL, payload: any): string => {
   if (path.includes('identification_event.fcgi') || path.includes('new_user_identified.fcgi')) return 'identification_event';
   if (path.includes('session_is_valid.fcgi')) return 'session_is_valid';
 
-  // Some devices send heartbeat as POST /push with access_logs in payload
-  if (path.includes('/push') && payload?.access_logs !== undefined) return 'device_is_alive';
+  // Some devices send heartbeat as POST /push (or base webhook path) with access_logs in payload
+  if ((path.includes('/push') || path.endsWith('/controlid-webhook')) && payload?.access_logs !== undefined) {
+    return 'device_is_alive';
+  }
 
-  // Generic push polling route
+  // Generic push polling route (supports /push, /push/push and base /controlid-webhook)
   if (path.endsWith('/push') || (path.includes('/push') && !path.includes('.fcgi'))) {
+    return 'push_request';
+  }
+
+  if (path.endsWith('/controlid-webhook') || path.endsWith('/controlid-webhook/')) {
     return 'push_request';
   }
 

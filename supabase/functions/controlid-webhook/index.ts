@@ -698,7 +698,7 @@ async function saveAccessPhoto(supabaseClient: any, deviceId: string, base64Data
   }
 }
 
-
+async function updateDeviceStatus(supabaseClient: any, deviceId: string) {
   console.log('Updating device status - alive:', deviceId);
   const now = new Date().toISOString();
 

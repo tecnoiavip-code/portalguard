@@ -231,15 +231,21 @@ async function run() {
       addLog('✓ Servidor existente encontrado (id: ' + serverId + ')', 'ok');
     }
 
-    // For older firmware: ip = full URL; for newer: ip = hostname, port = 443
-    const serverValueOld = { name: 'PortalGuard Cloud', ip: fullServerUrl, public_key: '' };
-    const serverValueNew = { name: 'PortalGuard Cloud', ip: desiredHost, port: '443', public_key: '' };
+    const serverCandidates = isOlderFirmware
+      ? [
+          { name: 'PortalGuard Cloud', ip: desiredHost, port: '443', public_key: '' },
+          { name: 'PortalGuard Cloud', ip: 'https://' + desiredHost, public_key: '' },
+          { name: 'PortalGuard Cloud', ip: fullServerUrl, public_key: '' },
+        ]
+      : [
+          { name: 'PortalGuard Cloud', ip: desiredHost, port: '443', public_key: '' },
+          { name: 'PortalGuard Cloud', ip: 'https://' + desiredHost, port: '443', public_key: '' },
+          { name: 'PortalGuard Cloud', ip: fullServerUrl, port: '443', public_key: '' },
+        ];
 
     if (!serverId) {
-      // Try create_objects with appropriate format
-      const candidates = isOlderFirmware
-        ? [serverValueOld, serverValueNew, { name: 'PortalGuard Cloud', ip: 'https://' + desiredHost, public_key: '' }]
-        : [serverValueNew, serverValueOld, { name: 'PortalGuard Cloud', ip: 'https://' + desiredHost, port: '443', public_key: '' }];
+      // Try create_objects with firmware-compatible formats
+      const candidates = serverCandidates;
 
       for (const candidate of candidates) {
         addLog('  Tentando criar servidor: ip=' + candidate.ip + '...', 'info');

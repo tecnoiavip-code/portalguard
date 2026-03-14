@@ -67,6 +67,28 @@ export const Devices = () => {
       return;
     }
 
+    // Mixed Content: browsers block http:// requests from https:// pages.
+    // Detect and guide the user to open via http instead.
+    if (window.location.protocol === 'https:') {
+      const httpUrl = window.location.href.replace('https://', 'http://');
+      toast.error('Configuração local requer acesso via HTTP', {
+        duration: 10000,
+        description: 'O navegador bloqueia requisições para dispositivos locais (HTTP) quando a página é HTTPS. Use o script abaixo ou configure manualmente.',
+      });
+      
+      // Open a small helper window that does the config via plain HTTP
+      const ip = device.ipAddress;
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+      let hostname = '';
+      try { hostname = new URL(supabaseUrl).hostname; } catch { hostname = 'kxdqffkkufgsizszchvw.supabase.co'; }
+      
+      const script = generateLocalConfigScript(ip, hostname);
+      const blob = new Blob([script], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'width=600,height=400');
+      return;
+    }
+
     setLocalConfigLoading(device.id);
     const ip = device.ipAddress;
     const port = '80';
@@ -78,6 +100,54 @@ export const Devices = () => {
       hostname = 'kxdqffkkufgsizszchvw.supabase.co';
     }
 
+    await executeLocalConfig(ip, port, hostname);
+    setLocalConfigLoading(null);
+  };
+
+  const generateLocalConfigScript = (ip: string, hostname: string) => {
+    return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Config Local - Control iD</title>
+<style>body{font-family:system-ui;max-width:500px;margin:40px auto;padding:20px}
+.log{background:#f5f5f5;padding:12px;border-radius:8px;margin:12px 0;font-size:14px;white-space:pre-wrap}
+.ok{color:green}.err{color:red}.info{color:#666}
+h2{margin:0 0 16px}button{padding:8px 16px;border-radius:6px;border:none;background:#3b82f6;color:white;cursor:pointer;font-size:14px}
+button:hover{background:#2563eb}</style></head>
+<body><h2>⚙️ Configuração Local - Control iD</h2>
+<p>Dispositivo: <strong>${ip}</strong></p>
+<p>Servidor: <strong>${hostname}</strong></p>
+<div id="log" class="log"><span class="info">Clique em Configurar para iniciar...</span></div>
+<button onclick="run()">Configurar</button>
+<script>
+const log = document.getElementById('log');
+function addLog(msg, cls) { log.innerHTML += '\\n<span class="'+cls+'">'+msg+'</span>'; }
+async function run() {
+  log.innerHTML = '<span class="info">Iniciando...</span>';
+  try {
+    addLog('1. Fazendo login...', 'info');
+    const lr = await fetch('http://${ip}/login.fcgi', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login:'admin',password:'admin'})});
+    if (!lr.ok) throw new Error('Login falhou: ' + lr.status);
+    const ld = await lr.json();
+    const s = ld.session;
+    if (!s) throw new Error('Sessão não retornada');
+    addLog('✓ Login OK (session: '+s+')', 'ok');
+    
+    addLog('2. Aplicando configuração...', 'info');
+    const cfg = {monitor:{request_timeout:'5000',hostname:'${hostname}',port:'443',path:'functions/v1/controlid-webhook'},push_server:{push_remote_address:'https://${hostname}/functions/v1/controlid-webhook/push',push_request_timeout:'30000',push_request_period:'5'}};
+    const cr = await fetch('http://${ip}/set_configuration.fcgi?session='+s, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+    if (!cr.ok) throw new Error('Erro ao aplicar: ' + cr.status);
+    addLog('✓ Configuração aplicada!', 'ok');
+    
+    addLog('3. Verificando...', 'info');
+    const vr = await fetch('http://${ip}/get_configuration.fcgi?session='+s, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({monitor:true,push_server:true})});
+    if (vr.ok) { const vd = await vr.json(); addLog('✓ Monitor hostname: '+(vd.monitor?.hostname||'?'), 'ok'); addLog('✓ Push address: '+(vd.push_server?.push_remote_address||'?'), 'ok'); }
+    
+    addLog('\\n🎉 Configuração concluída com sucesso!', 'ok');
+  } catch(e) { addLog('✗ Erro: '+e.message, 'err'); }
+}
+</script></body></html>`;
+  };
+
+  const executeLocalConfig = async (ip: string, port: string, hostname: string) => {
     const monitorConfig = {
       monitor: {
         request_timeout: '5000',
@@ -98,7 +168,6 @@ export const Devices = () => {
     const fullConfig = { ...monitorConfig, ...pushConfig };
 
     try {
-      // Step 1: Login
       const loginResp = await fetch(`http://${ip}:${port}/login.fcgi`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -106,14 +175,13 @@ export const Devices = () => {
       });
 
       if (!loginResp.ok) {
-        throw new Error(`Login falhou (status ${loginResp.status}). Verifique as credenciais do dispositivo.`);
+        throw new Error(`Login falhou (status ${loginResp.status}). Verifique as credenciais.`);
       }
 
       const loginData = await loginResp.json();
       const session = loginData.session;
       if (!session) throw new Error('Sessão não retornada pelo dispositivo');
 
-      // Step 2: Set configuration
       const configResp = await fetch(`http://${ip}:${port}/set_configuration.fcgi?session=${session}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -124,7 +192,6 @@ export const Devices = () => {
         throw new Error(`Erro ao aplicar configuração (status ${configResp.status})`);
       }
 
-      // Step 3: Verify
       let verifyData: any = null;
       try {
         const verifyResp = await fetch(`http://${ip}:${port}/get_configuration.fcgi?session=${session}`, {
@@ -142,16 +209,12 @@ export const Devices = () => {
         duration: 6000,
         description: `Monitor: ${appliedHostname || hostname} | Push: ${appliedPush ? 'OK' : 'verificar'}`,
       });
-
-      console.log('Local config applied:', { sent: fullConfig, verified: verifyData });
     } catch (err: any) {
       console.error('Error configuring device locally:', err);
       toast.error('Erro ao configurar dispositivo via rede local', {
         duration: 6000,
-        description: err.message || 'Verifique se o dispositivo está acessível na rede e tente novamente.',
+        description: err.message || 'Verifique se o dispositivo está acessível na rede.',
       });
-    } finally {
-      setLocalConfigLoading(null);
     }
   };
 

@@ -373,8 +373,11 @@ export const Dashboard = () => {
                       </div>
 
                       {/* Avatar */}
-                      <div className="flex-shrink-0 z-10 relative">
-                        <Avatar className={`h-16 w-16 border-2 ${borderColor}`}>
+                      <div 
+                        className={`flex-shrink-0 z-10 relative ${photoUrl ? 'cursor-pointer' : ''}`}
+                        onClick={() => photoUrl && setSelectedPhoto({ url: photoUrl, name: displayLabel, time: fullTimeStr, location })}
+                      >
+                        <Avatar className={`h-16 w-16 border-2 ${borderColor} ${photoUrl ? 'hover:ring-2 hover:ring-primary/50 transition-all' : ''}`}>
                           {photoUrl ? (
                             <AvatarImage src={photoUrl} alt={displayName} className="object-cover" />
                           ) : null}

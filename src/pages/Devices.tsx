@@ -540,23 +540,6 @@ async function run() {
   };
 
   const executeLocalConfig = async (ip: string, port: string, hostname: string) => {
-    const monitorConfig = {
-      monitor: {
-        request_timeout: '5000',
-        hostname,
-        port: '443',
-        path: '/functions/v1/controlid-webhook',
-      },
-    };
-
-    const pushConfig = {
-      push_server: {
-        push_remote_address: `https://${hostname}/functions/v1/controlid-webhook/push`,
-        push_request_timeout: '30000',
-        push_request_period: '5',
-      },
-    };
-
     const baseUrl = `http://${ip}:${port}`;
 
     try {
@@ -574,6 +557,46 @@ async function run() {
       const session = loginData.session;
       if (!session) throw new Error('Sessão não retornada pelo dispositivo');
 
+      let fwVersion = 'unknown';
+      try {
+        const sysResp = await fetch(`${baseUrl}/system_information.fcgi?session=${session}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        if (sysResp.ok) {
+          const sysData = await sysResp.json();
+          fwVersion = String(sysData?.firmware || sysData?.version || 'unknown');
+        }
+      } catch {
+        // ignore
+      }
+
+      const fwMajorMinor = fwVersion.match(/(\d+)\.(\d+)/);
+      const fwMajor = fwMajorMinor ? Number.parseInt(fwMajorMinor[1], 10) : 0;
+      const fwMinor = fwMajorMinor ? Number.parseInt(fwMajorMinor[2], 10) : 0;
+      const isOlderFirmware = fwMajor < 6 || (fwMajor === 6 && fwMinor < 21);
+
+      const webhookPath = '/functions/v1/controlid-webhook';
+      const pushPath = '/functions/v1/controlid-webhook/push';
+      const fullServerUrl = `https://${hostname}${webhookPath}`;
+
+      const monitorConfig = {
+        monitor: {
+          request_timeout: '15000',
+          hostname,
+          port: '443',
+          path: webhookPath,
+        },
+      };
+
+      const pushConfig = {
+        push_server: {
+          push_remote_address: `https://${hostname}${isOlderFirmware ? webhookPath : pushPath}`,
+          push_request_timeout: '120000',
+          push_request_period: '5',
+        },
+      };
+
       const postConfig = async (payload: Record<string, unknown>, label: string) => {
         const resp = await fetch(`${baseUrl}/set_configuration.fcgi?session=${session}`, {
           method: 'POST',
@@ -585,6 +608,15 @@ async function run() {
           const details = await resp.text().catch(() => '');
           throw new Error(`${label} falhou (status ${resp.status})${details ? `: ${details}` : ''}`);
         }
+      };
+
+      const tryPostConfig = async (payload: Record<string, unknown>) => {
+        const resp = await fetch(`${baseUrl}/set_configuration.fcgi?session=${session}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        return resp.ok;
       };
 
       const asArray = (data: any): any[] => {
@@ -638,18 +670,24 @@ async function run() {
         return { id: '', ip: '', port: '' };
       };
 
-      const createCandidates = [
-        { name: 'PortalGuard Cloud', ip: hostname, port: '443', public_key: '' },
-        { name: 'PortalGuard Cloud', ip: `${hostname}:443`, public_key: '' },
-        { name: 'PortalGuard Cloud', ip: `https://${hostname}`, port: '443', public_key: '' },
-      ];
+      const serverCandidates = isOlderFirmware
+        ? [
+            { name: 'PortalGuard Cloud', ip: hostname, port: '443', public_key: '' },
+            { name: 'PortalGuard Cloud', ip: `https://${hostname}`, public_key: '' },
+            { name: 'PortalGuard Cloud', ip: fullServerUrl, public_key: '' },
+          ]
+        : [
+            { name: 'PortalGuard Cloud', ip: hostname, port: '443', public_key: '' },
+            { name: 'PortalGuard Cloud', ip: `https://${hostname}`, port: '443', public_key: '' },
+            { name: 'PortalGuard Cloud', ip: fullServerUrl, port: '443', public_key: '' },
+          ];
 
       const findOrCreateServer = async () => {
         const existingByName = await loadServers({ where: { devices: { name: 'PortalGuard Cloud' } } });
         const preferred = existingByName.find(isPortalGuardServer) || existingByName[0] || null;
         if (preferred?.id !== undefined) return normalizeServer(preferred);
 
-        for (const candidate of createCandidates) {
+        for (const candidate of serverCandidates) {
           const createResp = await fetch(`${baseUrl}/create_objects.fcgi?session=${session}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -658,11 +696,7 @@ async function run() {
 
           if (!createResp.ok) continue;
           const createData = await createResp.json().catch(() => ({}));
-          const createdId =
-            Array.isArray(createData?.ids) && createData.ids.length > 0
-              ? String(createData.ids[0])
-              : '';
-
+          const createdId = Array.isArray(createData?.ids) && createData.ids.length > 0 ? String(createData.ids[0]) : '';
           if (createdId) return { id: createdId, ip: candidate.ip, port: candidate.port || '' };
         }
 
@@ -671,46 +705,41 @@ async function run() {
       };
 
       const applyServerEndpoint = async (serverId: string) => {
-        const idAsNumber = Number(serverId);
         const idVariants: Array<string | number> = [serverId];
-        if (Number.isFinite(idAsNumber) && String(idAsNumber) === String(serverId)) {
-          idVariants.push(idAsNumber);
+        const numericId = Number(serverId);
+        if (Number.isFinite(numericId) && String(numericId) === String(serverId)) {
+          idVariants.push(numericId);
         }
 
-        const payloads = idVariants.flatMap((idVariant) => [
-          {
-            object: 'devices',
-            values: { name: 'PortalGuard Cloud', ip: hostname, port: '443' },
-            where: { devices: { id: idVariant } },
-          },
-          {
-            object: 'devices',
-            values: [{ id: idVariant, name: 'PortalGuard Cloud', ip: hostname, port: '443' }],
-          },
-        ]);
+        for (const candidate of serverCandidates) {
+          const values = {
+            name: 'PortalGuard Cloud',
+            ip: candidate.ip,
+            ...(candidate.port ? { port: candidate.port } : {}),
+          };
 
-        for (const payload of payloads) {
-          const resp = await fetch(`${baseUrl}/modify_objects.fcgi?session=${session}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
-          if (!resp.ok) continue;
+          for (const idVariant of idVariants) {
+            const okWhere = await tryPostConfig({ object: 'devices', values, where: { devices: { id: idVariant } } });
+            const okById = await tryPostConfig({ object: 'devices', values: [{ id: idVariant, ...values }] });
+
+            if (!okWhere && !okById) continue;
+
+            const reloaded = await loadServerById(String(serverId));
+            if (String(reloaded.ip).toLowerCase().includes(hostname.toLowerCase())) {
+              return reloaded;
+            }
+          }
         }
 
         return await loadServerById(serverId);
       };
 
       const server = await findOrCreateServer();
-      if (!server.id) throw new Error('Não foi possível configurar server_id (objeto devices)');
+      if (!server.id) throw new Error('Não foi possível criar ou localizar servidor online (objeto devices)');
 
       const updatedServer = await applyServerEndpoint(server.id);
       const serverHostApplied = updatedServer.ip || server.ip;
-      const serverPortApplied = updatedServer.port || server.port;
-
-      if (!serverHostApplied || !serverPortApplied) {
-        throw new Error('Servidor/porta não persistiram no objeto online (campos ficaram vazios)');
-      }
+      const serverPortApplied = updatedServer.port || server.port || 'N/A';
 
       const serverIdString = String(server.id);
       const serverIdNumber = Number(server.id);
@@ -720,30 +749,36 @@ async function run() {
       }
 
       let linkedServerIdValue: string | number | null = null;
-      let lastServerIdError: Error | null = null;
       for (const candidateId of serverIdAttempts) {
         try {
           await postConfig({ online_client: { server_id: candidateId } }, `online_client.server_id (${typeof candidateId})`);
           linkedServerIdValue = candidateId;
           break;
-        } catch (error: any) {
-          lastServerIdError = error;
+        } catch {
+          // try next candidate type
         }
-      }
-
-      if (linkedServerIdValue === null) {
-        throw lastServerIdError || new Error('online_client.server_id não aceitou string nem número');
       }
 
       await postConfig(monitorConfig, 'monitor');
       await postConfig(pushConfig, 'push_server');
-      await postConfig(
-        {
-          online_client: { server_id: linkedServerIdValue, extract_template: '0', max_request_attempts: '3' },
-          general: { online: '1', local_identification: '1' },
-        },
-        'online_client/general',
-      );
+
+      const onlineClientPayload: Record<string, unknown> = {
+        extract_template: '0',
+        max_request_attempts: '3',
+      };
+      if (linkedServerIdValue !== null) {
+        onlineClientPayload.server_id = linkedServerIdValue;
+      }
+
+      const combinedOk = await tryPostConfig({
+        online_client: onlineClientPayload,
+        general: { online: '1', local_identification: '1' },
+      });
+
+      if (!combinedOk) {
+        await tryPostConfig({ general: { online: '1', local_identification: '1' } });
+        await tryPostConfig({ online_client: onlineClientPayload });
+      }
 
       let verifyData: any = null;
       try {
@@ -760,11 +795,11 @@ async function run() {
       const appliedHostname = verifyData?.monitor?.hostname || '';
       const appliedPush = verifyData?.push_server?.push_remote_address || '';
       const appliedOnline = verifyData?.general?.online || '';
-      const appliedServerId = verifyData?.online_client?.server_id || server.id;
+      const appliedServerId = verifyData?.online_client?.server_id || linkedServerIdValue || '?';
 
       toast.success('Configuração aplicada com sucesso via rede local!', {
-        duration: 7000,
-        description: `Online: ${appliedOnline || '?'} | Server ID: ${appliedServerId || '?'} | Servidor: ${serverHostApplied}:${serverPortApplied} | Monitor: ${appliedHostname || hostname} | Push: ${appliedPush ? 'OK' : 'verificar'}`,
+        duration: 8000,
+        description: `FW: ${fwVersion} | Online: ${appliedOnline || '?'} | Server ID: ${String(appliedServerId)} | Servidor: ${serverHostApplied}:${serverPortApplied} | Monitor: ${appliedHostname || hostname} | Push: ${appliedPush || 'verificar'}`,
       });
     } catch (err: any) {
       console.error('Error configuring device locally:', err);

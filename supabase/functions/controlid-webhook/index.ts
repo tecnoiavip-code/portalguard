@@ -72,10 +72,16 @@ const getMonitorConfig = () => {
       request_timeout: "5000",
       hostname: hostname,
       port: "443",
-      path: "functions/v1/controlid-webhook"
+      path: "/functions/v1/controlid-webhook"
     }
   };
 };
+
+const getGeneralConfig = () => ({
+  general: {
+    online: "1"
+  }
+});
 
 /**
  * Get the push server configuration (like iDSecure does).

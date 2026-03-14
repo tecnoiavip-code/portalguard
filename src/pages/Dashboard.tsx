@@ -303,23 +303,23 @@ export const Dashboard = () => {
                   const changes = p.object_changes?.[0]?.values || {};
                   
                   const userName = changes.user_name || p.user_name || p.name || '';
-                  const rawPhotoUrl = changes.photo_url || p.photo_url || p.photo || '';
-                  const savedPhotoPath = p.saved_photo_path || '';
-                  const photoUrl = savedPhotoPath 
-                    ? photoSignedUrls[savedPhotoPath] || ''
-                    : rawPhotoUrl;
-                  
-                  // Try to find resident by name to get apartment
+
+                  // Try to find resident by name to get apartment and fallback photo
                   let apartment = changes.apartment || changes.user_id || p.apartment || p.house || '';
                   let matchedResident: Resident | undefined;
                   if (userName && residents.length > 0) {
-                    matchedResident = residents.find(r => 
+                    matchedResident = residents.find(r =>
                       r.name.toLowerCase().trim() === userName.toLowerCase().trim()
                     );
-                    if (matchedResident) {
-                      if (!apartment) apartment = matchedResident.apartment;
-                    }
+                    if (matchedResident && !apartment) apartment = matchedResident.apartment;
                   }
+
+                  const rawPhotoUrl = changes.photo_url || p.photo_url || p.photo || '';
+                  const savedPhotoPath = p.saved_photo_path || '';
+                  const residentPhotoUrl = matchedResident?.photo || '';
+                  const photoUrl = savedPhotoPath
+                    ? photoSignedUrls[savedPhotoPath] || ''
+                    : rawPhotoUrl || residentPhotoUrl;
                   const deviceCandidates = [
                     log.device_id,
                     p.device_id,

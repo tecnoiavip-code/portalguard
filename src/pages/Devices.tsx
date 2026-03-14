@@ -264,7 +264,7 @@ async function run() {
         request_timeout: '5000',
         hostname: hostname,
         port: '443',
-        path: 'functions/v1/controlid-webhook',
+        path: '/functions/v1/controlid-webhook',
       },
     };
 
@@ -276,7 +276,13 @@ async function run() {
       },
     };
 
-    const fullConfig = { ...monitorConfig, ...pushConfig };
+    const generalConfig = {
+      general: {
+        online: '1',
+      },
+    };
+
+    const fullConfig = { ...monitorConfig, ...pushConfig, ...generalConfig };
 
     try {
       const loginResp = await fetch(`http://${ip}:${port}/login.fcgi`, {

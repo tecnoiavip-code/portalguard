@@ -137,15 +137,27 @@ async function run() {
     if (!s) throw new Error('Sessão não retornada');
     addLog('✓ Login OK (session: '+s+')', 'ok');
     
-    addLog('2. Aplicando configuração...', 'info');
-    const cfg = {monitor:{request_timeout:'5000',hostname:'${hostname}',port:'443',path:'/functions/v1/controlid-webhook'},push_server:{push_remote_address:'https://${hostname}/functions/v1/controlid-webhook/push',push_request_timeout:'30000',push_request_period:'5'},general:{online:'1'}};
-    const cr = await fetch('http://${ip}/set_configuration.fcgi?session='+s, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
-    if (!cr.ok) throw new Error('Erro ao aplicar: ' + cr.status);
-    addLog('✓ Configuração aplicada!', 'ok');
+    const url = 'http://${ip}/set_configuration.fcgi?session='+s;
+    const hdr = {'Content-Type':'application/json'};
+
+    addLog('2. Configurando modo online...', 'info');
+    let r = await fetch(url, {method:'POST',headers:hdr,body:JSON.stringify({general:{online:'1'}})});
+    if (!r.ok) throw new Error('Erro general: ' + r.status);
+    addLog('✓ Modo online ativado', 'ok');
+
+    addLog('3. Configurando Monitor (servidor)...', 'info');
+    r = await fetch(url, {method:'POST',headers:hdr,body:JSON.stringify({monitor:{request_timeout:'5000',hostname:'${hostname}',port:'443',path:'/functions/v1/controlid-webhook',ssl:'1'}})});
+    if (!r.ok) throw new Error('Erro monitor: ' + r.status);
+    addLog('✓ Monitor configurado (${hostname}:443 SSL)', 'ok');
+
+    addLog('4. Configurando Push Server...', 'info');
+    r = await fetch(url, {method:'POST',headers:hdr,body:JSON.stringify({push_server:{push_remote_address:'https://${hostname}/functions/v1/controlid-webhook/push',push_request_timeout:'30000',push_request_period:'5'}})});
+    if (!r.ok) throw new Error('Erro push_server: ' + r.status);
+    addLog('✓ Push Server configurado', 'ok');
     
-    addLog('3. Verificando...', 'info');
-    const vr = await fetch('http://${ip}/get_configuration.fcgi?session='+s, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({monitor:true,push_server:true})});
-    if (vr.ok) { const vd = await vr.json(); addLog('✓ Monitor hostname: '+(vd.monitor?.hostname||'?'), 'ok'); addLog('✓ Push address: '+(vd.push_server?.push_remote_address||'?'), 'ok'); }
+    addLog('5. Verificando...', 'info');
+    const vr = await fetch('http://${ip}/get_configuration.fcgi?session='+s, {method:'POST',headers:hdr,body:JSON.stringify({general:true,monitor:true,push_server:true})});
+    if (vr.ok) { const vd = await vr.json(); addLog('Online: '+(vd.general?.online||'?'), vd.general?.online==='1'?'ok':'err'); addLog('Monitor hostname: '+(vd.monitor?.hostname||'?'), 'ok'); addLog('Monitor port: '+(vd.monitor?.port||'?'), 'ok'); addLog('Monitor SSL: '+(vd.monitor?.ssl||'?'), 'ok'); addLog('Monitor path: '+(vd.monitor?.path||'?'), 'ok'); addLog('Push address: '+(vd.push_server?.push_remote_address||'?'), 'ok'); }
     
     addLog('\\n🎉 Configuração concluída com sucesso!', 'ok');
   } catch(e) { addLog('✗ Erro: '+e.message, 'err'); }

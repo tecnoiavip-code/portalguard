@@ -732,11 +732,16 @@ async function processAccessLogs(supabaseClient: any, objectChanges: any[], devi
  */
 async function saveAccessPhoto(supabaseClient: any, deviceId: string, base64Data: string): Promise<string | null> {
   try {
-    // Remove data URI prefix if present
-    const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
-    
+    // Remove data URI prefix if present and normalize to standard base64
+    const cleanBase64 = base64Data.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '').replace(/\s+/g, '');
+    const normalizedBase64 = cleanBase64.replace(/-/g, '+').replace(/_/g, '/');
+    const missingPadding = normalizedBase64.length % 4;
+    const paddedBase64 = missingPadding === 0
+      ? normalizedBase64
+      : `${normalizedBase64}${'='.repeat(4 - missingPadding)}`;
+
     // Decode base64 to Uint8Array
-    const binaryStr = atob(cleanBase64);
+    const binaryStr = atob(paddedBase64);
     const bytes = new Uint8Array(binaryStr.length);
     for (let i = 0; i < binaryStr.length; i++) {
       bytes[i] = binaryStr.charCodeAt(i);

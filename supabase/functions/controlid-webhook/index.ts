@@ -98,7 +98,7 @@ const getPushServerConfig = () => {
   return {
     push_server: {
       push_remote_address: `https://${hostname}/functions/v1/controlid-webhook/push`,
-      push_request_timeout: "30000",
+      push_request_timeout: "120000",
       push_request_period: "5"
     }
   };

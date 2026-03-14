@@ -20,6 +20,12 @@ interface ControlidLog {
 
 const normalizeDeviceKey = (value: unknown): string => String(value ?? '').trim().toLowerCase();
 const compactDeviceKey = (value: unknown): string => normalizeDeviceKey(value).replace(/[^a-z0-9]/g, '');
+const normalizePersonName = (value: unknown): string =>
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
 
 export const Dashboard = () => {
   const [stats, setStats] = useState<DashboardStats>({

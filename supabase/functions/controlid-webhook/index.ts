@@ -435,7 +435,7 @@ Deno.serve(async (req) => {
 
       const command = {
         verb: 'POST',
-        endpoint: 'set_configuration.fcgi',
+        endpoint: 'set_configuration',
         body: JSON.stringify(fullConfig),
         contentType: 'application/json'
       };

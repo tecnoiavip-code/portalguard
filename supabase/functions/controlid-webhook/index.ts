@@ -42,6 +42,10 @@ const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 const RATE_LIMIT_WINDOW = 60000;
 const MAX_REQUESTS_PER_WINDOW = 200;
 
+// Throttle status writes to keep push responses fast and stable
+const lastDeviceStatusWriteMap = new Map<string, number>();
+const DEVICE_STATUS_WRITE_INTERVAL_MS = 10000;
+
 const checkRateLimit = (deviceId: string): boolean => {
   const now = Date.now();
   const limit = rateLimitMap.get(deviceId);
@@ -84,7 +88,8 @@ const getGeneralConfig = () => ({
 });
 
 /**
- * Get the push server configuration (like iDSecure does).
+ * Get the push server configuration.
+ * We keep the base webhook path (without /push) because some firmwares append /push automatically.
  */
 const getPushServerConfig = () => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
@@ -97,7 +102,7 @@ const getPushServerConfig = () => {
 
   return {
     push_server: {
-      push_remote_address: `https://${hostname}/functions/v1/controlid-webhook/push`,
+      push_remote_address: `https://${hostname}/functions/v1/controlid-webhook`,
       push_request_timeout: "120000",
       push_request_period: "5"
     }
@@ -120,11 +125,17 @@ const detectEventType = (url: URL, payload: any): string => {
   if (path.includes('identification_event.fcgi') || path.includes('new_user_identified.fcgi')) return 'identification_event';
   if (path.includes('session_is_valid.fcgi')) return 'session_is_valid';
 
-  // Some devices send heartbeat as POST /push with access_logs in payload
-  if (path.includes('/push') && payload?.access_logs !== undefined) return 'device_is_alive';
+  // Some devices send heartbeat as POST /push (or base webhook path) with access_logs in payload
+  if ((path.includes('/push') || path.endsWith('/controlid-webhook')) && payload?.access_logs !== undefined) {
+    return 'device_is_alive';
+  }
 
-  // Generic push polling route
+  // Generic push polling route (supports /push, /push/push and base /controlid-webhook)
   if (path.endsWith('/push') || (path.includes('/push') && !path.includes('.fcgi'))) {
+    return 'push_request';
+  }
+
+  if (path.endsWith('/controlid-webhook') || path.endsWith('/controlid-webhook/')) {
     return 'push_request';
   }
 
@@ -184,6 +195,69 @@ const buildIdentificationResponse = (payload: any) => {
       actions: granted ? [{ action: 'door', parameters: `door=${resolvedPortal}` }] : []
     }
   };
+};
+
+const tryParseJsonString = (value: unknown) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+};
+
+const normalizeBase64Candidate = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const fromDataUri = trimmed.match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/i);
+  const candidate = (fromDataUri?.[1] || trimmed).replace(/\s+/g, '');
+  if (candidate.length < 100) return null;
+
+  // Standard and URL-safe base64
+  if (!/^[A-Za-z0-9+/=_-]+$/.test(candidate)) return null;
+  return candidate;
+};
+
+const extractPhotoBase64 = (payload: any): string | null => {
+  const parsedResponse = tryParseJsonString(payload?.response);
+  const parsedRawData = tryParseJsonString(payload?.raw_data);
+
+  const candidates: unknown[] = [
+    payload?.user_image_hash,
+    payload?.user_image_data,
+    payload?.face_image,
+    payload?.image,
+    payload?.photo,
+    payload?.photo_data,
+    payload?.access_photo?.image,
+    payload?.access_photo?.photo,
+    payload?.result?.user_image,
+    payload?.result?.image,
+    payload?.result?.photo,
+    payload?.result?.access_photo,
+    payload?.response?.user_image,
+    payload?.response?.image,
+    payload?.response?.photo,
+    parsedResponse?.user_image,
+    parsedResponse?.image,
+    parsedResponse?.photo,
+    parsedResponse?.access_photo?.image,
+    parsedResponse?.access_photo?.photo,
+    parsedRawData?.user_image,
+    parsedRawData?.image,
+    parsedRawData?.photo,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeBase64Candidate(candidate);
+    if (normalized) return normalized;
+  }
+
+  return null;
 };
 
 Deno.serve(async (req) => {
@@ -507,8 +581,8 @@ Deno.serve(async (req) => {
 
     // Extract and save photo if present in payload
     let savedPhotoPath: string | null = null;
-    const photoBase64 = payload?.user_image_hash || payload?.image || payload?.photo || payload?.user_image_data || payload?.face_image;
-    if (photoBase64 && typeof photoBase64 === 'string' && photoBase64.length > 100) {
+    const photoBase64 = extractPhotoBase64(payload);
+    if (photoBase64) {
       try {
         savedPhotoPath = await saveAccessPhoto(supabaseClient, effectiveDeviceId, photoBase64);
       } catch (e) {
@@ -516,20 +590,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    // For access_photo events, also check nested payload
-    if (eventType === 'access_photo') {
-      const nestedPhoto = payload?.access_photo?.image || payload?.access_photo?.photo;
-      if (nestedPhoto && typeof nestedPhoto === 'string' && nestedPhoto.length > 100 && !savedPhotoPath) {
-        try {
-          savedPhotoPath = await saveAccessPhoto(supabaseClient, effectiveDeviceId, nestedPhoto);
-        } catch (e) {
-          console.error('Error saving nested access photo:', e);
-        }
-      }
-    }
-
     // Include photo path in the payload before saving log
-    const enrichedPayload = savedPhotoPath 
+    const enrichedPayload = savedPhotoPath
       ? { ...payload, saved_photo_path: savedPhotoPath }
       : payload;
 
@@ -674,11 +736,16 @@ async function processAccessLogs(supabaseClient: any, objectChanges: any[], devi
  */
 async function saveAccessPhoto(supabaseClient: any, deviceId: string, base64Data: string): Promise<string | null> {
   try {
-    // Remove data URI prefix if present
-    const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
-    
+    // Remove data URI prefix if present and normalize to standard base64
+    const cleanBase64 = base64Data.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '').replace(/\s+/g, '');
+    const normalizedBase64 = cleanBase64.replace(/-/g, '+').replace(/_/g, '/');
+    const missingPadding = normalizedBase64.length % 4;
+    const paddedBase64 = missingPadding === 0
+      ? normalizedBase64
+      : `${normalizedBase64}${'='.repeat(4 - missingPadding)}`;
+
     // Decode base64 to Uint8Array
-    const binaryStr = atob(cleanBase64);
+    const binaryStr = atob(paddedBase64);
     const bytes = new Uint8Array(binaryStr.length);
     for (let i = 0; i < binaryStr.length; i++) {
       bytes[i] = binaryStr.charCodeAt(i);
@@ -709,7 +776,15 @@ async function saveAccessPhoto(supabaseClient: any, deviceId: string, base64Data
 
 async function updateDeviceStatus(supabaseClient: any, deviceId: string) {
   console.log('Updating device status - alive:', deviceId);
-  const now = new Date().toISOString();
+
+  const nowMs = Date.now();
+  const lastWriteMs = lastDeviceStatusWriteMap.get(deviceId) || 0;
+  if (nowMs - lastWriteMs < DEVICE_STATUS_WRITE_INTERVAL_MS) {
+    return;
+  }
+  lastDeviceStatusWriteMap.set(deviceId, nowMs);
+
+  const now = new Date(nowMs).toISOString();
 
   const { data: deviceBySerial } = await supabaseClient
     .from('devices')

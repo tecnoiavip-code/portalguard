@@ -129,8 +129,6 @@ function addLog(msg, cls) { log.innerHTML += '\\n<span class="'+cls+'">'+msg+'</
 
 const desiredHost = '${hostname}';
 const webhookPath = '/functions/v1/controlid-webhook';
-const pushPath = '/functions/v1/controlid-webhook/push';
-const legacyPushPath = '/functions/v1/controlid-webhook';
 const fullServerUrl = 'https://' + desiredHost + webhookPath;
 
 async function run() {
@@ -392,7 +390,7 @@ async function run() {
 
     // Step 5: Configure Push Server
     addLog('7. Configurando Push Server...', 'info');
-    const pushRemoteAddress = 'https://' + desiredHost + (isOlderFirmware ? legacyPushPath : pushPath);
+    const pushRemoteAddress = 'https://' + desiredHost + webhookPath;
     await postConfig({
       push_server: {
         push_remote_address: pushRemoteAddress,
@@ -594,7 +592,6 @@ async function run() {
       const isOlderFirmware = fwMajor < 6 || (fwMajor === 6 && fwMinor < 21);
 
       const webhookPath = '/functions/v1/controlid-webhook';
-      const pushPath = '/functions/v1/controlid-webhook/push';
       const fullServerUrl = `https://${hostname}${webhookPath}`;
 
       const monitorConfig = {
@@ -608,7 +605,7 @@ async function run() {
 
       const pushConfig = {
         push_server: {
-          push_remote_address: `https://${hostname}${isOlderFirmware ? webhookPath : pushPath}`,
+          push_remote_address: `https://${hostname}${webhookPath}`,
           push_request_timeout: '120000',
           push_request_period: '5',
         },
@@ -825,7 +822,7 @@ async function run() {
 
       toast.success('Configuração aplicada com sucesso via rede local!', {
         duration: 8000,
-        description: `FW: ${fwVersion} | Online: ${appliedOnline || '?'} | Server ID: ${String(appliedServerId)} | Servidor: ${serverHostApplied}:${serverPortApplied} | Monitor: ${appliedHostname || hostname} | Push: ${appliedPush || 'verificar'}`,
+        description: `FW: ${fwVersion} | Online: ${appliedOnline || '?'} | Server ID: ${String(appliedServerId)} | Servidor: ${serverHostApplied}:${serverPortApplied} | Monitor: ${appliedHostname || hostname} | Push: ${appliedPush || `https://${hostname}${webhookPath}`}`,
       });
     } catch (err: any) {
       console.error('Error configuring device locally:', err);

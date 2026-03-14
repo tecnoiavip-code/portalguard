@@ -125,7 +125,7 @@ button:hover{background:#2563eb}</style></head>
 <button onclick="run()">Configurar</button>
 <script>
 const log = document.getElementById('log');
-function addLog(msg, cls) { log.innerHTML += '\n<span class="'+cls+'">'+msg+'</span>'; }
+function addLog(msg, cls) { log.innerHTML += '\\n<span class="'+cls+'">'+msg+'</span>'; }
 const serverCandidates = [
   '${hostname}:443/functions/v1/controlid-webhook',
   'https://${hostname}/functions/v1/controlid-webhook'

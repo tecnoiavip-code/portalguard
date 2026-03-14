@@ -314,9 +314,25 @@ export const Dashboard = () => {
                   let apartment = changes.apartment || changes.user_id || p.apartment || p.house || '';
                   let matchedResident: Resident | undefined;
                   if (userName && residents.length > 0) {
-                    matchedResident = residents.find(r =>
-                      r.name.toLowerCase().trim() === userName.toLowerCase().trim()
-                    );
+                    const normalizedUserName = normalizePersonName(userName);
+                    const aptNameMatch = normalizedUserName.match(/^(\d+)\s*[-–]\s*(.+)$/);
+
+                    matchedResident = residents.find((r) => normalizePersonName(r.name) === normalizedUserName);
+
+                    if (!matchedResident && aptNameMatch) {
+                      const [, apt, extractedName] = aptNameMatch;
+                      matchedResident = residents.find((r) =>
+                        String(r.apartment).trim() === apt && normalizePersonName(r.name).includes(extractedName)
+                      );
+                    }
+
+                    if (!matchedResident) {
+                      matchedResident = residents.find((r) => {
+                        const normalizedResidentName = normalizePersonName(r.name);
+                        return normalizedUserName.includes(normalizedResidentName) || normalizedResidentName.includes(normalizedUserName);
+                      });
+                    }
+
                     if (matchedResident && !apartment) apartment = matchedResident.apartment;
                   }
 

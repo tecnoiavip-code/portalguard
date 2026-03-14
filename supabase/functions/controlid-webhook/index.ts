@@ -72,10 +72,16 @@ const getMonitorConfig = () => {
       request_timeout: "5000",
       hostname: hostname,
       port: "443",
-      path: "functions/v1/controlid-webhook"
+      path: "/functions/v1/controlid-webhook"
     }
   };
 };
+
+const getGeneralConfig = () => ({
+  general: {
+    online: "1"
+  }
+});
 
 /**
  * Get the push server configuration (like iDSecure does).
@@ -326,8 +332,9 @@ Deno.serve(async (req) => {
 
       const monitorConfig = getMonitorConfig();
       const pushConfig = getPushServerConfig();
-      // Send both monitor and push_server configs
-      const fullConfig = { ...monitorConfig, ...pushConfig };
+      const generalConfig = getGeneralConfig();
+      // Send monitor + push_server + online mode
+      const fullConfig = { ...monitorConfig, ...pushConfig, ...generalConfig };
 
       try {
         const loginUrl = `http://${targetIp}:${targetPort}/login.fcgi`;
@@ -423,12 +430,14 @@ Deno.serve(async (req) => {
 
       const monitorConfig = getMonitorConfig();
       const pushConfig = getPushServerConfig();
-      const fullConfig = { ...monitorConfig, ...pushConfig };
+      const generalConfig = getGeneralConfig();
+      const fullConfig = { ...monitorConfig, ...pushConfig, ...generalConfig };
 
       const command = {
         verb: 'POST',
-        endpoint: 'set_configuration.fcgi',
-        body: fullConfig
+        endpoint: 'set_configuration',
+        body: fullConfig,
+        contentType: 'application/json'
       };
 
       // Persist to DB instead of in-memory queue

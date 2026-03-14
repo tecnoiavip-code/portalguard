@@ -138,7 +138,7 @@ async function run() {
     addLog('✓ Login OK (session: '+s+')', 'ok');
     
     addLog('2. Aplicando configuração...', 'info');
-    const cfg = {monitor:{request_timeout:'5000',hostname:'${hostname}',port:'443',path:'functions/v1/controlid-webhook'},push_server:{push_remote_address:'https://${hostname}/functions/v1/controlid-webhook/push',push_request_timeout:'30000',push_request_period:'5'}};
+    const cfg = {monitor:{request_timeout:'5000',hostname:'${hostname}',port:'443',path:'/functions/v1/controlid-webhook'},push_server:{push_remote_address:'https://${hostname}/functions/v1/controlid-webhook/push',push_request_timeout:'30000',push_request_period:'5'},general:{online:'1'}};
     const cr = await fetch('http://${ip}/set_configuration.fcgi?session='+s, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
     if (!cr.ok) throw new Error('Erro ao aplicar: ' + cr.status);
     addLog('✓ Configuração aplicada!', 'ok');
@@ -264,7 +264,7 @@ async function run() {
         request_timeout: '5000',
         hostname: hostname,
         port: '443',
-        path: 'functions/v1/controlid-webhook',
+        path: '/functions/v1/controlid-webhook',
       },
     };
 
@@ -276,7 +276,13 @@ async function run() {
       },
     };
 
-    const fullConfig = { ...monitorConfig, ...pushConfig };
+    const generalConfig = {
+      general: {
+        online: '1',
+      },
+    };
+
+    const fullConfig = { ...monitorConfig, ...pushConfig, ...generalConfig };
 
     try {
       const loginResp = await fetch(`http://${ip}:${port}/login.fcgi`, {

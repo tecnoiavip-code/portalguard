@@ -824,7 +824,7 @@ async function run() {
 
       toast.success('Configuração aplicada com sucesso via rede local!', {
         duration: 8000,
-        description: `FW: ${fwVersion} | Online: ${appliedOnline || '?'} | Server ID: ${String(appliedServerId)} | Servidor: ${serverHostApplied}:${serverPortApplied} | Monitor: ${appliedHostname || hostname} | Push: ${appliedPush || 'verificar'}`,
+        description: `FW: ${fwVersion} | Online: ${appliedOnline || '?'} | Server ID: ${String(appliedServerId)} | Servidor: ${serverHostApplied}:${serverPortApplied} | Monitor: ${appliedHostname || hostname} | Push: ${appliedPush || `https://${hostname}${webhookPath}`}`,
       });
     } catch (err: any) {
       console.error('Error configuring device locally:', err);

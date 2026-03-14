@@ -427,6 +427,35 @@ export const Dashboard = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Photo Modal */}
+      {selectedPhoto && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+          onClick={() => setSelectedPhoto(null)}
+        >
+          <div 
+            className="relative max-w-lg w-full mx-4 rounded-xl overflow-hidden shadow-2xl border border-border bg-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setSelectedPhoto(null)}
+              className="absolute top-3 right-3 z-10 rounded-full bg-background/80 p-1.5 hover:bg-background transition-colors"
+            >
+              <X className="h-5 w-5 text-foreground" />
+            </button>
+            <img 
+              src={selectedPhoto.url} 
+              alt={selectedPhoto.name} 
+              className="w-full max-h-[70vh] object-contain bg-black"
+            />
+            <div className="p-4 space-y-1">
+              <p className="text-sm font-bold text-foreground">{selectedPhoto.name}</p>
+              <p className="text-xs text-muted-foreground">{selectedPhoto.location} • {selectedPhoto.time}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

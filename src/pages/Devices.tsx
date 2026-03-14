@@ -200,7 +200,7 @@ async function run() {
     await postConfig({ general: { online: '1', local_identification: '1' } }, 'general.online');
     addLog('✓ Modo online ativado', 'ok');
 
-    addLog('6. Verificando...', 'info');
+    addLog('7. Verificando...', 'info');
     const vr = await fetch(apiBase + '/get_configuration.fcgi?session=' + s, { method:'POST', headers: hdr, body: JSON.stringify({ general:true, monitor:true, push_server:true, online_client:true }) });
     if (vr.ok) {
       const vd = await vr.json();
@@ -208,6 +208,8 @@ async function run() {
       addLog('Monitor hostname: ' + (vd.monitor?.hostname || '?'), 'ok');
       addLog('Monitor port: ' + (vd.monitor?.port || '?'), 'ok');
       addLog('Push address: ' + (vd.push_server?.push_remote_address || '?'), 'ok');
+      addLog('Online server_address: ' + (vd.online_client?.server_address || '?'), vd.online_client?.server_address ? 'ok' : 'err');
+      addLog('Online server_port: ' + (vd.online_client?.server_port || '?'), vd.online_client?.server_port ? 'ok' : 'err');
       addLog('Online server_id: ' + (vd.online_client?.server_id || serverId || '?'), 'ok');
     }
 

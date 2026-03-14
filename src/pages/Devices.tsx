@@ -287,10 +287,7 @@ async function run() {
 
     addLog('✓ Servidor salvo: ' + serverHostApplied + ' | porta: ' + serverPortApplied, 'ok');
 
-    const serverIdNumber = Number(server.id);
-    const serverIdValue = Number.isFinite(serverIdNumber) && String(serverIdNumber) === String(server.id)
-      ? serverIdNumber
-      : server.id;
+    const serverIdValue = String(server.id);
 
     addLog('4. Vinculando server_id no online_client...', 'info');
     await postConfig({ online_client: { server_id: serverIdValue } }, 'online_client.server_id');
@@ -615,11 +612,7 @@ async function run() {
         throw new Error('Servidor/porta não persistiram no objeto online (campos ficaram vazios)');
       }
 
-      const serverIdNumber = Number(server.id);
-      const serverIdValue =
-        Number.isFinite(serverIdNumber) && String(serverIdNumber) === String(server.id)
-          ? serverIdNumber
-          : server.id;
+      const serverIdValue = String(server.id);
 
       await postConfig({ online_client: { server_id: serverIdValue } }, 'online_client.server_id');
       await postConfig(monitorConfig, 'monitor');

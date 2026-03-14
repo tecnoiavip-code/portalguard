@@ -721,6 +721,15 @@ async function run() {
         return fallback ? normalizeServer(fallback) : { id: '', ip: '', port: '' };
       };
 
+      const tryModifyServer = async (payload: Record<string, unknown>) => {
+        const resp = await fetch(`${baseUrl}/modify_objects.fcgi?session=${session}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        return resp.ok;
+      };
+
       const applyServerEndpoint = async (serverId: string) => {
         const idVariants: Array<string | number> = [serverId];
         const numericId = Number(serverId);
@@ -736,8 +745,8 @@ async function run() {
           };
 
           for (const idVariant of idVariants) {
-            const okWhere = await tryPostConfig({ object: 'devices', values, where: { devices: { id: idVariant } } });
-            const okById = await tryPostConfig({ object: 'devices', values: [{ id: idVariant, ...values }] });
+            const okWhere = await tryModifyServer({ object: 'devices', values, where: { devices: { id: idVariant } } });
+            const okById = await tryModifyServer({ object: 'devices', values: [{ id: idVariant, ...values }] });
 
             if (!okWhere && !okById) continue;
 

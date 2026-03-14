@@ -316,7 +316,7 @@ async function run() {
     const monitorConfig = {
       monitor: {
         request_timeout: '5000',
-        hostname: hostname,
+        hostname,
         port: '443',
         path: '/functions/v1/controlid-webhook',
       },
@@ -330,16 +330,10 @@ async function run() {
       },
     };
 
-    const generalConfig = {
-      general: {
-        online: '1',
-      },
-    };
-
-    const fullConfig = { ...monitorConfig, ...pushConfig, ...generalConfig };
+    const baseUrl = `http://${ip}:${port}`;
 
     try {
-      const loginResp = await fetch(`http://${ip}:${port}/login.fcgi`, {
+      const loginResp = await fetch(`${baseUrl}/login.fcgi`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ login: 'admin', password: 'admin' }),
@@ -353,37 +347,79 @@ async function run() {
       const session = loginData.session;
       if (!session) throw new Error('Sessão não retornada pelo dispositivo');
 
-      const configResp = await fetch(`http://${ip}:${port}/set_configuration.fcgi?session=${session}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(fullConfig),
-      });
+      const postConfig = async (payload: Record<string, unknown>, label: string) => {
+        const resp = await fetch(`${baseUrl}/set_configuration.fcgi?session=${session}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
 
-      if (!configResp.ok) {
-        throw new Error(`Erro ao aplicar configuração (status ${configResp.status})`);
+        if (!resp.ok) {
+          const details = await resp.text().catch(() => '');
+          throw new Error(`${label} falhou (status ${resp.status})${details ? `: ${details}` : ''}`);
+        }
+      };
+
+      let serverId = '';
+      try {
+        const createResp = await fetch(`${baseUrl}/create_objects.fcgi?session=${session}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            object: 'devices',
+            values: [{ name: 'PortalGuard Cloud', ip: `https://${hostname}/functions/v1/controlid-webhook`, public_key: '' }],
+          }),
+        });
+
+        if (createResp.ok) {
+          const createData = await createResp.json();
+          serverId = String(createData?.ids?.[0] ?? '');
+        }
+      } catch {
+        // segue sem server_id novo
       }
+
+      if (serverId) {
+        await postConfig({ online_client: { server_id: serverId } }, 'online_client.server_id');
+      }
+
+      await postConfig(monitorConfig, 'monitor');
+      await postConfig(pushConfig, 'push_server');
+
+      const onlinePayload = serverId
+        ? {
+            general: { online: '1', local_identification: '1' },
+            online_client: { extract_template: '0', max_request_attempts: '3' },
+          }
+        : { general: { online: '1' } };
+
+      await postConfig(onlinePayload, 'general.online');
 
       let verifyData: any = null;
       try {
-        const verifyResp = await fetch(`http://${ip}:${port}/get_configuration.fcgi?session=${session}`, {
+        const verifyResp = await fetch(`${baseUrl}/get_configuration.fcgi?session=${session}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ monitor: true, push_server: true }),
+          body: JSON.stringify({ general: true, monitor: true, push_server: true, online_client: true }),
         });
         if (verifyResp.ok) verifyData = await verifyResp.json();
-      } catch { /* ignore */ }
+      } catch {
+        // ignore
+      }
 
       const appliedHostname = verifyData?.monitor?.hostname || '';
       const appliedPush = verifyData?.push_server?.push_remote_address || '';
+      const appliedOnline = verifyData?.general?.online || '';
+      const appliedServerId = verifyData?.online_client?.server_id || serverId;
 
       toast.success('Configuração aplicada com sucesso via rede local!', {
-        duration: 6000,
-        description: `Monitor: ${appliedHostname || hostname} | Push: ${appliedPush ? 'OK' : 'verificar'}`,
+        duration: 7000,
+        description: `Online: ${appliedOnline || '?'} | Server ID: ${appliedServerId || '?'} | Monitor: ${appliedHostname || hostname} | Push: ${appliedPush ? 'OK' : 'verificar'}`,
       });
     } catch (err: any) {
       console.error('Error configuring device locally:', err);
       toast.error('Erro ao configurar dispositivo via rede local', {
-        duration: 6000,
+        duration: 7000,
         description: err.message || 'Verifique se o dispositivo está acessível na rede.',
       });
     }

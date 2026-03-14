@@ -300,26 +300,42 @@ async function run() {
       }
     }
 
-    // Update server object with correct endpoint
+    // Update server object with compatible endpoint formats
     addLog('4. Atualizando endpoint do servidor...', 'info');
-    const modifyPayloads = isOlderFirmware
-      ? [
-          { object: 'devices', values: [{ id: Number(serverId), name: 'PortalGuard Cloud', ip: fullServerUrl }] },
-          { object: 'devices', values: { name: 'PortalGuard Cloud', ip: fullServerUrl }, where: { devices: { id: Number(serverId) } } },
-        ]
-      : [
-          { object: 'devices', values: [{ id: Number(serverId), name: 'PortalGuard Cloud', ip: desiredHost, port: '443' }] },
-          { object: 'devices', values: { name: 'PortalGuard Cloud', ip: desiredHost, port: '443' }, where: { devices: { id: Number(serverId) } } },
-        ];
-
-    for (const payload of modifyPayloads) {
-      try {
-        await fetch(apiBase + '/modify_objects.fcgi?session=' + s, {
-          method: 'POST', headers: hdr, body: JSON.stringify(payload)
-        });
-      } catch(e) { /* try next */ }
+    const idVariants = [String(serverId)];
+    const serverIdNumForUpdate = Number(serverId);
+    if (Number.isFinite(serverIdNumForUpdate) && String(serverIdNumForUpdate) === String(serverId)) {
+      idVariants.push(serverIdNumForUpdate);
     }
-    addLog('✓ Endpoint atualizado', 'ok');
+
+    let endpointUpdated = false;
+    for (const candidate of serverCandidates) {
+      for (const idVariant of idVariants) {
+        const values = { name: 'PortalGuard Cloud', ip: candidate.ip, ...(candidate.port ? { port: candidate.port } : {}) };
+
+        const byWhere = await tryPostConfig(
+          { object: 'devices', values, where: { devices: { id: idVariant } } },
+          'modify by where (' + candidate.ip + ')'
+        );
+
+        const byId = await tryPostConfig(
+          { object: 'devices', values: [{ id: idVariant, ...values }] },
+          'modify by id (' + candidate.ip + ')'
+        );
+
+        if (byWhere || byId) {
+          endpointUpdated = true;
+          addLog('✓ Endpoint aplicado: ' + candidate.ip, 'ok');
+          break;
+        }
+      }
+
+      if (endpointUpdated) break;
+    }
+
+    if (!endpointUpdated) {
+      addLog('⚠ Não foi possível confirmar atualização do endpoint; continuando com configuração padrão', 'warn');
+    }
 
     // Step 3: Set online_client.server_id - try string first, then number fallback
     addLog('5. Vinculando server_id no online_client...', 'info');

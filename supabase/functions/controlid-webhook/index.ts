@@ -84,7 +84,8 @@ const getGeneralConfig = () => ({
 });
 
 /**
- * Get the push server configuration (like iDSecure does).
+ * Get the push server configuration.
+ * We keep the base webhook path (without /push) because some firmwares append /push automatically.
  */
 const getPushServerConfig = () => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
@@ -97,7 +98,7 @@ const getPushServerConfig = () => {
 
   return {
     push_server: {
-      push_remote_address: `https://${hostname}/functions/v1/controlid-webhook/push`,
+      push_remote_address: `https://${hostname}/functions/v1/controlid-webhook`,
       push_request_timeout: "120000",
       push_request_period: "5"
     }

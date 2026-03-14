@@ -68,15 +68,8 @@ export const Devices = () => {
     }
 
     // Mixed Content: browsers block http:// requests from https:// pages.
-    // Detect and guide the user to open via http instead.
+    // Download an HTML file that the user opens locally (file:// protocol) to bypass restrictions.
     if (window.location.protocol === 'https:') {
-      const httpUrl = window.location.href.replace('https://', 'http://');
-      toast.error('Configuração local requer acesso via HTTP', {
-        duration: 10000,
-        description: 'O navegador bloqueia requisições para dispositivos locais (HTTP) quando a página é HTTPS. Use o script abaixo ou configure manualmente.',
-      });
-      
-      // Open a small helper window that does the config via plain HTTP
       const ip = device.ipAddress;
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
       let hostname = '';
@@ -85,7 +78,20 @@ export const Devices = () => {
       const script = generateLocalConfigScript(ip, hostname);
       const blob = new Blob([script], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
-      window.open(url, '_blank', 'width=600,height=400');
+      
+      // Download as file so user opens from file:// (no mixed content)
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `config-${ip.replace(/\./g, '-')}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast.info('Arquivo de configuração baixado!', {
+        duration: 10000,
+        description: `Abra o arquivo "config-${ip.replace(/\./g, '-')}.html" no navegador e clique em "Configurar". Isso contorna o bloqueio de Mixed Content.`,
+      });
       return;
     }
 

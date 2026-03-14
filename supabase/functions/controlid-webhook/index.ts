@@ -193,6 +193,69 @@ const buildIdentificationResponse = (payload: any) => {
   };
 };
 
+const tryParseJsonString = (value: unknown) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+};
+
+const normalizeBase64Candidate = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const fromDataUri = trimmed.match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/i);
+  const candidate = (fromDataUri?.[1] || trimmed).replace(/\s+/g, '');
+  if (candidate.length < 100) return null;
+
+  // Standard and URL-safe base64
+  if (!/^[A-Za-z0-9+/=_-]+$/.test(candidate)) return null;
+  return candidate;
+};
+
+const extractPhotoBase64 = (payload: any): string | null => {
+  const parsedResponse = tryParseJsonString(payload?.response);
+  const parsedRawData = tryParseJsonString(payload?.raw_data);
+
+  const candidates: unknown[] = [
+    payload?.user_image_hash,
+    payload?.user_image_data,
+    payload?.face_image,
+    payload?.image,
+    payload?.photo,
+    payload?.photo_data,
+    payload?.access_photo?.image,
+    payload?.access_photo?.photo,
+    payload?.result?.user_image,
+    payload?.result?.image,
+    payload?.result?.photo,
+    payload?.result?.access_photo,
+    payload?.response?.user_image,
+    payload?.response?.image,
+    payload?.response?.photo,
+    parsedResponse?.user_image,
+    parsedResponse?.image,
+    parsedResponse?.photo,
+    parsedResponse?.access_photo?.image,
+    parsedResponse?.access_photo?.photo,
+    parsedRawData?.user_image,
+    parsedRawData?.image,
+    parsedRawData?.photo,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeBase64Candidate(candidate);
+    if (normalized) return normalized;
+  }
+
+  return null;
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });

@@ -185,31 +185,34 @@ export const Residents = () => {
       return;
     }
 
+    const abortCtrl = new AbortController();
+    setCaptureAbortController(abortCtrl);
     setDeviceCaptureLoading(true);
     setDeviceCaptureStatus('Iniciando...');
+    setDeviceCaptureStep('preparing');
+    setDeviceCaptureProgress(5);
 
     try {
-      const photo = await capturePhotoFromDevice(device, setDeviceCaptureStatus);
+      const photo = await capturePhotoFromDevice(device, (msg, step, progress) => {
+        setDeviceCaptureStatus(msg);
+        if (step) setDeviceCaptureStep(step);
+        if (progress !== undefined) setDeviceCaptureProgress(progress);
+      }, abortCtrl.signal);
       if (photo) {
         setFormData(prev => ({ ...prev, photo }));
         setShowDeviceCaptureDialog(false);
         toast.success('Foto capturada pelo dispositivo!');
-      } else {
-        setDeviceCaptureStatus('Captura iniciada no dispositivo. Posicione o rosto e aguarde.');
-        toast.info('Captura facial iniciada no dispositivo!', {
-          description: 'Posicione o rosto em frente ao equipamento.',
-          duration: 8000,
-        });
       }
     } catch (err: any) {
+      if (err.name === 'AbortError') return;
       const isNetworkError = err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError');
       toast.error(isNetworkError
         ? 'Não foi possível conectar ao dispositivo. Verifique se está na mesma rede.'
         : `Erro: ${err.message}`
       );
-      setDeviceCaptureStatus('');
     } finally {
       setDeviceCaptureLoading(false);
+      setCaptureAbortController(null);
     }
   };
 

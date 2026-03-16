@@ -207,25 +207,74 @@ export const FacialRegistration = () => {
     setEnrollStep({ status: 'idle', message: '' });
   };
 
+  // Helper: queue a push command and wait for result
+  const queueCommandAndWait = async (deviceSerial: string, endpoint: string, body: any, timeoutMs = 30000): Promise<any> => {
+    // Insert command into queue
+    const { data: inserted, error: insertErr } = await supabase
+      .from('push_command_queue')
+      .insert({
+        device_id: deviceSerial,
+        command: { endpoint, body },
+        status: 'pending',
+      } as any)
+      .select('id')
+      .single();
+
+    if (insertErr || !inserted) throw new Error('Falha ao enfileirar comando: ' + (insertErr?.message || 'unknown'));
+
+    const commandId = inserted.id;
+    const startTime = Date.now();
+
+    // Poll for completion
+    while (Date.now() - startTime < timeoutMs) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      const { data: cmd } = await supabase
+        .from('push_command_queue')
+        .select('status, result')
+        .eq('id', commandId)
+        .single();
+
+      if (cmd?.status === 'done') {
+        return cmd.result;
+      }
+      if (cmd?.status === 'error') {
+        throw new Error('Comando retornou erro do dispositivo');
+      }
+    }
+
+    throw new Error('Timeout: o dispositivo não respondeu a tempo. Verifique se está online.');
+  };
+
+  const getDeviceSerial = (device: Device): string => {
+    // Use serial_number for push queue device_id matching
+    return device.serialNumber || device.id;
+  };
+
   const handleSyncFromDevice = async () => {
-    if (!selectedDevice?.ipAddress) {
-      toast.error('Selecione um dispositivo com IP configurado.');
+    if (!selectedDevice) {
+      toast.error('Selecione um dispositivo.');
       return;
     }
+    
+    const deviceSerial = getDeviceSerial(selectedDevice);
+    if (!deviceSerial) {
+      toast.error('Dispositivo sem número de série configurado.');
+      return;
+    }
+
     setSyncLoading(true);
     setSyncResults([]);
 
     try {
-      // Authenticate
-      const loginRes = await callDeviceApi(selectedDevice, 'login.fcgi', { login: 'admin', password: 'admin' });
-      const session = loginRes.session;
-      if (!session) throw new Error('Falha na autenticação');
-
-      // Load all users from device
-      const usersRes = await callDeviceApi(selectedDevice, `load_objects.fcgi?session=${session}`, {
-        object: 'users',
+      toast.info('Enviando comando ao dispositivo via fila push...', {
+        description: 'Aguardando o dispositivo buscar e executar o comando.',
+        duration: 5000,
       });
-      const deviceUsers: Array<{ id: number; name: string; registration: string }> = usersRes?.users || [];
+
+      // Queue load_objects for users
+      const usersResult = await queueCommandAndWait(deviceSerial, 'load_objects', { object: 'users' }, 60000);
+      const deviceUsers: Array<{ id: number; name: string; registration: string }> = usersResult?.users || [];
 
       if (deviceUsers.length === 0) {
         toast.info('Nenhum usuário cadastrado neste dispositivo.');
@@ -233,11 +282,11 @@ export const FacialRegistration = () => {
         return;
       }
 
-      // Load user photos (templates) to check who has facial data
-      const templatesRes = await callDeviceApi(selectedDevice, `load_objects.fcgi?session=${session}`, {
-        object: 'templates',
-      });
-      const templates: Array<{ user_id: number }> = templatesRes?.templates || [];
+      toast.info(`${deviceUsers.length} usuários encontrados. Buscando dados de biometria...`);
+
+      // Queue load_objects for templates
+      const templatesResult = await queueCommandAndWait(deviceSerial, 'load_objects', { object: 'templates' }, 60000);
+      const templates: Array<{ user_id: number }> = templatesResult?.templates || [];
       const usersWithFace = new Set(templates.map(t => t.user_id));
 
       // Match with residents by hash
@@ -260,38 +309,43 @@ export const FacialRegistration = () => {
       toast.success(`${results.length} usuários encontrados, ${results.filter(r => r.hasPhoto).length} com facial cadastrada.`);
     } catch (err: any) {
       console.error('Sync error:', err);
-      const isNetworkError = err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError') || err.message?.includes('Mixed Content') || err.name === 'TypeError';
-      if (isNetworkError) {
-        toast.error('Não foi possível conectar ao dispositivo', {
-          description: 'Verifique se você está na mesma rede local do equipamento. Se a página estiver em HTTPS, o navegador bloqueia conexões HTTP locais.',
-          duration: 8000,
-        });
-      } else {
-        toast.error(`Erro: ${err.message}`);
-      }
+      toast.error('Erro na sincronização', {
+        description: err.message,
+        duration: 8000,
+      });
     } finally {
       setSyncLoading(false);
     }
   };
 
   const handleImportPhoto = async (deviceUserId: number, resident: Resident) => {
-    if (!selectedDevice?.ipAddress) return;
+    if (!selectedDevice) return;
     setImportingPhoto(resident.id);
 
     try {
-      const loginRes = await callDeviceApi(selectedDevice, 'login.fcgi', { login: 'admin', password: 'admin' });
-      const session = loginRes.session;
-      if (!session) throw new Error('Falha na autenticação');
+      const deviceSerial = getDeviceSerial(selectedDevice);
 
-      // Get user photo from device
-      const ip = selectedDevice.ipAddress;
-      const photoRes = await fetch(`http://${ip}/user_get_image.fcgi?session=${session}&user_id=${deviceUserId}`, {
-        method: 'POST',
-      });
+      toast.info('Solicitando foto ao dispositivo...', { duration: 3000 });
+
+      // Queue user_get_image command
+      const photoResult = await queueCommandAndWait(deviceSerial, 'user_get_image', { user_id: deviceUserId }, 60000);
+
+      // The device should return the image as base64 in the result
+      const base64Image = photoResult?.image || photoResult?.photo || photoResult?.user_image;
       
-      if (!photoRes.ok) throw new Error('Foto não disponível no dispositivo');
-      
-      const blob = await photoRes.blob();
+      if (!base64Image) {
+        throw new Error('O dispositivo não retornou a foto. Verifique se o firmware suporta exportação de imagem via push.');
+      }
+
+      // Decode base64 to blob
+      const cleanBase64 = base64Image.replace(/^data:image\/[a-z]+;base64,/, '');
+      const binaryString = atob(cleanBase64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: 'image/jpeg' });
+
       if (blob.size < 100) throw new Error('Foto vazia ou inválida');
 
       // Upload to Supabase Storage
@@ -604,7 +658,7 @@ export const FacialRegistration = () => {
                   <RefreshCw className="h-5 w-5" /> Sincronizar do Dispositivo
                 </CardTitle>
                 <CardDescription>
-                  Buscar usuários já cadastrados no dispositivo e importar fotos faciais
+                   Buscar usuários cadastrados no dispositivo via fila push (sem necessidade de acesso direto ao IP)
                 </CardDescription>
               </div>
               <Button

@@ -543,6 +543,7 @@ export type Database = {
           device_id: string
           executed_at: string | null
           id: string
+          result: Json | null
           status: string
         }
         Insert: {
@@ -551,6 +552,7 @@ export type Database = {
           device_id: string
           executed_at?: string | null
           id?: string
+          result?: Json | null
           status?: string
         }
         Update: {
@@ -559,6 +561,7 @@ export type Database = {
           device_id?: string
           executed_at?: string | null
           id?: string
+          result?: Json | null
           status?: string
         }
         Relationships: []

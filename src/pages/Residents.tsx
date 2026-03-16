@@ -349,6 +349,13 @@ export const Residents = () => {
         </div>
       </div>
 
+      {photoSyncStatus && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          <span className="text-sm text-primary">{photoSyncStatus}</span>
+        </div>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">

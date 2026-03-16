@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Pencil, Trash2, Save, X, Plus, Search, Download, FileSpreadsheet, ScanFace, Loader2, Tag, Wifi, WifiOff } from 'lucide-react';
+import { Pencil, Trash2, Save, X, Plus, Search, Download, FileSpreadsheet, ScanFace, Loader2, Tag, Wifi, WifiOff, ImageDown } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Resident, Device } from '@/types';
 import { useResidents } from '@/hooks/useResidents';

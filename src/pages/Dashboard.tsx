@@ -41,7 +41,7 @@ export const Dashboard = () => {
   const [controlidLogs, setControlidLogs] = useState<ControlidLog[]>([]);
   const [residents, setResidents] = useState<Resident[]>([]);
   const [deviceNames, setDeviceNames] = useState<Record<string, string>>({});
-  const [fallbackDeviceName, setFallbackDeviceName] = useState('');
+  const [deviceTypes, setDeviceTypes] = useState<Record<string, string>>({});
   const [photoSignedUrls, setPhotoSignedUrls] = useState<Record<string, string>>({});
   const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; name: string; time: string; location: string } | null>(null);
 
@@ -84,9 +84,10 @@ export const Dashboard = () => {
     loadStats();
     loadControlidLogs();
     // Load device names from devices table only (registered in project)
-    supabase.from('devices').select('id, name, serial_number, ip_address, last_sync').then(({ data }) => {
+    supabase.from('devices').select('id, name, serial_number, ip_address, last_sync, type').then(({ data }) => {
       if (data) {
-        const map: Record<string, string> = {};
+        const nameMap: Record<string, string> = {};
+        const typeMap: Record<string, string> = {};
 
         data.forEach((d) => {
           const keys = [d.id, d.serial_number, d.ip_address, d.name];
@@ -95,19 +96,13 @@ export const Dashboard = () => {
             const normalized = normalizeDeviceKey(key);
             const compact = compactDeviceKey(key);
 
-            if (normalized) map[normalized] = d.name;
-            if (compact) map[compact] = d.name;
+            if (normalized) { nameMap[normalized] = d.name; if (d.type) typeMap[normalized] = d.type; }
+            if (compact) { nameMap[compact] = d.name; if (d.type) typeMap[compact] = d.type; }
           });
         });
 
-        const sortedBySync = [...data].sort((a, b) => {
-          const aTime = a.last_sync ? new Date(a.last_sync).getTime() : 0;
-          const bTime = b.last_sync ? new Date(b.last_sync).getTime() : 0;
-          return bTime - aTime;
-        });
-
-        setFallbackDeviceName(sortedBySync[0]?.name || '');
-        setDeviceNames(map);
+        setDeviceNames(nameMap);
+        setDeviceTypes(typeMap);
       }
     });
     const interval = setInterval(loadStats, 30000);
@@ -356,9 +351,12 @@ export const Dashboard = () => {
                     .map((candidate) => deviceNames[normalizeDeviceKey(candidate)] || deviceNames[compactDeviceKey(candidate)])
                     .find(Boolean);
 
+                  const mappedDeviceType = deviceCandidates
+                    .map((candidate) => deviceTypes[normalizeDeviceKey(candidate)] || deviceTypes[compactDeviceKey(candidate)])
+                    .find(Boolean);
+
                   const location =
                     mappedDeviceName ||
-                    (/^\d+$/.test(String(log.device_id || '').trim()) ? fallbackDeviceName : '') ||
                     'Dispositivo não cadastrado';
                   
                   const eventTime = new Date(log.received_at);
@@ -367,9 +365,9 @@ export const Dashboard = () => {
                   const dateStr = eventTime.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
                   
                   const isAccess = ['dao', 'access_photo', 'identification_event', 'catra_event'].includes(log.event_type);
-                  const isTagEvent = log.event_type === 'catra_event';
+                  const isTagEvent = mappedDeviceType === 'vehicle_tag';
                   const isRecognized = isAccess && !!userName;
-                  const isUnidentified = isAccess && !userName;
+                  const isUnidentified = isAccess && !userName && !isTagEvent;
                   const isSystemEvent = !isAccess;
 
                   const displayName = userName || (isTagEvent ? 'Acesso via TAG veicular' : log.event_type === 'device_is_alive' ? 'Dispositivo online' : log.event_type === 'door' ? 'Evento de porta' : 'Acesso pela interface web');

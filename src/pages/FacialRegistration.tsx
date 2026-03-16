@@ -260,8 +260,15 @@ export const FacialRegistration = () => {
       toast.success(`${results.length} usuários encontrados, ${results.filter(r => r.hasPhoto).length} com facial cadastrada.`);
     } catch (err: any) {
       console.error('Sync error:', err);
-      const isNetworkError = err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError');
-      toast.error(isNetworkError ? 'Não foi possível conectar ao dispositivo.' : `Erro: ${err.message}`);
+      const isNetworkError = err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError') || err.message?.includes('Mixed Content') || err.name === 'TypeError';
+      if (isNetworkError) {
+        toast.error('Não foi possível conectar ao dispositivo', {
+          description: 'Verifique se você está na mesma rede local do equipamento. Se a página estiver em HTTPS, o navegador bloqueia conexões HTTP locais.',
+          duration: 8000,
+        });
+      } else {
+        toast.error(`Erro: ${err.message}`);
+      }
     } finally {
       setSyncLoading(false);
     }

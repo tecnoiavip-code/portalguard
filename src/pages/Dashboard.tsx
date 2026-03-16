@@ -376,11 +376,11 @@ export const Dashboard = () => {
                   const displayLabel = apartment && userName ? `${apartment} - ${userName.toUpperCase()}` : displayName.toUpperCase();
 
                   // Visual config based on recognition status
-                  const borderColor = isRecognized ? 'border-success' : isUnidentified ? 'border-warning' : 'border-muted';
-                  const bgHover = isRecognized ? 'hover:bg-success/5' : isUnidentified ? 'hover:bg-warning/5' : 'hover:bg-muted/40';
-                  const avatarBg = isRecognized ? 'bg-success/10 text-success' : isUnidentified ? 'bg-warning/10 text-warning' : 'bg-muted text-muted-foreground';
-                  const nameColor = isRecognized ? 'text-foreground' : isUnidentified ? 'text-warning' : 'text-muted-foreground';
-                  const timeColor = isRecognized ? 'text-success' : isUnidentified ? 'text-warning' : 'text-muted-foreground';
+                  const borderColor = isTagEvent ? 'border-primary' : isRecognized ? 'border-success' : isUnidentified ? 'border-warning' : 'border-muted';
+                  const bgHover = isTagEvent ? 'hover:bg-primary/5' : isRecognized ? 'hover:bg-success/5' : isUnidentified ? 'hover:bg-warning/5' : 'hover:bg-muted/40';
+                  const avatarBg = isTagEvent ? 'bg-primary/10 text-primary' : isRecognized ? 'bg-success/10 text-success' : isUnidentified ? 'bg-warning/10 text-warning' : 'bg-muted text-muted-foreground';
+                  const nameColor = isTagEvent ? 'text-primary' : isRecognized ? 'text-foreground' : isUnidentified ? 'text-warning' : 'text-muted-foreground';
+                  const timeColor = isTagEvent ? 'text-primary' : isRecognized ? 'text-success' : isUnidentified ? 'text-warning' : 'text-muted-foreground';
 
                   return (
                     <div

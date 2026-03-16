@@ -202,6 +202,9 @@ export const Residents = () => {
       if (photo) {
         setFormData(prev => ({ ...prev, photo }));
         setShowDeviceCaptureDialog(false);
+        setDeviceCaptureStatus('');
+        setDeviceCaptureStep(undefined);
+        setDeviceCaptureProgress(0);
         toast.success('Foto capturada pelo dispositivo!');
       }
     } catch (err: any) {

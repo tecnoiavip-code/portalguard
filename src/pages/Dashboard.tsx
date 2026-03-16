@@ -320,10 +320,9 @@ export const Dashboard = () => {
 
                   const rawPhotoUrl = changes.photo_url || p.photo_url || p.photo || '';
                   const savedPhotoPath = p.saved_photo_path || '';
-                  const residentPhotoUrl = matchedResident?.photo || '';
                   const photoUrl = savedPhotoPath
                     ? photoSignedUrls[savedPhotoPath] || ''
-                    : rawPhotoUrl || residentPhotoUrl;
+                    : rawPhotoUrl;
                   const deviceCandidates = [
                     log.device_id,
                     p.device_id,

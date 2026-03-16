@@ -586,6 +586,94 @@ export const FacialRegistration = () => {
           </CardContent>
         </Card>
       )}
+
+      {/* Sync Section */}
+      {mode === 'facial' && selectedDevice && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <RefreshCw className="h-5 w-5" /> Sincronizar do Dispositivo
+                </CardTitle>
+                <CardDescription>
+                  Buscar usuários já cadastrados no dispositivo e importar fotos faciais
+                </CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                onClick={handleSyncFromDevice}
+                disabled={syncLoading}
+              >
+                {syncLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
+                {syncLoading ? 'Buscando...' : 'Buscar Usuários'}
+              </Button>
+            </div>
+          </CardHeader>
+          {syncResults.length > 0 && (
+            <CardContent>
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {syncResults.map((result) => (
+                  <div
+                    key={result.userId}
+                    className="flex items-center gap-3 p-3 rounded-lg border border-border"
+                  >
+                    <Avatar className="h-10 w-10">
+                      <AvatarFallback className="bg-muted text-muted-foreground">
+                        {result.hasPhoto ? <Camera className="h-4 w-4" /> : <User className="h-4 w-4" />}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-foreground text-sm truncate">{result.name}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        {result.registration && (
+                          <span className="text-xs text-muted-foreground">{result.registration}</span>
+                        )}
+                        {result.hasPhoto ? (
+                          <Badge variant="default" className="text-xs">Facial ✓</Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-xs">Sem facial</Badge>
+                        )}
+                        {result.matchedResident && (
+                          <Badge variant="outline" className="text-xs">
+                            <UserCheck className="h-3 w-3 mr-1" />
+                            Apto {result.matchedResident.apartment}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="shrink-0">
+                      {result.photoImported ? (
+                        <Badge variant="default" className="text-xs gap-1">
+                          <CheckCircle2 className="h-3 w-3" /> Importada
+                        </Badge>
+                      ) : result.hasPhoto && result.matchedResident ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleImportPhoto(result.userId, result.matchedResident!)}
+                          disabled={importingPhoto === result.matchedResident.id}
+                        >
+                          {importingPhoto === result.matchedResident.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <><Download className="h-4 w-4 mr-1" /> Importar Foto</>
+                          )}
+                        </Button>
+                      ) : !result.matchedResident ? (
+                        <span className="text-xs text-muted-foreground">Sem vínculo</span>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground mt-3">
+                {syncResults.filter(r => r.hasPhoto).length} com facial • {syncResults.filter(r => r.matchedResident).length} vinculados a moradores
+              </p>
+            </CardContent>
+          )}
+        </Card>
+      )}
     </div>
   );
 };

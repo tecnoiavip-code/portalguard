@@ -172,7 +172,6 @@ export async function capturePhotoFromDevice(
     throw err;
   }
 }
-}
 
 /**
  * Read vehicle tags from a Control iD device via push queue.

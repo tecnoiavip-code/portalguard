@@ -356,8 +356,8 @@ export const Dashboard = () => {
                   const isUnidentified = isAccess && !userName && !isTagEvent;
                   const isSystemEvent = !isAccess;
 
-                  const displayName = userName || (isTagEvent ? 'Acesso via TAG veicular' : log.event_type === 'device_is_alive' ? 'Dispositivo online' : log.event_type === 'door' ? 'Evento de porta' : 'Acesso pela interface web');
-                  const displayLabel = apartment && userName ? `${apartment} - ${userName.toUpperCase()}` : displayName.toUpperCase();
+                  const displayName = parsedName || (isTagEvent ? 'Acesso via TAG veicular' : log.event_type === 'device_is_alive' ? 'Dispositivo online' : log.event_type === 'door' ? 'Evento de porta' : 'Acesso pela interface web');
+                  const displayLabel = apartment && parsedName ? `${apartment} - ${parsedName.toUpperCase()}` : displayName.toUpperCase();
 
                   // Visual config based on recognition status
                   const borderColor = isTagEvent ? 'border-primary' : isRecognized ? 'border-success' : isUnidentified ? 'border-warning' : 'border-muted';

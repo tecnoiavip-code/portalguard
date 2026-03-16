@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Users, Mail, UserCheck, Clock, Activity, Radio, CheckCheck, User, ShieldCheck, ShieldAlert, X } from 'lucide-react';
+import { Users, Mail, UserCheck, Clock, Activity, Radio, CheckCheck, User, ShieldCheck, ShieldAlert, X, Car } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { StatsCard } from '@/components/StatsCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -376,11 +376,11 @@ export const Dashboard = () => {
                   const displayLabel = apartment && userName ? `${apartment} - ${userName.toUpperCase()}` : displayName.toUpperCase();
 
                   // Visual config based on recognition status
-                  const borderColor = isRecognized ? 'border-success' : isUnidentified ? 'border-warning' : 'border-muted';
-                  const bgHover = isRecognized ? 'hover:bg-success/5' : isUnidentified ? 'hover:bg-warning/5' : 'hover:bg-muted/40';
-                  const avatarBg = isRecognized ? 'bg-success/10 text-success' : isUnidentified ? 'bg-warning/10 text-warning' : 'bg-muted text-muted-foreground';
-                  const nameColor = isRecognized ? 'text-foreground' : isUnidentified ? 'text-warning' : 'text-muted-foreground';
-                  const timeColor = isRecognized ? 'text-success' : isUnidentified ? 'text-warning' : 'text-muted-foreground';
+                  const borderColor = isTagEvent ? 'border-primary' : isRecognized ? 'border-success' : isUnidentified ? 'border-warning' : 'border-muted';
+                  const bgHover = isTagEvent ? 'hover:bg-primary/5' : isRecognized ? 'hover:bg-success/5' : isUnidentified ? 'hover:bg-warning/5' : 'hover:bg-muted/40';
+                  const avatarBg = isTagEvent ? 'bg-primary/10 text-primary' : isRecognized ? 'bg-success/10 text-success' : isUnidentified ? 'bg-warning/10 text-warning' : 'bg-muted text-muted-foreground';
+                  const nameColor = isTagEvent ? 'text-primary' : isRecognized ? 'text-foreground' : isUnidentified ? 'text-warning' : 'text-muted-foreground';
+                  const timeColor = isTagEvent ? 'text-primary' : isRecognized ? 'text-success' : isUnidentified ? 'text-warning' : 'text-muted-foreground';
 
                   return (
                     <div
@@ -405,13 +405,13 @@ export const Dashboard = () => {
                             <AvatarImage src={photoUrl} alt={displayName} className="object-cover" />
                           ) : null}
                           <AvatarFallback className={`text-base font-bold ${avatarBg}`}>
-                            {userName ? userName.substring(0, 2).toUpperCase() : <User className="h-5 w-5" />}
+                            {isTagEvent ? <Car className="h-6 w-6" /> : userName ? userName.substring(0, 2).toUpperCase() : <User className="h-5 w-5" />}
                           </AvatarFallback>
                         </Avatar>
                         {/* Recognition badge */}
                         {isAccess && (
-                          <div className={`absolute -bottom-1 -right-1 rounded-full p-0.5 ${isRecognized ? 'bg-success text-success-foreground' : 'bg-warning text-warning-foreground'}`}>
-                            {isRecognized ? <ShieldCheck className="h-3.5 w-3.5" /> : <ShieldAlert className="h-3.5 w-3.5" />}
+                          <div className={`absolute -bottom-1 -right-1 rounded-full p-0.5 ${isTagEvent ? 'bg-primary text-primary-foreground' : isRecognized ? 'bg-success text-success-foreground' : 'bg-warning text-warning-foreground'}`}>
+                            {isTagEvent ? <Car className="h-3.5 w-3.5" /> : isRecognized ? <ShieldCheck className="h-3.5 w-3.5" /> : <ShieldAlert className="h-3.5 w-3.5" />}
                           </div>
                         )}
                       </div>
@@ -423,13 +423,15 @@ export const Dashboard = () => {
                             {displayLabel}
                           </p>
                           {isAccess && (
-                            <Badge variant={isRecognized ? 'default' : 'secondary'} className={`text-[9px] px-1.5 py-0 shrink-0 ${isRecognized ? 'bg-success/15 text-success border-success/30 hover:bg-success/20' : 'bg-warning/15 text-warning border-warning/30 hover:bg-warning/20'}`}>
-                              {isRecognized ? 'Identificado' : 'Não identificado'}
+                            <Badge variant={isTagEvent ? 'default' : isRecognized ? 'default' : 'secondary'} className={`text-[9px] px-1.5 py-0 shrink-0 ${isTagEvent ? 'bg-primary/15 text-primary border-primary/30 hover:bg-primary/20' : isRecognized ? 'bg-success/15 text-success border-success/30 hover:bg-success/20' : 'bg-warning/15 text-warning border-warning/30 hover:bg-warning/20'}`}>
+                              {isTagEvent ? 'TAG Veicular' : isRecognized ? 'Identificado' : 'Não identificado'}
                             </Badge>
                           )}
                         </div>
                         <div className="flex items-center gap-1 mt-1">
-                          {isRecognized ? (
+                          {isTagEvent ? (
+                            <Car className="h-3 w-3 text-primary flex-shrink-0" />
+                          ) : isRecognized ? (
                             <CheckCheck className="h-3 w-3 text-success flex-shrink-0" />
                           ) : isUnidentified ? (
                             <ShieldAlert className="h-3 w-3 text-warning flex-shrink-0" />

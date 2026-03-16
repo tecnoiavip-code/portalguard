@@ -686,13 +686,13 @@ Deno.serve(async (req) => {
             const aptMatch = identUserName.match(/^(\d+\w?)\s*[-–]\s*(.+)$/i);
             if (aptMatch) {
               const [, apt, extractedName] = aptMatch;
-              const normalizedName = extractedName.trim().toLowerCase();
+              const normalizedName = extractedName.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
-              // Find resident by apartment + partial name match
+              // Find resident by apartment ending with the number (supports "Sausalito 108" matching "108")
               const { data: residents } = await supabaseClient
                 .from('residents')
                 .select('id, name, vehicle_tag')
-                .eq('apartment', apt.trim());
+                .ilike('apartment', `%${apt.trim()}`);
 
               if (residents && residents.length > 0) {
                 const matched = residents.find(r => {

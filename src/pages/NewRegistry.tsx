@@ -33,6 +33,7 @@ interface BlockedVisitor {
 }
 export const NewRegistry = () => {
   const { residents } = useResidents();
+  const { devices } = useDevices();
   const { entries: allEntries, saveEntry, deleteEntry } = useAccessEntries();
   const entries = allEntries.filter(e => !e.exitTime);
   const [isDialogOpen, setIsDialogOpen] = useState(false);

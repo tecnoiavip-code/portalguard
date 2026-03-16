@@ -304,6 +304,7 @@ export const Dashboard = () => {
                   const changes = p.object_changes?.[0]?.values || {};
                   
                   const userName = changes.user_name || p.user_name || p.name || '';
+                  const cardValue = String(p.card_value || changes.card_value || '');
 
                   // Try to find resident by name to get apartment and fallback photo
                   let apartment = changes.apartment || changes.user_id || p.apartment || p.house || '';
@@ -319,6 +320,12 @@ export const Dashboard = () => {
                       matchedResident = residents.find((r) =>
                         String(r.apartment).trim() === apt && normalizePersonName(r.name).includes(extractedName)
                       );
+                      // Also try matching just by apartment + partial name
+                      if (!matchedResident) {
+                        matchedResident = residents.find((r) =>
+                          String(r.apartment).trim() === apt
+                        );
+                      }
                     }
 
                     if (!matchedResident) {
@@ -327,9 +334,14 @@ export const Dashboard = () => {
                         return normalizedUserName.includes(normalizedResidentName) || normalizedResidentName.includes(normalizedUserName);
                       });
                     }
-
-                    if (matchedResident && !apartment) apartment = matchedResident.apartment;
                   }
+
+                  // For tag events, also try matching by card_value to vehicleTag
+                  if (!matchedResident && cardValue && residents.length > 0) {
+                    matchedResident = residents.find((r) => r.vehicleTag && r.vehicleTag === cardValue);
+                  }
+
+                  if (matchedResident && !apartment) apartment = matchedResident.apartment;
 
                   const rawPhotoUrl = changes.photo_url || p.photo_url || p.photo || '';
                   const savedPhotoPath = p.saved_photo_path || '';

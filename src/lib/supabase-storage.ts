@@ -6,31 +6,44 @@ const up = (val: string | null | undefined): string | null => val ? val.toUpperC
 
 export const supabaseStorage = {
   // Residents
-  async getResidents(): Promise<Resident[] | null> {
+  async getResidents(includePhotos = false): Promise<Resident[] | null> {
     const { data, error } = await supabase
       .from('residents')
-      .select('id, name, cpf, apartment, phone, email, vehicle_plate, vehicle_model, vehicle_color, vehicle_tag, created_at')
+      .select('id, name, cpf, apartment, phone, email, photo_url, vehicle_plate, vehicle_model, vehicle_color, vehicle_tag, created_at')
       .order('created_at', { ascending: false });
     
     if (error) {
       console.error('Error fetching residents:', error);
       return null; // Return null on error so callers can preserve existing data
     }
-    
-    return (data || []).map(r => ({
+
+    const residents = (data || []).map(r => ({
       id: r.id,
       name: r.name,
       cpf: r.cpf || '',
       apartment: r.apartment,
       phone: r.phone || '',
       email: r.email || '',
-      photo: '',
+      photo: includePhotos ? (r.photo_url || '') : '',
       vehiclePlate: r.vehicle_plate || '',
       vehicleModel: r.vehicle_model || '',
       vehicleColor: r.vehicle_color || '',
       vehicleTag: r.vehicle_tag || '',
       createdAt: r.created_at,
     }));
+
+    if (!includePhotos || residents.length === 0) {
+      return residents;
+    }
+
+    const residentsWithPhotos = await Promise.all(
+      residents.map(async (resident) => ({
+        ...resident,
+        photo: await supabaseStorage.getResidentPhoto(resident.id),
+      }))
+    );
+
+    return residentsWithPhotos;
   },
 
   async getResidentPhoto(id: string): Promise<string> {

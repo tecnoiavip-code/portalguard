@@ -133,7 +133,7 @@ export const Dashboard = () => {
 
   const loadStats = async () => {
     const [residentsData, mailsData, entriesData, eventsData] = await Promise.all([
-      supabaseStorage.getResidents(),
+      supabaseStorage.getResidents(true),
       supabaseStorage.getMails(),
       supabaseStorage.getEntries(),
       supabaseStorage.getEvents(),

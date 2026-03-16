@@ -602,26 +602,32 @@ export const Settings = () => {
                 <div className="p-4 bg-muted rounded-lg space-y-3">
                   <Label className="text-base font-semibold mb-2 block">Control iD - Webhook</Label>
                   <p className="text-sm text-muted-foreground mb-3">
-                    Informações para configurar nos dispositivos Control iD.
+                    Dados atualizados para monitor, push e callbacks dos dispositivos Control iD.
                   </p>
                   <div className="p-3 bg-primary/10 rounded-lg space-y-3">
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">Hostname:</p>
-                      <code className="text-xs bg-background p-2 rounded block">kxdqffkkufgsizszchvw.supabase.co</code>
+                      <code className="text-xs bg-background p-2 rounded block overflow-x-auto">{webhookHost}</code>
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">Porta:</p>
                       <code className="text-xs bg-background p-2 rounded block">443</code>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Endpoint:</p>
-                      <code className="text-xs bg-background p-2 rounded block">/functions/v1/controlid-webhook/push</code>
+                      <p className="text-xs text-muted-foreground">Monitor path:</p>
+                      <code className="text-xs bg-background p-2 rounded block overflow-x-auto">{monitorPath}</code>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">URL completa do Webhook:</p>
-                      <code className="text-xs bg-background p-2 rounded block overflow-x-auto">
-                        https://kxdqffkkufgsizszchvw.supabase.co/functions/v1/controlid-webhook
-                      </code>
+                      <p className="text-xs text-muted-foreground">Push remote address:</p>
+                      <code className="text-xs bg-background p-2 rounded block overflow-x-auto">{pushAddress}</code>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Rotas aceitas pelo webhook:</p>
+                      <code className="text-xs bg-background p-2 rounded block overflow-x-auto">{acceptedPushRoutes}</code>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Timeouts:</p>
+                      <code className="text-xs bg-background p-2 rounded block overflow-x-auto">monitor.request_timeout=15000 • push_request_timeout=120000 • push_request_period=5</code>
                     </div>
                   </div>
                 </div>

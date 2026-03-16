@@ -38,6 +38,9 @@ export const FacialRegistration = () => {
   const [enrollStep, setEnrollStep] = useState<EnrollmentStep>({ status: 'idle', message: '' });
   const [tagCode, setTagCode] = useState('');
   const [serviceProvider, setServiceProvider] = useState<ServiceProvider>({ name: '', document: '', company: '' });
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncResults, setSyncResults] = useState<Array<{ userId: number; name: string; registration: string; hasPhoto: boolean; matchedResident?: Resident; photoImported?: boolean }>>([]);
+  const [importingPhoto, setImportingPhoto] = useState<string | null>(null);
 
   const facialDevices = devices.filter(d => d.type === 'facial_recognition');
   const tagDevices = devices.filter(d => d.type === 'vehicle_tag' || d.type === 'card_reader');

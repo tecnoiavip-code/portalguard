@@ -668,6 +668,53 @@ Deno.serve(async (req) => {
 
     // Online identification events expect a JSON return message
     if (eventType === 'identification_event') {
+      // Auto-sync card_value to resident's vehicle_tag for tag antenna devices
+      const cardValue = String(payload.card_value || '');
+      const identUserName = String(payload.user_name || '');
+      if (cardValue && identUserName) {
+        try {
+          // Check if this device is a vehicle_tag type
+          const { data: deviceRow } = await supabaseClient
+            .from('devices')
+            .select('type')
+            .or(`serial_number.eq.${effectiveDeviceId},ip_address.eq.${effectiveDeviceId}`)
+            .limit(1)
+            .maybeSingle();
+
+          if (deviceRow?.type === 'vehicle_tag') {
+            // Parse "APT - NAME" format
+            const aptMatch = identUserName.match(/^(\d+\w?)\s*[-–]\s*(.+)$/i);
+            if (aptMatch) {
+              const [, apt, extractedName] = aptMatch;
+              const normalizedName = extractedName.trim().toLowerCase();
+
+              // Find resident by apartment + partial name match
+              const { data: residents } = await supabaseClient
+                .from('residents')
+                .select('id, name, vehicle_tag')
+                .eq('apartment', apt.trim());
+
+              if (residents && residents.length > 0) {
+                const matched = residents.find(r => {
+                  const rName = r.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+                  return rName.includes(normalizedName) || normalizedName.includes(rName);
+                }) || (residents.length === 1 ? residents[0] : null);
+
+                if (matched && matched.vehicle_tag !== cardValue) {
+                  await supabaseClient
+                    .from('residents')
+                    .update({ vehicle_tag: cardValue })
+                    .eq('id', matched.id);
+                  console.log(`Auto-synced vehicle_tag ${cardValue} to resident ${matched.name} (${apt})`);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Error auto-syncing vehicle_tag:', e);
+        }
+      }
+
       return new Response(
         JSON.stringify(buildIdentificationResponse(payload)),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

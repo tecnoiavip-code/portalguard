@@ -63,6 +63,9 @@ export const Residents = () => {
   // Device capture states
   const [deviceCaptureLoading, setDeviceCaptureLoading] = useState(false);
   const [deviceCaptureStatus, setDeviceCaptureStatus] = useState('');
+  const [deviceCaptureStep, setDeviceCaptureStep] = useState<import('@/lib/device-capture').CaptureStep | undefined>();
+  const [deviceCaptureProgress, setDeviceCaptureProgress] = useState(0);
+  const [captureAbortController, setCaptureAbortController] = useState<AbortController | null>(null);
   const [selectedFacialDeviceId, setSelectedFacialDeviceId] = useState('');
   const [showDeviceCaptureDialog, setShowDeviceCaptureDialog] = useState(false);
 

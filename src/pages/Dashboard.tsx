@@ -429,7 +429,9 @@ export const Dashboard = () => {
                           )}
                         </div>
                         <div className="flex items-center gap-1 mt-1">
-                          {isRecognized ? (
+                          {isTagEvent ? (
+                            <Car className="h-3 w-3 text-primary flex-shrink-0" />
+                          ) : isRecognized ? (
                             <CheckCheck className="h-3 w-3 text-success flex-shrink-0" />
                           ) : isUnidentified ? (
                             <ShieldAlert className="h-3 w-3 text-warning flex-shrink-0" />

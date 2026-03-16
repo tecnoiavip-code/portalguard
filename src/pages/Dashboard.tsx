@@ -351,9 +351,12 @@ export const Dashboard = () => {
                     .map((candidate) => deviceNames[normalizeDeviceKey(candidate)] || deviceNames[compactDeviceKey(candidate)])
                     .find(Boolean);
 
+                  const mappedDeviceType = deviceCandidates
+                    .map((candidate) => deviceTypes[normalizeDeviceKey(candidate)] || deviceTypes[compactDeviceKey(candidate)])
+                    .find(Boolean);
+
                   const location =
                     mappedDeviceName ||
-                    (/^\d+$/.test(String(log.device_id || '').trim()) ? fallbackDeviceName : '') ||
                     'Dispositivo não cadastrado';
                   
                   const eventTime = new Date(log.received_at);
@@ -362,9 +365,9 @@ export const Dashboard = () => {
                   const dateStr = eventTime.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
                   
                   const isAccess = ['dao', 'access_photo', 'identification_event', 'catra_event'].includes(log.event_type);
-                  const isTagEvent = log.event_type === 'catra_event';
+                  const isTagEvent = mappedDeviceType === 'vehicle_tag';
                   const isRecognized = isAccess && !!userName;
-                  const isUnidentified = isAccess && !userName;
+                  const isUnidentified = isAccess && !userName && !isTagEvent;
                   const isSystemEvent = !isAccess;
 
                   const displayName = userName || (isTagEvent ? 'Acesso via TAG veicular' : log.event_type === 'device_is_alive' ? 'Dispositivo online' : log.event_type === 'door' ? 'Evento de porta' : 'Acesso pela interface web');

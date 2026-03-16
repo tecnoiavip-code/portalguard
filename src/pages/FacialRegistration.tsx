@@ -5,11 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ScanFace, Wifi, WifiOff, Loader2, User, Tag, Search, CheckCircle2, XCircle, Camera, Wrench, Building2 } from 'lucide-react';
+import { ScanFace, Wifi, WifiOff, Loader2, User, Tag, Search, CheckCircle2, XCircle, Camera, Wrench, Building2, RefreshCw, Download, UserCheck } from 'lucide-react';
 import { useDevices } from '@/hooks/useDevices';
 import { useResidents } from '@/hooks/useResidents';
 import { Device, Resident } from '@/types';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 
 type RegistrationMode = 'facial' | 'tag';
 type PersonType = 'resident' | 'service_provider';
@@ -36,6 +38,9 @@ export const FacialRegistration = () => {
   const [enrollStep, setEnrollStep] = useState<EnrollmentStep>({ status: 'idle', message: '' });
   const [tagCode, setTagCode] = useState('');
   const [serviceProvider, setServiceProvider] = useState<ServiceProvider>({ name: '', document: '', company: '' });
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncResults, setSyncResults] = useState<Array<{ userId: number; name: string; registration: string; hasPhoto: boolean; matchedResident?: Resident; photoImported?: boolean }>>([]);
+  const [importingPhoto, setImportingPhoto] = useState<string | null>(null);
 
   const facialDevices = devices.filter(d => d.type === 'facial_recognition');
   const tagDevices = devices.filter(d => d.type === 'vehicle_tag' || d.type === 'card_reader');
@@ -200,6 +205,110 @@ export const FacialRegistration = () => {
 
   const resetEnroll = () => {
     setEnrollStep({ status: 'idle', message: '' });
+  };
+
+  const handleSyncFromDevice = async () => {
+    if (!selectedDevice?.ipAddress) {
+      toast.error('Selecione um dispositivo com IP configurado.');
+      return;
+    }
+    setSyncLoading(true);
+    setSyncResults([]);
+
+    try {
+      // Authenticate
+      const loginRes = await callDeviceApi(selectedDevice, 'login.fcgi', { login: 'admin', password: 'admin' });
+      const session = loginRes.session;
+      if (!session) throw new Error('Falha na autenticação');
+
+      // Load all users from device
+      const usersRes = await callDeviceApi(selectedDevice, `load_objects.fcgi?session=${session}`, {
+        object: 'users',
+      });
+      const deviceUsers: Array<{ id: number; name: string; registration: string }> = usersRes?.users || [];
+
+      if (deviceUsers.length === 0) {
+        toast.info('Nenhum usuário cadastrado neste dispositivo.');
+        setSyncLoading(false);
+        return;
+      }
+
+      // Load user photos (templates) to check who has facial data
+      const templatesRes = await callDeviceApi(selectedDevice, `load_objects.fcgi?session=${session}`, {
+        object: 'templates',
+      });
+      const templates: Array<{ user_id: number }> = templatesRes?.templates || [];
+      const usersWithFace = new Set(templates.map(t => t.user_id));
+
+      // Match with residents by hash
+      const results = deviceUsers.map(du => {
+        const matchedResident = residents.find(r => {
+          const residentHashId = Math.abs(hashCode(r.id)) % 1000000000;
+          return residentHashId === du.id;
+        });
+        return {
+          userId: du.id,
+          name: du.name,
+          registration: du.registration || '',
+          hasPhoto: usersWithFace.has(du.id),
+          matchedResident,
+          photoImported: false,
+        };
+      });
+
+      setSyncResults(results);
+      toast.success(`${results.length} usuários encontrados, ${results.filter(r => r.hasPhoto).length} com facial cadastrada.`);
+    } catch (err: any) {
+      console.error('Sync error:', err);
+      const isNetworkError = err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError');
+      toast.error(isNetworkError ? 'Não foi possível conectar ao dispositivo.' : `Erro: ${err.message}`);
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  const handleImportPhoto = async (deviceUserId: number, resident: Resident) => {
+    if (!selectedDevice?.ipAddress) return;
+    setImportingPhoto(resident.id);
+
+    try {
+      const loginRes = await callDeviceApi(selectedDevice, 'login.fcgi', { login: 'admin', password: 'admin' });
+      const session = loginRes.session;
+      if (!session) throw new Error('Falha na autenticação');
+
+      // Get user photo from device
+      const ip = selectedDevice.ipAddress;
+      const photoRes = await fetch(`http://${ip}/user_get_image.fcgi?session=${session}&user_id=${deviceUserId}`, {
+        method: 'POST',
+      });
+      
+      if (!photoRes.ok) throw new Error('Foto não disponível no dispositivo');
+      
+      const blob = await photoRes.blob();
+      if (blob.size < 100) throw new Error('Foto vazia ou inválida');
+
+      // Upload to Supabase Storage
+      const fileName = `facial_${Date.now()}.jpg`;
+      const filePath = `${resident.id}/${fileName}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('resident-photos')
+        .upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // Update sync results
+      setSyncResults(prev => prev.map(r => 
+        r.userId === deviceUserId ? { ...r, photoImported: true } : r
+      ));
+
+      toast.success(`Foto de ${resident.name} importada com sucesso!`);
+    } catch (err: any) {
+      console.error('Import photo error:', err);
+      toast.error(`Erro ao importar foto: ${err.message}`);
+    } finally {
+      setImportingPhoto(null);
+    }
   };
 
   return (
@@ -475,6 +584,94 @@ export const FacialRegistration = () => {
               )}
             </div>
           </CardContent>
+        </Card>
+      )}
+
+      {/* Sync Section */}
+      {mode === 'facial' && selectedDevice && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <RefreshCw className="h-5 w-5" /> Sincronizar do Dispositivo
+                </CardTitle>
+                <CardDescription>
+                  Buscar usuários já cadastrados no dispositivo e importar fotos faciais
+                </CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                onClick={handleSyncFromDevice}
+                disabled={syncLoading}
+              >
+                {syncLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
+                {syncLoading ? 'Buscando...' : 'Buscar Usuários'}
+              </Button>
+            </div>
+          </CardHeader>
+          {syncResults.length > 0 && (
+            <CardContent>
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {syncResults.map((result) => (
+                  <div
+                    key={result.userId}
+                    className="flex items-center gap-3 p-3 rounded-lg border border-border"
+                  >
+                    <Avatar className="h-10 w-10">
+                      <AvatarFallback className="bg-muted text-muted-foreground">
+                        {result.hasPhoto ? <Camera className="h-4 w-4" /> : <User className="h-4 w-4" />}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-foreground text-sm truncate">{result.name}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        {result.registration && (
+                          <span className="text-xs text-muted-foreground">{result.registration}</span>
+                        )}
+                        {result.hasPhoto ? (
+                          <Badge variant="default" className="text-xs">Facial ✓</Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-xs">Sem facial</Badge>
+                        )}
+                        {result.matchedResident && (
+                          <Badge variant="outline" className="text-xs">
+                            <UserCheck className="h-3 w-3 mr-1" />
+                            Apto {result.matchedResident.apartment}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="shrink-0">
+                      {result.photoImported ? (
+                        <Badge variant="default" className="text-xs gap-1">
+                          <CheckCircle2 className="h-3 w-3" /> Importada
+                        </Badge>
+                      ) : result.hasPhoto && result.matchedResident ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleImportPhoto(result.userId, result.matchedResident!)}
+                          disabled={importingPhoto === result.matchedResident.id}
+                        >
+                          {importingPhoto === result.matchedResident.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <><Download className="h-4 w-4 mr-1" /> Importar Foto</>
+                          )}
+                        </Button>
+                      ) : !result.matchedResident ? (
+                        <span className="text-xs text-muted-foreground">Sem vínculo</span>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground mt-3">
+                {syncResults.filter(r => r.hasPhoto).length} com facial • {syncResults.filter(r => r.matchedResident).length} vinculados a moradores
+              </p>
+            </CardContent>
+          )}
         </Card>
       )}
     </div>

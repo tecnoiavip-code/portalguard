@@ -155,3 +155,130 @@ export async function syncTagsFromDevice(
     userName: c.user_id ? userMap.get(c.user_id) : undefined,
   }));
 }
+
+interface Resident {
+  id: string;
+  name: string;
+  apartment: string;
+  photo?: string;
+}
+
+/**
+ * Sync all photos from facial recognition devices to resident profiles.
+ * Gets user list from device, fetches photos for users with images,
+ * matches to residents by name/apartment, and uploads to storage.
+ */
+export async function syncPhotosFromDevices(
+  devices: Device[],
+  residents: Resident[],
+  onProgress: (msg: string, current: number, total: number) => void
+): Promise<{ synced: number; skipped: number; errors: number }> {
+  const facialDevices = devices.filter(d => d.type === 'facial_recognition');
+  if (facialDevices.length === 0) throw new Error('Nenhum dispositivo facial cadastrado.');
+
+  const normalizeStr = (s: string) =>
+    s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+
+  let synced = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  for (const device of facialDevices) {
+    const serial = getDeviceSerial(device);
+    if (!serial) continue;
+
+    onProgress(`Buscando usuários de "${device.name}"...`, synced, 0);
+
+    let users: Array<{ id: number; name: string; image_timestamp: number }> = [];
+    try {
+      const result = await queueCommandAndWait(serial, 'load_objects', { object: 'users' }, 60000);
+      users = result?.users || [];
+    } catch (e) {
+      console.error(`Error loading users from ${device.name}:`, e);
+      errors++;
+      continue;
+    }
+
+    // Filter users that have photos (image_timestamp > 0)
+    const usersWithPhotos = users.filter(u => u.image_timestamp > 0 && u.name);
+    const total = usersWithPhotos.length;
+    onProgress(`Encontrados ${total} usuários com foto em "${device.name}"`, synced, total);
+
+    for (let i = 0; i < usersWithPhotos.length; i++) {
+      const deviceUser = usersWithPhotos[i];
+      const userName = deviceUser.name;
+
+      // Parse "APT - NAME" format
+      const aptMatch = userName.match(/^(\d+\w?)\s*[-–]\s*(.+)$/i);
+      let matchedResident: Resident | undefined;
+
+      if (aptMatch) {
+        const [, apt, extractedName] = aptMatch;
+        const normalizedName = normalizeStr(extractedName);
+        matchedResident = residents.find(r =>
+          String(r.apartment).trim() === apt.trim() &&
+          (normalizeStr(r.name).includes(normalizedName) || normalizedName.includes(normalizeStr(r.name)))
+        );
+      }
+
+      if (!matchedResident) {
+        // Try matching by full name
+        const normalizedUserName = normalizeStr(userName);
+        matchedResident = residents.find(r => {
+          const rName = normalizeStr(r.name);
+          return rName === normalizedUserName || rName.includes(normalizedUserName) || normalizedUserName.includes(rName);
+        });
+      }
+
+      if (!matchedResident) {
+        skipped++;
+        continue;
+      }
+
+      // Skip if resident already has a photo
+      if (matchedResident.photo) {
+        skipped++;
+        continue;
+      }
+
+      onProgress(`Baixando foto: ${userName} (${i + 1}/${total})`, synced, total);
+
+      try {
+        const photoResult = await queueCommandAndWait(serial, 'user_get_image', {
+          user_id: deviceUser.id,
+        }, 30000);
+
+        const base64 = photoResult?.user_image || photoResult?.image || photoResult?.photo;
+        if (base64) {
+          const clean = String(base64).replace(/^data:image\/[a-z]+;base64,/, '');
+          const dataUrl = `data:image/jpeg;base64,${clean}`;
+
+          // Upload to storage
+          const res = await fetch(dataUrl);
+          const blob = await res.blob();
+          const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
+          const path = `${matchedResident.id}/photo.jpg`;
+
+          await supabase.storage.from('resident-photos').remove([path]);
+          const { error: uploadErr } = await supabase.storage
+            .from('resident-photos')
+            .upload(path, file, { upsert: true });
+
+          if (!uploadErr) {
+            synced++;
+          } else {
+            console.error('Upload error:', uploadErr);
+            errors++;
+          }
+        } else {
+          skipped++;
+        }
+      } catch (e) {
+        console.error(`Error fetching photo for ${userName}:`, e);
+        errors++;
+      }
+    }
+  }
+
+  return { synced, skipped, errors };
+}

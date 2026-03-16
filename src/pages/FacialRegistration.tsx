@@ -207,14 +207,49 @@ export const FacialRegistration = () => {
     setEnrollStep({ status: 'idle', message: '' });
   };
 
+  const parsePushJson = (value: unknown) => {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return null;
+
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+  };
+
+  const normalizePushResult = (result: any) => {
+    const parsedResponse = parsePushJson(result?.response);
+    const parsedRawData = parsePushJson(result?.raw_data);
+
+    return {
+      ...(result && typeof result === 'object' ? result : {}),
+      ...(parsedRawData && typeof parsedRawData === 'object' ? parsedRawData : {}),
+      ...(parsedResponse && typeof parsedResponse === 'object' ? parsedResponse : {}),
+      ...(result?.raw_data && typeof result.raw_data === 'object' ? result.raw_data : {}),
+      ...(result?.response && typeof result.response === 'object' ? result.response : {}),
+      ...(result?.result && typeof result.result === 'object' ? result.result : {}),
+    };
+  };
+
+  const extractPushImage = (result: any) => {
+    const normalized = normalizePushResult(result);
+    return normalized?.image || normalized?.photo || normalized?.user_image || normalized?.face_image || normalized?.photo_data || normalized?.user_image_data || null;
+  };
+
   // Helper: queue a push command and wait for result
   const queueCommandAndWait = async (deviceSerial: string, endpoint: string, body: any, timeoutMs = 30000): Promise<any> => {
-    // Insert command into queue
     const { data: inserted, error: insertErr } = await supabase
       .from('push_command_queue')
       .insert({
         device_id: deviceSerial,
-        command: { endpoint, body },
+        command: {
+          verb: 'POST',
+          endpoint,
+          body,
+          contentType: 'application/json',
+        },
         status: 'pending',
       } as any)
       .select('id')
@@ -225,7 +260,6 @@ export const FacialRegistration = () => {
     const commandId = inserted.id;
     const startTime = Date.now();
 
-    // Poll for completion
     while (Date.now() - startTime < timeoutMs) {
       await new Promise(resolve => setTimeout(resolve, 2000));
 
@@ -236,10 +270,12 @@ export const FacialRegistration = () => {
         .single();
 
       if (cmd?.status === 'done') {
-        return cmd.result;
+        return normalizePushResult(cmd.result);
       }
+
       if (cmd?.status === 'error') {
-        throw new Error('Comando retornou erro do dispositivo');
+        const errorResult = normalizePushResult(cmd.result);
+        throw new Error(errorResult?.message || errorResult?.error || 'Comando retornou erro do dispositivo');
       }
     }
 
@@ -330,9 +366,8 @@ export const FacialRegistration = () => {
       // Queue user_get_image command
       const photoResult = await queueCommandAndWait(deviceSerial, 'user_get_image', { user_id: deviceUserId }, 60000);
 
-      // The device should return the image as base64 in the result
-      const base64Image = photoResult?.image || photoResult?.photo || photoResult?.user_image;
-      
+      const base64Image = extractPushImage(photoResult);
+
       if (!base64Image) {
         throw new Error('O dispositivo não retornou a foto. Verifique se o firmware suporta exportação de imagem via push.');
       }

@@ -382,13 +382,13 @@ Deno.serve(async (req) => {
 
         // Transform command to Control iD push protocol format
         const cmd = pendingCmd.command as any;
-        const endpoint = cmd.endpoint || '';
-        const body = cmd.body || {};
+        const endpoint = String(cmd.endpoint || '').replace(/\.fcgi$/i, '');
+        const body = cmd.body ?? {};
         const pushCommand = {
-          verb: 'POST',
-          endpoint: endpoint.endsWith('.fcgi') ? endpoint : `${endpoint}.fcgi`,
-          body: typeof body === 'string' ? body : JSON.stringify(body),
-          contentType: 'application/json',
+          verb: cmd.verb || 'POST',
+          endpoint,
+          body,
+          contentType: cmd.contentType || 'application/json',
         };
 
         console.log('Sending push command to device:', deviceId, JSON.stringify(pushCommand).substring(0, 200));

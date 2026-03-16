@@ -411,9 +411,8 @@ export const Dashboard = () => {
                             {isTagEvent ? <Car className="h-6 w-6" /> : userName ? userName.substring(0, 2).toUpperCase() : <User className="h-5 w-5" />}
                           </AvatarFallback>
                         </Avatar>
-                        {/* Recognition badge */}
                         {isAccess && (
-                          <div className={`absolute -bottom-1 -right-1 rounded-full p-0.5 ${isTagEvent ? 'bg-primary text-primary-foreground' : isRecognized ? 'bg-success text-success-foreground' : 'bg-warning text-warning-foreground'}`}>
+                          <div className={`absolute -bottom-1 -right-1 rounded-full p-0.5 ${isRecognized ? 'bg-success text-success-foreground' : 'bg-destructive text-destructive-foreground'}`}>
                             {isTagEvent ? <Car className="h-3.5 w-3.5" /> : isRecognized ? <ShieldCheck className="h-3.5 w-3.5" /> : <ShieldAlert className="h-3.5 w-3.5" />}
                           </div>
                         )}

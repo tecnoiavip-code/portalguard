@@ -74,7 +74,7 @@ export const Dashboard = () => {
     const { data } = await supabase
       .from('controlid_logs')
       .select('*')
-      .in('event_type', ['dao', 'access_photo', 'identification_event'])
+      .in('event_type', ['dao', 'access_photo', 'identification_event', 'catra_event'])
       .order('received_at', { ascending: false })
       .limit(50);
     if (data) setControlidLogs(data as ControlidLog[]);

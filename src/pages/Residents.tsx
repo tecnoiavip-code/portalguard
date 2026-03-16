@@ -302,6 +302,29 @@ export const Residents = () => {
     setDeviceTags([]);
   };
 
+  const handleSyncPhotos = async () => {
+    if (!residents || residents.length === 0) {
+      toast.error('Nenhum morador cadastrado');
+      return;
+    }
+    setPhotoSyncLoading(true);
+    setPhotoSyncStatus('Iniciando sincronização...');
+    try {
+      const result = await syncPhotosFromDevices(
+        devices,
+        residents,
+        (msg, current, total) => setPhotoSyncStatus(`${msg} (${current} sincronizadas)`)
+      );
+      toast.success(`Sincronização concluída: ${result.synced} fotos importadas, ${result.skipped} ignoradas, ${result.errors} erros`);
+      if (result.synced > 0) refresh();
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao sincronizar fotos');
+    } finally {
+      setPhotoSyncLoading(false);
+      setPhotoSyncStatus('');
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
@@ -309,10 +332,21 @@ export const Residents = () => {
           <h2 className="text-3xl font-bold text-foreground mb-2">Moradores</h2>
           <p className="text-muted-foreground">Cadastre e gerencie os moradores do condomínio</p>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)} size="lg" className="gap-2">
-          <Plus className="h-5 w-5" />
-          Novo Cadastro
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={handleSyncPhotos}
+            variant="outline"
+            disabled={photoSyncLoading || facialDevices.length === 0}
+            className="gap-2"
+          >
+            {photoSyncLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageDown className="h-4 w-4" />}
+            {photoSyncLoading ? 'Sincronizando...' : 'Importar Fotos'}
+          </Button>
+          <Button onClick={() => setIsDialogOpen(true)} size="lg" className="gap-2">
+            <Plus className="h-5 w-5" />
+            Novo Cadastro
+          </Button>
+        </div>
       </div>
 
       <Card>

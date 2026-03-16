@@ -120,7 +120,7 @@ const detectEventType = (url: URL, payload: any): string => {
   if (path.includes('/send-config')) return 'send_config';
 
   // Push sub-routes that must be handled before generic /push
-  if (path.includes('/push/result')) return 'push_result';
+  if (path.includes('/push/result') || path.endsWith('/result')) return 'push_result';
   if (path.includes('device_is_alive.fcgi') || path.includes('/device_is_alive')) return 'device_is_alive';
   if (path.includes('identification_event.fcgi') || path.includes('new_user_identified.fcgi')) return 'identification_event';
   if (path.includes('session_is_valid.fcgi')) return 'session_is_valid';

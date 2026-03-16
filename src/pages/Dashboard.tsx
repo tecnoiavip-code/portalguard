@@ -369,18 +369,21 @@ export const Dashboard = () => {
                   const isAccess = ['dao', 'access_photo', 'identification_event', 'catra_event'].includes(log.event_type);
                   const isTagEvent = mappedDeviceType === 'vehicle_tag';
                   const isRecognized = isAccess && !!userName;
-                  const isUnidentified = isAccess && !userName && !isTagEvent;
+                  const isUnidentified = isAccess && !userName;
                   const isSystemEvent = !isAccess;
+                  // TAG recognized = has userName from device payload
+                  const isTagRecognized = isTagEvent && isRecognized;
+                  const isTagUnknown = isTagEvent && !isRecognized;
 
-                  const displayName = parsedName || (isTagEvent ? 'Acesso via TAG veicular' : log.event_type === 'device_is_alive' ? 'Dispositivo online' : log.event_type === 'door' ? 'Evento de porta' : 'Acesso pela interface web');
+                  const displayName = parsedName || (isTagEvent ? 'TAG não identificada' : log.event_type === 'device_is_alive' ? 'Dispositivo online' : log.event_type === 'door' ? 'Evento de porta' : 'Acesso pela interface web');
                   const displayLabel = apartment && parsedName ? `${apartment} - ${parsedName.toUpperCase()}` : displayName.toUpperCase();
 
-                  // Visual config based on recognition status
-                  const borderColor = isTagEvent ? 'border-primary' : isRecognized ? 'border-success' : isUnidentified ? 'border-warning' : 'border-muted';
-                  const bgHover = isTagEvent ? 'hover:bg-primary/5' : isRecognized ? 'hover:bg-success/5' : isUnidentified ? 'hover:bg-warning/5' : 'hover:bg-muted/40';
-                  const avatarBg = isTagEvent ? 'bg-primary/10 text-primary' : isRecognized ? 'bg-success/10 text-success' : isUnidentified ? 'bg-warning/10 text-warning' : 'bg-muted text-muted-foreground';
-                  const nameColor = isTagEvent ? 'text-primary' : isRecognized ? 'text-foreground' : isUnidentified ? 'text-warning' : 'text-muted-foreground';
-                  const timeColor = isTagEvent ? 'text-primary' : isRecognized ? 'text-success' : isUnidentified ? 'text-warning' : 'text-muted-foreground';
+                  // Visual config: TAG uses same green/red as facial
+                  const borderColor = isRecognized ? 'border-success' : isUnidentified ? 'border-destructive' : 'border-muted';
+                  const bgHover = isRecognized ? 'hover:bg-success/5' : isUnidentified ? 'hover:bg-destructive/5' : 'hover:bg-muted/40';
+                  const avatarBg = isRecognized ? 'bg-success/10 text-success' : isUnidentified ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground';
+                  const nameColor = isRecognized ? 'text-foreground' : isUnidentified ? 'text-destructive' : 'text-muted-foreground';
+                  const timeColor = isRecognized ? 'text-success' : isUnidentified ? 'text-destructive' : 'text-muted-foreground';
 
                   return (
                     <div
@@ -408,9 +411,8 @@ export const Dashboard = () => {
                             {isTagEvent ? <Car className="h-6 w-6" /> : userName ? userName.substring(0, 2).toUpperCase() : <User className="h-5 w-5" />}
                           </AvatarFallback>
                         </Avatar>
-                        {/* Recognition badge */}
                         {isAccess && (
-                          <div className={`absolute -bottom-1 -right-1 rounded-full p-0.5 ${isTagEvent ? 'bg-primary text-primary-foreground' : isRecognized ? 'bg-success text-success-foreground' : 'bg-warning text-warning-foreground'}`}>
+                          <div className={`absolute -bottom-1 -right-1 rounded-full p-0.5 ${isRecognized ? 'bg-success text-success-foreground' : 'bg-destructive text-destructive-foreground'}`}>
                             {isTagEvent ? <Car className="h-3.5 w-3.5" /> : isRecognized ? <ShieldCheck className="h-3.5 w-3.5" /> : <ShieldAlert className="h-3.5 w-3.5" />}
                           </div>
                         )}
@@ -423,18 +425,18 @@ export const Dashboard = () => {
                             {displayLabel}
                           </p>
                           {isAccess && (
-                            <Badge variant={isTagEvent ? 'default' : isRecognized ? 'default' : 'secondary'} className={`text-[9px] px-1.5 py-0 shrink-0 ${isTagEvent ? 'bg-primary/15 text-primary border-primary/30 hover:bg-primary/20' : isRecognized ? 'bg-success/15 text-success border-success/30 hover:bg-success/20' : 'bg-warning/15 text-warning border-warning/30 hover:bg-warning/20'}`}>
-                              {isTagEvent ? 'TAG Veicular' : isRecognized ? 'Identificado' : 'Não identificado'}
+                            <Badge variant={isRecognized ? 'default' : 'secondary'} className={`text-[9px] px-1.5 py-0 shrink-0 ${isRecognized ? 'bg-success/15 text-success border-success/30 hover:bg-success/20' : 'bg-destructive/15 text-destructive border-destructive/30 hover:bg-destructive/20'}`}>
+                              {isTagEvent ? (isRecognized ? 'TAG Identificada' : 'TAG Desconhecida') : (isRecognized ? 'Identificado' : 'Não identificado')}
                             </Badge>
                           )}
                         </div>
                         <div className="flex items-center gap-1 mt-1">
                           {isTagEvent ? (
-                            <Car className="h-3 w-3 text-primary flex-shrink-0" />
+                            <Car className={`h-3 w-3 flex-shrink-0 ${isRecognized ? 'text-success' : 'text-destructive'}`} />
                           ) : isRecognized ? (
                             <CheckCheck className="h-3 w-3 text-success flex-shrink-0" />
                           ) : isUnidentified ? (
-                            <ShieldAlert className="h-3 w-3 text-warning flex-shrink-0" />
+                            <ShieldAlert className="h-3 w-3 text-destructive flex-shrink-0" />
                           ) : (
                             <Radio className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                           )}

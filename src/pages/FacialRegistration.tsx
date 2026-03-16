@@ -398,17 +398,6 @@ export const FacialRegistration = () => {
         </Card>
       )}
 
-      {/* Instructions */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">ℹ️ Instruções</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground space-y-2">
-          <p><strong>Cadastro Facial:</strong> O navegador se comunica diretamente com o dispositivo via rede local. Certifique-se de estar na mesma rede Wi-Fi/LAN do equipamento.</p>
-          <p><strong>Cadastro de Tag:</strong> Informe o código impresso na tag/cartão RFID. O sistema vinculará o código ao morador no dispositivo selecionado.</p>
-          <p><strong>Importante:</strong> Todos os dispositivos devem estar com IP configurado na tela de Dispositivos para que a comunicação local funcione.</p>
-        </CardContent>
-      </Card>
     </div>
   );
 };

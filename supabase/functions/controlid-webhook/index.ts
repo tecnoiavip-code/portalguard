@@ -83,7 +83,7 @@ const getMonitorConfig = () => {
 
 const getGeneralConfig = () => ({
   general: {
-    online: "1"
+    online: 1
   }
 });
 
@@ -103,8 +103,8 @@ const getPushServerConfig = () => {
   return {
     push_server: {
       push_remote_address: `https://${hostname}/functions/v1/controlid-webhook`,
-      push_request_timeout: "120000",
-      push_request_period: "5"
+      push_request_timeout: 120000,
+      push_request_period: 5
     }
   };
 };

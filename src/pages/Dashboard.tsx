@@ -306,51 +306,23 @@ export const Dashboard = () => {
                   const userName = changes.user_name || p.user_name || p.name || '';
                   const cardValue = String(p.card_value || changes.card_value || '');
 
-                  // Try to find resident by name to get apartment and fallback photo
-                  let apartment = changes.apartment || changes.user_id || p.apartment || p.house || '';
-                  let matchedResident: Resident | undefined;
-                  if (userName && residents.length > 0) {
-                    const normalizedUserName = normalizePersonName(userName);
-                    const aptNameMatch = normalizedUserName.match(/^(\d+\w?)\s*[-–]\s*(.+)$/);
-
-                    matchedResident = residents.find((r) => normalizePersonName(r.name) === normalizedUserName);
-
-                    if (!matchedResident && aptNameMatch) {
-                      const [, apt, extractedName] = aptNameMatch;
-                      // Match apartments like "Sausalito 108" when device sends "108"
-                      const aptMatches = (rApt: string) => {
-                        const normalized = rApt.trim().toLowerCase();
-                        return normalized === apt || normalized.endsWith(` ${apt}`) || normalized.endsWith(apt);
-                      };
-                      matchedResident = residents.find((r) =>
-                        aptMatches(r.apartment) && normalizePersonName(r.name).includes(extractedName)
-                      );
-                      if (!matchedResident) {
-                        matchedResident = residents.find((r) => aptMatches(r.apartment));
-                      }
-                    }
-
-                    if (!matchedResident) {
-                      matchedResident = residents.find((r) => {
-                        const normalizedResidentName = normalizePersonName(r.name);
-                        return normalizedUserName.includes(normalizedResidentName) || normalizedResidentName.includes(normalizedUserName);
-                      });
-                    }
+                  // Use ONLY data from the antenna payload — do not cross-reference residents
+                  // Parse "APT - NAME" format sent by the device (same as facial recognition)
+                  let apartment = '';
+                  let parsedName = userName;
+                  const aptNameMatch = userName.match(/^(\d+\w?)\s*[-–]\s*(.+)$/);
+                  if (aptNameMatch) {
+                    apartment = aptNameMatch[1];
+                    parsedName = aptNameMatch[2].trim();
+                  } else {
+                    apartment = changes.apartment || changes.user_id || p.apartment || p.house || '';
                   }
-
-                  // For tag events, also try matching by card_value to vehicleTag
-                  if (!matchedResident && cardValue && residents.length > 0) {
-                    matchedResident = residents.find((r) => r.vehicleTag && r.vehicleTag === cardValue);
-                  }
-
-                  if (matchedResident && !apartment) apartment = matchedResident.apartment;
 
                   const rawPhotoUrl = changes.photo_url || p.photo_url || p.photo || '';
                   const savedPhotoPath = p.saved_photo_path || '';
-                  const residentPhotoUrl = matchedResident?.photo || '';
                   const photoUrl = savedPhotoPath
                     ? photoSignedUrls[savedPhotoPath] || ''
-                    : rawPhotoUrl || residentPhotoUrl;
+                    : rawPhotoUrl;
                   const deviceCandidates = [
                     log.device_id,
                     p.device_id,
@@ -384,8 +356,8 @@ export const Dashboard = () => {
                   const isUnidentified = isAccess && !userName && !isTagEvent;
                   const isSystemEvent = !isAccess;
 
-                  const displayName = userName || (isTagEvent ? 'Acesso via TAG veicular' : log.event_type === 'device_is_alive' ? 'Dispositivo online' : log.event_type === 'door' ? 'Evento de porta' : 'Acesso pela interface web');
-                  const displayLabel = apartment && userName ? `${apartment} - ${userName.toUpperCase()}` : displayName.toUpperCase();
+                  const displayName = parsedName || (isTagEvent ? 'Acesso via TAG veicular' : log.event_type === 'device_is_alive' ? 'Dispositivo online' : log.event_type === 'door' ? 'Evento de porta' : 'Acesso pela interface web');
+                  const displayLabel = apartment && parsedName ? `${apartment} - ${parsedName.toUpperCase()}` : displayName.toUpperCase();
 
                   // Visual config based on recognition status
                   const borderColor = isTagEvent ? 'border-primary' : isRecognized ? 'border-success' : isUnidentified ? 'border-warning' : 'border-muted';

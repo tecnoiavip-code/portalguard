@@ -318,11 +318,27 @@ export const Dashboard = () => {
                     apartment = changes.apartment || changes.user_id || p.apartment || p.house || '';
                   }
 
+                  // Photo: prefer device photo, fallback to resident profile photo
                   const rawPhotoUrl = changes.photo_url || p.photo_url || p.photo || '';
                   const savedPhotoPath = p.saved_photo_path || '';
-                  const photoUrl = savedPhotoPath
+                  const devicePhoto = savedPhotoPath
                     ? photoSignedUrls[savedPhotoPath] || ''
                     : rawPhotoUrl;
+
+                  let photoUrl = devicePhoto;
+                  if (!photoUrl && parsedName && residents.length > 0) {
+                    const normalizedParsed = normalizePersonName(parsedName);
+                    const fallbackResident = residents.find((r) => {
+                      const nr = normalizePersonName(r.name);
+                      if (apartment) {
+                        const ra = r.apartment.trim().toLowerCase();
+                        const aptMatch = ra === apartment || ra.endsWith(` ${apartment}`) || ra.endsWith(apartment);
+                        return aptMatch && (nr === normalizedParsed || nr.includes(normalizedParsed) || normalizedParsed.includes(nr));
+                      }
+                      return nr === normalizedParsed;
+                    });
+                    if (fallbackResident?.photo) photoUrl = fallbackResident.photo;
+                  }
                   const deviceCandidates = [
                     log.device_id,
                     p.device_id,

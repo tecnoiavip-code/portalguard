@@ -72,6 +72,10 @@ export const Residents = () => {
   const [showTagSyncDialog, setShowTagSyncDialog] = useState(false);
   const [deviceTags, setDeviceTags] = useState<Array<{ value: string; userId?: number; userName?: string }>>([]);
 
+  // Photo sync states
+  const [photoSyncLoading, setPhotoSyncLoading] = useState(false);
+  const [photoSyncStatus, setPhotoSyncStatus] = useState('');
+
   const facialDevices = devices.filter(d => d.type === 'facial_recognition');
   const tagDevices = devices.filter(d => d.type === 'vehicle_tag' || d.type === 'card_reader');
 

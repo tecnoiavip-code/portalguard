@@ -40,8 +40,11 @@ async function queueCommandAndWait(
   deviceSerial: string,
   endpoint: string,
   body: any,
-  timeoutMs = 60000
+  timeoutMs = 60000,
+  signal?: AbortSignal
 ): Promise<any> {
+  if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+
   const { data: inserted, error: insertErr } = await supabase
     .from('push_command_queue')
     .insert({
@@ -60,6 +63,7 @@ async function queueCommandAndWait(
   const startTime = Date.now();
 
   while (Date.now() - startTime < timeoutMs) {
+    if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     const { data: cmd } = await supabase

@@ -425,18 +425,18 @@ export const Dashboard = () => {
                             {displayLabel}
                           </p>
                           {isAccess && (
-                            <Badge variant={isTagEvent ? 'default' : isRecognized ? 'default' : 'secondary'} className={`text-[9px] px-1.5 py-0 shrink-0 ${isTagEvent ? 'bg-primary/15 text-primary border-primary/30 hover:bg-primary/20' : isRecognized ? 'bg-success/15 text-success border-success/30 hover:bg-success/20' : 'bg-warning/15 text-warning border-warning/30 hover:bg-warning/20'}`}>
-                              {isTagEvent ? 'TAG Veicular' : isRecognized ? 'Identificado' : 'Não identificado'}
+                            <Badge variant={isRecognized ? 'default' : 'secondary'} className={`text-[9px] px-1.5 py-0 shrink-0 ${isRecognized ? 'bg-success/15 text-success border-success/30 hover:bg-success/20' : 'bg-destructive/15 text-destructive border-destructive/30 hover:bg-destructive/20'}`}>
+                              {isTagEvent ? (isRecognized ? 'TAG Identificada' : 'TAG Desconhecida') : (isRecognized ? 'Identificado' : 'Não identificado')}
                             </Badge>
                           )}
                         </div>
                         <div className="flex items-center gap-1 mt-1">
                           {isTagEvent ? (
-                            <Car className="h-3 w-3 text-primary flex-shrink-0" />
+                            <Car className={`h-3 w-3 flex-shrink-0 ${isRecognized ? 'text-success' : 'text-destructive'}`} />
                           ) : isRecognized ? (
                             <CheckCheck className="h-3 w-3 text-success flex-shrink-0" />
                           ) : isUnidentified ? (
-                            <ShieldAlert className="h-3 w-3 text-warning flex-shrink-0" />
+                            <ShieldAlert className="h-3 w-3 text-destructive flex-shrink-0" />
                           ) : (
                             <Radio className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                           )}

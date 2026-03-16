@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Users, Mail, UserCheck, Clock, Activity, Radio, CheckCheck, User, ShieldCheck, ShieldAlert, X } from 'lucide-react';
+import { Users, Mail, UserCheck, Clock, Activity, Radio, CheckCheck, User, ShieldCheck, ShieldAlert, X, Car } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { StatsCard } from '@/components/StatsCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

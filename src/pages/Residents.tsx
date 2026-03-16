@@ -305,6 +305,10 @@ export const Residents = () => {
     setShowDeviceCaptureDialog(false);
     setShowTagSyncDialog(false);
     setDeviceCaptureStatus('');
+    setDeviceCaptureStep(undefined);
+    setDeviceCaptureProgress(0);
+    captureAbortController?.abort();
+    setCaptureAbortController(null);
     setDeviceTags([]);
   };
 

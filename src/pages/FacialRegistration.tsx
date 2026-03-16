@@ -5,11 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ScanFace, Wifi, WifiOff, Loader2, User, Tag, Search, CheckCircle2, XCircle, Camera, Wrench, Building2 } from 'lucide-react';
+import { ScanFace, Wifi, WifiOff, Loader2, User, Tag, Search, CheckCircle2, XCircle, Camera, Wrench, Building2, RefreshCw, Download, UserCheck } from 'lucide-react';
 import { useDevices } from '@/hooks/useDevices';
 import { useResidents } from '@/hooks/useResidents';
 import { Device, Resident } from '@/types';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 
 type RegistrationMode = 'facial' | 'tag';
 type PersonType = 'resident' | 'service_provider';

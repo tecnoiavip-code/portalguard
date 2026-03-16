@@ -6,11 +6,13 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { LogIn, LogOut, Camera, Upload, X, Plus, Pencil, Trash2, Search, Download, ShieldBan, ShieldCheck, Ban, AlertTriangle, FileSpreadsheet } from 'lucide-react';
-import { AccessEntry, Resident } from '@/types';
+import { LogIn, LogOut, Camera, Upload, X, Plus, Pencil, Trash2, Search, Download, ShieldBan, ShieldCheck, Ban, AlertTriangle, FileSpreadsheet, ScanFace, Loader2, Wifi, WifiOff } from 'lucide-react';
+import { AccessEntry, Resident, Device } from '@/types';
 import { useAccessEntries } from '@/hooks/useAccessEntries';
 import { useResidents } from '@/hooks/useResidents';
+import { useDevices } from '@/hooks/useDevices';
 import { toast } from 'sonner';
+import { capturePhotoFromDevice } from '@/lib/device-capture';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from '@/components/ui/badge';
@@ -31,6 +33,7 @@ interface BlockedVisitor {
 }
 export const NewRegistry = () => {
   const { residents } = useResidents();
+  const { devices } = useDevices();
   const { entries: allEntries, saveEntry, deleteEntry } = useAccessEntries();
   const entries = allEntries.filter(e => !e.exitTime);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -74,6 +77,13 @@ export const NewRegistry = () => {
   const [allVehicleColors, setAllVehicleColors] = useState<string[]>([]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Device capture states
+  const [deviceCaptureLoading, setDeviceCaptureLoading] = useState(false);
+  const [deviceCaptureStatus, setDeviceCaptureStatus] = useState('');
+  const [selectedFacialDeviceId, setSelectedFacialDeviceId] = useState('');
+  const [showDeviceFacialDialog, setShowDeviceFacialDialog] = useState(false);
+  const facialDevices = devices.filter(d => d.type === 'facial_recognition');
 
   useEffect(() => {
     loadBlockedVisitors();
@@ -290,6 +300,34 @@ export const NewRegistry = () => {
       reader.readAsDataURL(file);
     }
   };
+
+  const handleDeviceCapture = async () => {
+    const device = devices.find(d => d.id === selectedFacialDeviceId);
+    if (!device) {
+      toast.error('Selecione um dispositivo facial.');
+      return;
+    }
+    setDeviceCaptureLoading(true);
+    setDeviceCaptureStatus('Iniciando...');
+    try {
+      const photo = await capturePhotoFromDevice(device, setDeviceCaptureStatus);
+      if (photo) {
+        setFormData(prev => ({ ...prev, photo }));
+        setShowDeviceFacialDialog(false);
+        toast.success('Foto capturada pelo dispositivo!');
+      } else {
+        setDeviceCaptureStatus('Captura iniciada no dispositivo. Posicione o rosto.');
+        toast.info('Captura facial iniciada no dispositivo!', { duration: 8000 });
+      }
+    } catch (err: any) {
+      const isNetworkError = err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError');
+      toast.error(isNetworkError ? 'Não foi possível conectar ao dispositivo.' : `Erro: ${err.message}`);
+      setDeviceCaptureStatus('');
+    } finally {
+      setDeviceCaptureLoading(false);
+    }
+  };
+
   const handleEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     setBadgeError(null);
@@ -881,13 +919,19 @@ export const NewRegistry = () => {
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Foto do Visitante</Label>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     <Button type="button" size="sm" variant="outline" onClick={startCamera}>
                       📷 Webcam
                     </Button>
                     <Button type="button" size="sm" variant="outline" onClick={() => document.getElementById('photoUpload')?.click()}>
                       📁 Carregar
                     </Button>
+                    {facialDevices.length > 0 && (
+                      <Button type="button" size="sm" variant="outline" onClick={() => setShowDeviceFacialDialog(true)} className="gap-1">
+                        <ScanFace className="h-4 w-4" />
+                        Dispositivo
+                      </Button>
+                    )}
                     {formData.photo && (
                       <Button type="button" size="sm" variant="destructive" onClick={() => setFormData({ ...formData, photo: '' })}>
                         🗑️ Remover
@@ -1013,6 +1057,59 @@ export const NewRegistry = () => {
               <Button variant="destructive" onClick={confirmBlockVisitor}>
                 <Ban className="h-4 w-4 mr-2" />
                 Confirmar Bloqueio
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Device Facial Capture Dialog */}
+      <Dialog open={showDeviceFacialDialog} onOpenChange={setShowDeviceFacialDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ScanFace className="h-5 w-5 text-primary" />
+              Captura Facial pelo Dispositivo
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Dispositivo Facial</Label>
+              <Select value={selectedFacialDeviceId} onValueChange={setSelectedFacialDeviceId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o dispositivo..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {facialDevices.map(d => (
+                    <SelectItem key={d.id} value={d.id}>
+                      <div className="flex items-center gap-2">
+                        {d.status === 'online' ? <Wifi className="h-3 w-3 text-green-500" /> : <WifiOff className="h-3 w-3 text-destructive" />}
+                        {d.name} - {d.location}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {deviceCaptureStatus && (
+              <div className="p-3 rounded-lg bg-muted text-sm text-muted-foreground flex items-center gap-2">
+                {deviceCaptureLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                {deviceCaptureStatus}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button
+                onClick={handleDeviceCapture}
+                disabled={!selectedFacialDeviceId || deviceCaptureLoading}
+                className="flex-1 gap-2"
+              >
+                {deviceCaptureLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanFace className="h-4 w-4" />}
+                Capturar Foto
+              </Button>
+              <Button variant="secondary" onClick={() => setShowDeviceFacialDialog(false)}>
+                Cancelar
               </Button>
             </div>
           </div>

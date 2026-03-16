@@ -13,7 +13,7 @@ import { Reports } from './Reports';
 import StaffChat from './StaffChat';
 import StaffAuthorizations from './StaffAuthorizations';
 import StaffAnnouncements from './StaffAnnouncements';
-import { FacialRegistration } from './FacialRegistration';
+
 
 const Index = () => {
   const [activeSection, setActiveSection] = useState('dashboard');
@@ -26,7 +26,7 @@ const Index = () => {
       case 'new-registry': return <NewRegistry />;
       case 'mail': return <MailManagement />;
       case 'mail-logs': return <MailLogs />;
-      case 'facial-registration': return <FacialRegistration />;
+      
       case 'staff-chat': return <StaffChat />;
       case 'authorizations': return <StaffAuthorizations />;
       case 'announcements': return <StaffAnnouncements />;

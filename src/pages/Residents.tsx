@@ -6,10 +6,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Pencil, Trash2, Save, X, Plus, Search, Download, FileSpreadsheet } from 'lucide-react';
-import { Resident } from '@/types';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Pencil, Trash2, Save, X, Plus, Search, Download, FileSpreadsheet, ScanFace, Loader2, Tag, Wifi, WifiOff } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Resident, Device } from '@/types';
 import { useResidents } from '@/hooks/useResidents';
+import { useDevices } from '@/hooks/useDevices';
 import { toast } from 'sonner';
+import { capturePhotoFromDevice, syncTagsFromDevice } from '@/lib/device-capture';
 import {
   Pagination,
   PaginationContent,
@@ -33,6 +37,7 @@ import { ptBR } from 'date-fns/locale';
 
 export const Residents = () => {
   const { residents, loading, saveResident, deleteResident, refresh } = useResidents();
+  const { devices } = useDevices();
   const [editingId, setEditingId] = useState<string>('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -54,6 +59,21 @@ export const Residents = () => {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Device capture states
+  const [deviceCaptureLoading, setDeviceCaptureLoading] = useState(false);
+  const [deviceCaptureStatus, setDeviceCaptureStatus] = useState('');
+  const [selectedFacialDeviceId, setSelectedFacialDeviceId] = useState('');
+  const [showDeviceCaptureDialog, setShowDeviceCaptureDialog] = useState(false);
+
+  // Tag sync states
+  const [tagSyncLoading, setTagSyncLoading] = useState(false);
+  const [selectedTagDeviceId, setSelectedTagDeviceId] = useState('');
+  const [showTagSyncDialog, setShowTagSyncDialog] = useState(false);
+  const [deviceTags, setDeviceTags] = useState<Array<{ value: string; userId?: number; userName?: string }>>([]);
+
+  const facialDevices = devices.filter(d => d.type === 'facial_recognition');
+  const tagDevices = devices.filter(d => d.type === 'vehicle_tag' || d.type === 'card_reader');
 
   const filteredResidents = residents.filter(resident =>
     resident.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -85,7 +105,6 @@ export const Residents = () => {
 
   const handleEdit = async (resident: Resident) => {
     setEditingId(resident.id);
-    // Load photo on demand
     const photo = await supabaseStorage.getResidentPhoto(resident.id);
     setFormData({
       name: resident.name,
@@ -132,7 +151,6 @@ export const Residents = () => {
         canvasRef.current.width = videoRef.current.videoWidth;
         canvasRef.current.height = videoRef.current.videoHeight;
         context.drawImage(videoRef.current, 0, 0);
-        // Compress to smaller JPEG
         const photoData = canvasRef.current.toDataURL('image/jpeg', 0.7);
         setFormData({ ...formData, photo: photoData });
         stopCamera();
@@ -153,9 +171,74 @@ export const Residents = () => {
     }
   };
 
+  const handleDeviceCapture = async () => {
+    const device = devices.find(d => d.id === selectedFacialDeviceId);
+    if (!device) {
+      toast.error('Selecione um dispositivo facial.');
+      return;
+    }
+
+    setDeviceCaptureLoading(true);
+    setDeviceCaptureStatus('Iniciando...');
+
+    try {
+      const photo = await capturePhotoFromDevice(device, setDeviceCaptureStatus);
+      if (photo) {
+        setFormData(prev => ({ ...prev, photo }));
+        setShowDeviceCaptureDialog(false);
+        toast.success('Foto capturada pelo dispositivo!');
+      } else {
+        setDeviceCaptureStatus('Captura iniciada no dispositivo. Posicione o rosto e aguarde.');
+        toast.info('Captura facial iniciada no dispositivo!', {
+          description: 'Posicione o rosto em frente ao equipamento.',
+          duration: 8000,
+        });
+      }
+    } catch (err: any) {
+      const isNetworkError = err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError');
+      toast.error(isNetworkError
+        ? 'Não foi possível conectar ao dispositivo. Verifique se está na mesma rede.'
+        : `Erro: ${err.message}`
+      );
+      setDeviceCaptureStatus('');
+    } finally {
+      setDeviceCaptureLoading(false);
+    }
+  };
+
+  const handleSyncTags = async () => {
+    const device = devices.find(d => d.id === selectedTagDeviceId);
+    if (!device) {
+      toast.error('Selecione um dispositivo de antena.');
+      return;
+    }
+
+    setTagSyncLoading(true);
+    setDeviceTags([]);
+
+    try {
+      const tags = await syncTagsFromDevice(device, (msg) => toast.info(msg, { duration: 2000 }));
+      setDeviceTags(tags);
+      if (tags.length === 0) {
+        toast.info('Nenhuma TAG encontrada no dispositivo.');
+      } else {
+        toast.success(`${tags.length} TAGs encontradas!`);
+      }
+    } catch (err: any) {
+      toast.error(`Erro ao sincronizar TAGs: ${err.message}`);
+    } finally {
+      setTagSyncLoading(false);
+    }
+  };
+
+  const selectTag = (tagValue: string) => {
+    setFormData(prev => ({ ...prev, vehicleTag: tagValue }));
+    setShowTagSyncDialog(false);
+    toast.success(`TAG ${tagValue} selecionada!`);
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm('Tem certeza? Isso também removerá correspondências associadas.')) return;
-    
     await deleteResident(id);
   };
 
@@ -209,6 +292,10 @@ export const Residents = () => {
     });
     stopCamera();
     setIsDialogOpen(false);
+    setShowDeviceCaptureDialog(false);
+    setShowTagSyncDialog(false);
+    setDeviceCaptureStatus('');
+    setDeviceTags([]);
   };
 
   return (
@@ -387,6 +474,7 @@ export const Residents = () => {
         </CardContent>
       </Card>
 
+      {/* Registration Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
           <DialogHeader>
@@ -407,13 +495,19 @@ export const Residents = () => {
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Foto do Morador</Label>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     <Button type="button" size="sm" variant="outline" onClick={startCamera}>
                       📷 Webcam
                     </Button>
                     <Button type="button" size="sm" variant="outline" onClick={() => document.getElementById('photoUpload')?.click()}>
                       📁 Carregar
                     </Button>
+                    {facialDevices.length > 0 && (
+                      <Button type="button" size="sm" variant="outline" onClick={() => setShowDeviceCaptureDialog(true)} className="gap-1">
+                        <ScanFace className="h-4 w-4" />
+                        Dispositivo
+                      </Button>
+                    )}
                     {formData.photo && (
                       <Button type="button" size="sm" variant="destructive" onClick={() => setFormData({ ...formData, photo: '' })}>
                         🗑️ Remover
@@ -530,12 +624,21 @@ export const Residents = () => {
               </div>
               <div className="space-y-2 md:col-span-3">
                 <Label htmlFor="vehicleTag">TAG Veicular</Label>
-                <Input
-                  id="vehicleTag"
-                  value={formData.vehicleTag}
-                  onChange={(e) => setFormData({ ...formData, vehicleTag: e.target.value })}
-                  placeholder="Número da TAG de acesso"
-                />
+                <div className="flex gap-2">
+                  <Input
+                    id="vehicleTag"
+                    value={formData.vehicleTag}
+                    onChange={(e) => setFormData({ ...formData, vehicleTag: e.target.value })}
+                    placeholder="Número da TAG de acesso"
+                    className="flex-1"
+                  />
+                  {tagDevices.length > 0 && (
+                    <Button type="button" size="sm" variant="outline" onClick={() => setShowTagSyncDialog(true)} className="gap-1 whitespace-nowrap">
+                      <Tag className="h-4 w-4" />
+                      Buscar do Dispositivo
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
             <div className="flex space-x-2">
@@ -549,6 +652,122 @@ export const Residents = () => {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Device Facial Capture Dialog */}
+      <Dialog open={showDeviceCaptureDialog} onOpenChange={setShowDeviceCaptureDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ScanFace className="h-5 w-5 text-primary" />
+              Captura Facial pelo Dispositivo
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Dispositivo Facial</Label>
+              <Select value={selectedFacialDeviceId} onValueChange={setSelectedFacialDeviceId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o dispositivo..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {facialDevices.map(d => (
+                    <SelectItem key={d.id} value={d.id}>
+                      <div className="flex items-center gap-2">
+                        {d.status === 'online' ? <Wifi className="h-3 w-3 text-green-500" /> : <WifiOff className="h-3 w-3 text-destructive" />}
+                        {d.name} - {d.location}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {deviceCaptureStatus && (
+              <div className="p-3 rounded-lg bg-muted text-sm text-muted-foreground flex items-center gap-2">
+                {deviceCaptureLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                {deviceCaptureStatus}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button
+                onClick={handleDeviceCapture}
+                disabled={!selectedFacialDeviceId || deviceCaptureLoading}
+                className="flex-1 gap-2"
+              >
+                {deviceCaptureLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanFace className="h-4 w-4" />}
+                Capturar Foto
+              </Button>
+              <Button variant="secondary" onClick={() => setShowDeviceCaptureDialog(false)}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Tag Sync Dialog */}
+      <Dialog open={showTagSyncDialog} onOpenChange={setShowTagSyncDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tag className="h-5 w-5 text-primary" />
+              Sincronizar TAG do Dispositivo
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Dispositivo de Antena/TAG</Label>
+              <Select value={selectedTagDeviceId} onValueChange={setSelectedTagDeviceId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o dispositivo..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {tagDevices.map(d => (
+                    <SelectItem key={d.id} value={d.id}>
+                      <div className="flex items-center gap-2">
+                        {d.status === 'online' ? <Wifi className="h-3 w-3 text-green-500" /> : <WifiOff className="h-3 w-3 text-destructive" />}
+                        {d.name} - {d.location}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Button
+              onClick={handleSyncTags}
+              disabled={!selectedTagDeviceId || tagSyncLoading}
+              className="w-full gap-2"
+            >
+              {tagSyncLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Tag className="h-4 w-4" />}
+              Buscar TAGs
+            </Button>
+
+            {deviceTags.length > 0 && (
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                <Label className="text-xs text-muted-foreground">Selecione a TAG para vincular:</Label>
+                {deviceTags.map((tag, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => selectTag(tag.value)}
+                    className="w-full text-left p-3 rounded-lg border hover:bg-accent transition-colors flex items-center justify-between"
+                  >
+                    <div>
+                      <p className="font-mono font-medium">{tag.value}</p>
+                      {tag.userName && (
+                        <p className="text-xs text-muted-foreground">{tag.userName}</p>
+                      )}
+                    </div>
+                    <Badge variant="outline">Selecionar</Badge>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

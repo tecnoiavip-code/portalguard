@@ -919,13 +919,19 @@ export const NewRegistry = () => {
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Foto do Visitante</Label>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     <Button type="button" size="sm" variant="outline" onClick={startCamera}>
                       📷 Webcam
                     </Button>
                     <Button type="button" size="sm" variant="outline" onClick={() => document.getElementById('photoUpload')?.click()}>
                       📁 Carregar
                     </Button>
+                    {facialDevices.length > 0 && (
+                      <Button type="button" size="sm" variant="outline" onClick={() => setShowDeviceFacialDialog(true)} className="gap-1">
+                        <ScanFace className="h-4 w-4" />
+                        Dispositivo
+                      </Button>
+                    )}
                     {formData.photo && (
                       <Button type="button" size="sm" variant="destructive" onClick={() => setFormData({ ...formData, photo: '' })}>
                         🗑️ Remover

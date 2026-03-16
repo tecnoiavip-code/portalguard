@@ -311,20 +311,22 @@ export const Dashboard = () => {
                   let matchedResident: Resident | undefined;
                   if (userName && residents.length > 0) {
                     const normalizedUserName = normalizePersonName(userName);
-                    const aptNameMatch = normalizedUserName.match(/^(\d+)\s*[-–]\s*(.+)$/);
+                    const aptNameMatch = normalizedUserName.match(/^(\d+\w?)\s*[-–]\s*(.+)$/);
 
                     matchedResident = residents.find((r) => normalizePersonName(r.name) === normalizedUserName);
 
                     if (!matchedResident && aptNameMatch) {
                       const [, apt, extractedName] = aptNameMatch;
+                      // Match apartments like "Sausalito 108" when device sends "108"
+                      const aptMatches = (rApt: string) => {
+                        const normalized = rApt.trim().toLowerCase();
+                        return normalized === apt || normalized.endsWith(` ${apt}`) || normalized.endsWith(apt);
+                      };
                       matchedResident = residents.find((r) =>
-                        String(r.apartment).trim() === apt && normalizePersonName(r.name).includes(extractedName)
+                        aptMatches(r.apartment) && normalizePersonName(r.name).includes(extractedName)
                       );
-                      // Also try matching just by apartment + partial name
                       if (!matchedResident) {
-                        matchedResident = residents.find((r) =>
-                          String(r.apartment).trim() === apt
-                        );
+                        matchedResident = residents.find((r) => aptMatches(r.apartment));
                       }
                     }
 

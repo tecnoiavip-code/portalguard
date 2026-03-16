@@ -300,6 +300,34 @@ export const NewRegistry = () => {
       reader.readAsDataURL(file);
     }
   };
+
+  const handleDeviceCapture = async () => {
+    const device = devices.find(d => d.id === selectedFacialDeviceId);
+    if (!device) {
+      toast.error('Selecione um dispositivo facial.');
+      return;
+    }
+    setDeviceCaptureLoading(true);
+    setDeviceCaptureStatus('Iniciando...');
+    try {
+      const photo = await capturePhotoFromDevice(device, setDeviceCaptureStatus);
+      if (photo) {
+        setFormData(prev => ({ ...prev, photo }));
+        setShowDeviceFacialDialog(false);
+        toast.success('Foto capturada pelo dispositivo!');
+      } else {
+        setDeviceCaptureStatus('Captura iniciada no dispositivo. Posicione o rosto.');
+        toast.info('Captura facial iniciada no dispositivo!', { duration: 8000 });
+      }
+    } catch (err: any) {
+      const isNetworkError = err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError');
+      toast.error(isNetworkError ? 'Não foi possível conectar ao dispositivo.' : `Erro: ${err.message}`);
+      setDeviceCaptureStatus('');
+    } finally {
+      setDeviceCaptureLoading(false);
+    }
+  };
+
   const handleEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     setBadgeError(null);

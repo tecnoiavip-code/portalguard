@@ -320,9 +320,44 @@ Deno.serve(async (req) => {
 
     // ===== PUSH MODE: Device polls for commands (GET/POST /push) =====
     // Some models send POST /push with access_logs as heartbeat signal.
+    // Device also sends results back via POST to the same /push endpoint.
     if (eventType === 'push_request' && (req.method === 'GET' || req.method === 'POST')) {
       if (deviceId) {
         await updateDeviceStatus(supabaseClient, deviceId);
+      }
+
+      // Check if this POST is actually a result from a previously sent command
+      if (req.method === 'POST' && rawPayload && rawPayload.trim()) {
+        const { data: executingCmd } = await supabaseClient
+          .from('push_command_queue')
+          .select('id')
+          .eq('device_id', deviceId)
+          .eq('status', 'executing')
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (executingCmd) {
+          console.log('Push result (via /push POST) from device:', deviceId, JSON.stringify(payload).substring(0, 300));
+          
+          await supabaseClient
+            .from('push_command_queue')
+            .update({ 
+              status: 'done', 
+              executed_at: new Date().toISOString(),
+              result: payload,
+            })
+            .eq('id', executingCmd.id);
+
+          await supabaseClient.from('controlid_logs').insert({
+            device_id: deviceId || 'unknown',
+            event_type: 'push_result',
+            payload: { ...payload, command_id: executingCmd.id },
+            processed: true,
+          });
+
+          return new Response('', { status: 200, headers: corsHeaders });
+        }
       }
 
       // Fetch oldest pending command from DB queue
@@ -345,8 +380,21 @@ Deno.serve(async (req) => {
           .update({ status: 'executing', executed_at: new Date().toISOString() })
           .eq('id', pendingCmd.id);
 
+        // Transform command to Control iD push protocol format
+        const cmd = pendingCmd.command as any;
+        const endpoint = cmd.endpoint || '';
+        const body = cmd.body || {};
+        const pushCommand = {
+          verb: 'POST',
+          endpoint: endpoint.endsWith('.fcgi') ? endpoint : `${endpoint}.fcgi`,
+          body: typeof body === 'string' ? body : JSON.stringify(body),
+          contentType: 'application/json',
+        };
+
+        console.log('Sending push command to device:', deviceId, JSON.stringify(pushCommand).substring(0, 200));
+
         return new Response(
-          JSON.stringify(pendingCmd.command),
+          JSON.stringify(pushCommand),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }

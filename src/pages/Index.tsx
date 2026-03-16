@@ -13,7 +13,7 @@ import { Reports } from './Reports';
 import StaffChat from './StaffChat';
 import StaffAuthorizations from './StaffAuthorizations';
 import StaffAnnouncements from './StaffAnnouncements';
-import { FacialRegistration } from './FacialRegistration';
+
 
 const Index = () => {
   const [activeSection, setActiveSection] = useState('dashboard');

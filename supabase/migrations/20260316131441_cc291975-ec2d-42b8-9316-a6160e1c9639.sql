@@ -1,0 +1,1 @@
+UPDATE push_command_queue SET status = 'done', executed_at = now() WHERE id = '8c39fb44-7c86-43a4-a19d-4787bdef2a67';

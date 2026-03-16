@@ -1102,12 +1102,13 @@ export const NewRegistry = () => {
               </Select>
             </div>
 
-            {deviceCaptureStatus && (
-              <div className="p-3 rounded-lg bg-muted text-sm text-muted-foreground flex items-center gap-2">
-                {deviceCaptureLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-                {deviceCaptureStatus}
-              </div>
-            )}
+            <DeviceCaptureStatus
+              status={deviceCaptureStatus}
+              step={deviceCaptureStep}
+              progress={deviceCaptureProgress}
+              loading={deviceCaptureLoading}
+              onCancel={() => captureAbortController?.abort()}
+            />
 
             <div className="flex gap-2">
               <Button

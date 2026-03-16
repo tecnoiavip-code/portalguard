@@ -311,24 +311,30 @@ export const NewRegistry = () => {
       toast.error('Selecione um dispositivo facial.');
       return;
     }
+    const abortCtrl = new AbortController();
+    setCaptureAbortController(abortCtrl);
     setDeviceCaptureLoading(true);
     setDeviceCaptureStatus('Iniciando...');
+    setDeviceCaptureStep('preparing');
+    setDeviceCaptureProgress(5);
     try {
-      const photo = await capturePhotoFromDevice(device, setDeviceCaptureStatus);
+      const photo = await capturePhotoFromDevice(device, (msg, step, progress) => {
+        setDeviceCaptureStatus(msg);
+        if (step) setDeviceCaptureStep(step);
+        if (progress !== undefined) setDeviceCaptureProgress(progress);
+      }, abortCtrl.signal);
       if (photo) {
         setFormData(prev => ({ ...prev, photo }));
         setShowDeviceFacialDialog(false);
         toast.success('Foto capturada pelo dispositivo!');
-      } else {
-        setDeviceCaptureStatus('Captura iniciada no dispositivo. Posicione o rosto.');
-        toast.info('Captura facial iniciada no dispositivo!', { duration: 8000 });
       }
     } catch (err: any) {
+      if (err.name === 'AbortError') return;
       const isNetworkError = err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError');
       toast.error(isNetworkError ? 'Não foi possível conectar ao dispositivo.' : `Erro: ${err.message}`);
-      setDeviceCaptureStatus('');
     } finally {
       setDeviceCaptureLoading(false);
+      setCaptureAbortController(null);
     }
   };
 

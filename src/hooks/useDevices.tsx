@@ -16,7 +16,7 @@ export const useDevices = () => {
   };
 
   useEffect(() => {
-    loadDevices();
+    loadDevices(true);
 
     // Realtime subscription for device status updates
     const channel = supabase

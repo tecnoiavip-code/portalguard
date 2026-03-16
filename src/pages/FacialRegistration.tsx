@@ -207,6 +207,110 @@ export const FacialRegistration = () => {
     setEnrollStep({ status: 'idle', message: '' });
   };
 
+  const handleSyncFromDevice = async () => {
+    if (!selectedDevice?.ipAddress) {
+      toast.error('Selecione um dispositivo com IP configurado.');
+      return;
+    }
+    setSyncLoading(true);
+    setSyncResults([]);
+
+    try {
+      // Authenticate
+      const loginRes = await callDeviceApi(selectedDevice, 'login.fcgi', { login: 'admin', password: 'admin' });
+      const session = loginRes.session;
+      if (!session) throw new Error('Falha na autenticação');
+
+      // Load all users from device
+      const usersRes = await callDeviceApi(selectedDevice, `load_objects.fcgi?session=${session}`, {
+        object: 'users',
+      });
+      const deviceUsers: Array<{ id: number; name: string; registration: string }> = usersRes?.users || [];
+
+      if (deviceUsers.length === 0) {
+        toast.info('Nenhum usuário cadastrado neste dispositivo.');
+        setSyncLoading(false);
+        return;
+      }
+
+      // Load user photos (templates) to check who has facial data
+      const templatesRes = await callDeviceApi(selectedDevice, `load_objects.fcgi?session=${session}`, {
+        object: 'templates',
+      });
+      const templates: Array<{ user_id: number }> = templatesRes?.templates || [];
+      const usersWithFace = new Set(templates.map(t => t.user_id));
+
+      // Match with residents by hash
+      const results = deviceUsers.map(du => {
+        const matchedResident = residents.find(r => {
+          const residentHashId = Math.abs(hashCode(r.id)) % 1000000000;
+          return residentHashId === du.id;
+        });
+        return {
+          userId: du.id,
+          name: du.name,
+          registration: du.registration || '',
+          hasPhoto: usersWithFace.has(du.id),
+          matchedResident,
+          photoImported: false,
+        };
+      });
+
+      setSyncResults(results);
+      toast.success(`${results.length} usuários encontrados, ${results.filter(r => r.hasPhoto).length} com facial cadastrada.`);
+    } catch (err: any) {
+      console.error('Sync error:', err);
+      const isNetworkError = err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError');
+      toast.error(isNetworkError ? 'Não foi possível conectar ao dispositivo.' : `Erro: ${err.message}`);
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  const handleImportPhoto = async (deviceUserId: number, resident: Resident) => {
+    if (!selectedDevice?.ipAddress) return;
+    setImportingPhoto(resident.id);
+
+    try {
+      const loginRes = await callDeviceApi(selectedDevice, 'login.fcgi', { login: 'admin', password: 'admin' });
+      const session = loginRes.session;
+      if (!session) throw new Error('Falha na autenticação');
+
+      // Get user photo from device
+      const ip = selectedDevice.ipAddress;
+      const photoRes = await fetch(`http://${ip}/user_get_image.fcgi?session=${session}&user_id=${deviceUserId}`, {
+        method: 'POST',
+      });
+      
+      if (!photoRes.ok) throw new Error('Foto não disponível no dispositivo');
+      
+      const blob = await photoRes.blob();
+      if (blob.size < 100) throw new Error('Foto vazia ou inválida');
+
+      // Upload to Supabase Storage
+      const fileName = `facial_${Date.now()}.jpg`;
+      const filePath = `${resident.id}/${fileName}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('resident-photos')
+        .upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // Update sync results
+      setSyncResults(prev => prev.map(r => 
+        r.userId === deviceUserId ? { ...r, photoImported: true } : r
+      ));
+
+      toast.success(`Foto de ${resident.name} importada com sucesso!`);
+    } catch (err: any) {
+      console.error('Import photo error:', err);
+      toast.error(`Erro ao importar foto: ${err.message}`);
+    } finally {
+      setImportingPhoto(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">

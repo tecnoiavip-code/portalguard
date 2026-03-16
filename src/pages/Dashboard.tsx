@@ -423,8 +423,8 @@ export const Dashboard = () => {
                             {displayLabel}
                           </p>
                           {isAccess && (
-                            <Badge variant={isRecognized ? 'default' : 'secondary'} className={`text-[9px] px-1.5 py-0 shrink-0 ${isRecognized ? 'bg-success/15 text-success border-success/30 hover:bg-success/20' : 'bg-warning/15 text-warning border-warning/30 hover:bg-warning/20'}`}>
-                              {isRecognized ? 'Identificado' : 'Não identificado'}
+                            <Badge variant={isTagEvent ? 'default' : isRecognized ? 'default' : 'secondary'} className={`text-[9px] px-1.5 py-0 shrink-0 ${isTagEvent ? 'bg-primary/15 text-primary border-primary/30 hover:bg-primary/20' : isRecognized ? 'bg-success/15 text-success border-success/30 hover:bg-success/20' : 'bg-warning/15 text-warning border-warning/30 hover:bg-warning/20'}`}>
+                              {isTagEvent ? 'TAG Veicular' : isRecognized ? 'Identificado' : 'Não identificado'}
                             </Badge>
                           )}
                         </div>

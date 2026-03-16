@@ -405,7 +405,7 @@ export const Dashboard = () => {
                             <AvatarImage src={photoUrl} alt={displayName} className="object-cover" />
                           ) : null}
                           <AvatarFallback className={`text-base font-bold ${avatarBg}`}>
-                            {userName ? userName.substring(0, 2).toUpperCase() : <User className="h-5 w-5" />}
+                            {isTagEvent ? <Car className="h-6 w-6" /> : userName ? userName.substring(0, 2).toUpperCase() : <User className="h-5 w-5" />}
                           </AvatarFallback>
                         </Avatar>
                         {/* Recognition badge */}

@@ -119,7 +119,7 @@ export const Dashboard = () => {
         table: 'controlid_logs',
       }, (payload) => {
         const newLog = payload.new as ControlidLog;
-        if (newLog.event_type === 'dao' || newLog.event_type === 'access_photo' || newLog.event_type === 'identification_event') {
+        if (['dao', 'access_photo', 'identification_event', 'catra_event'].includes(newLog.event_type)) {
           setControlidLogs(prev => [newLog, ...prev].slice(0, 50));
         }
       })

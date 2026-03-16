@@ -658,7 +658,7 @@ export const FacialRegistration = () => {
                   <RefreshCw className="h-5 w-5" /> Sincronizar do Dispositivo
                 </CardTitle>
                 <CardDescription>
-                  Buscar usuários já cadastrados no dispositivo e importar fotos faciais
+                   Buscar usuários cadastrados no dispositivo via fila push (sem necessidade de acesso direto ao IP)
                 </CardDescription>
               </div>
               <Button

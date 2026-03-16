@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LogIn, LogOut, Camera, Upload, X, Plus, Pencil, Trash2, Search, Download, ShieldBan, ShieldCheck, Ban, AlertTriangle, FileSpreadsheet, ScanFace, Loader2, Wifi, WifiOff } from 'lucide-react';
+import { DeviceCaptureStatus } from '@/components/DeviceCaptureStatus';
 import { AccessEntry, Resident, Device } from '@/types';
 import { useAccessEntries } from '@/hooks/useAccessEntries';
 import { useResidents } from '@/hooks/useResidents';
@@ -81,6 +82,9 @@ export const NewRegistry = () => {
   // Device capture states
   const [deviceCaptureLoading, setDeviceCaptureLoading] = useState(false);
   const [deviceCaptureStatus, setDeviceCaptureStatus] = useState('');
+  const [deviceCaptureStep, setDeviceCaptureStep] = useState<import('@/lib/device-capture').CaptureStep | undefined>();
+  const [deviceCaptureProgress, setDeviceCaptureProgress] = useState(0);
+  const [captureAbortController, setCaptureAbortController] = useState<AbortController | null>(null);
   const [selectedFacialDeviceId, setSelectedFacialDeviceId] = useState('');
   const [showDeviceFacialDialog, setShowDeviceFacialDialog] = useState(false);
   const facialDevices = devices.filter(d => d.type === 'facial_recognition');
@@ -307,24 +311,30 @@ export const NewRegistry = () => {
       toast.error('Selecione um dispositivo facial.');
       return;
     }
+    const abortCtrl = new AbortController();
+    setCaptureAbortController(abortCtrl);
     setDeviceCaptureLoading(true);
     setDeviceCaptureStatus('Iniciando...');
+    setDeviceCaptureStep('preparing');
+    setDeviceCaptureProgress(5);
     try {
-      const photo = await capturePhotoFromDevice(device, setDeviceCaptureStatus);
+      const photo = await capturePhotoFromDevice(device, (msg, step, progress) => {
+        setDeviceCaptureStatus(msg);
+        if (step) setDeviceCaptureStep(step);
+        if (progress !== undefined) setDeviceCaptureProgress(progress);
+      }, abortCtrl.signal);
       if (photo) {
         setFormData(prev => ({ ...prev, photo }));
         setShowDeviceFacialDialog(false);
         toast.success('Foto capturada pelo dispositivo!');
-      } else {
-        setDeviceCaptureStatus('Captura iniciada no dispositivo. Posicione o rosto.');
-        toast.info('Captura facial iniciada no dispositivo!', { duration: 8000 });
       }
     } catch (err: any) {
+      if (err.name === 'AbortError') return;
       const isNetworkError = err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError');
       toast.error(isNetworkError ? 'Não foi possível conectar ao dispositivo.' : `Erro: ${err.message}`);
-      setDeviceCaptureStatus('');
     } finally {
       setDeviceCaptureLoading(false);
+      setCaptureAbortController(null);
     }
   };
 
@@ -1092,12 +1102,13 @@ export const NewRegistry = () => {
               </Select>
             </div>
 
-            {deviceCaptureStatus && (
-              <div className="p-3 rounded-lg bg-muted text-sm text-muted-foreground flex items-center gap-2">
-                {deviceCaptureLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-                {deviceCaptureStatus}
-              </div>
-            )}
+            <DeviceCaptureStatus
+              status={deviceCaptureStatus}
+              step={deviceCaptureStep}
+              progress={deviceCaptureProgress}
+              loading={deviceCaptureLoading}
+              onCancel={() => captureAbortController?.abort()}
+            />
 
             <div className="flex gap-2">
               <Button

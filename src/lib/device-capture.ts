@@ -40,8 +40,11 @@ async function queueCommandAndWait(
   deviceSerial: string,
   endpoint: string,
   body: any,
-  timeoutMs = 60000
+  timeoutMs = 60000,
+  signal?: AbortSignal
 ): Promise<any> {
+  if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+
   const { data: inserted, error: insertErr } = await supabase
     .from('push_command_queue')
     .insert({
@@ -60,6 +63,7 @@ async function queueCommandAndWait(
   const startTime = Date.now();
 
   while (Date.now() - startTime < timeoutMs) {
+    if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     const { data: cmd } = await supabase
@@ -84,73 +88,71 @@ async function queueCommandAndWait(
  * Capture photo from a Control iD facial device via push queue.
  * Strategy: enroll face to a temporary user, fetch the image, then remove the temp user.
  */
+export type CaptureStep = 'preparing' | 'creating_user' | 'enrolling' | 'fetching' | 'cleaning' | 'done' | 'error';
+
 export async function capturePhotoFromDevice(
   device: Device,
-  onStatus: (msg: string) => void
+  onStatus: (msg: string, step?: CaptureStep, progress?: number) => void,
+  signal?: AbortSignal
 ): Promise<string | null> {
   const serial = getDeviceSerial(device);
   if (!serial) throw new Error('Dispositivo sem número de série configurado.');
 
-  // Use a fixed temp user ID that won't collide with real users
   const tempUserId = 999999;
+  const checkAbort = () => { if (signal?.aborted) throw new DOMException('Captura cancelada', 'AbortError'); };
 
-  onStatus('Preparando captura facial...');
+  onStatus('Preparando captura facial...', 'preparing', 10);
 
   try {
-    // Step 1: Remove temp user if exists from previous attempt
+    checkAbort();
+    // Step 1: Remove temp user if exists
     try {
       await queueCommandAndWait(serial, 'destroy_objects', {
         object: 'users',
         where: { users: { id: tempUserId } },
-      }, 15000);
-    } catch {
-      // Ignore – temp user might not exist
+      }, 15000, signal);
+    } catch (e: any) {
+      if (e.name === 'AbortError') throw e;
     }
 
-    // Step 2: Create temp user
-    onStatus('Criando usuário temporário no dispositivo...');
+    checkAbort();
+    onStatus('Criando usuário temporário...', 'creating_user', 25);
     await queueCommandAndWait(serial, 'create_objects', {
       object: 'users',
       values: [{ id: tempUserId, name: 'TEMP_CAPTURE', registration: 'TEMP' }],
-    }, 15000);
+    }, 15000, signal);
 
-    // Step 3: Enroll face and save to temp user
-    onStatus('Posicione o rosto na frente do dispositivo...');
-    const enrollResult = await queueCommandAndWait(serial, 'remote_enroll', {
+    checkAbort();
+    onStatus('Posicione o rosto na frente do dispositivo...', 'enrolling', 40);
+    await queueCommandAndWait(serial, 'remote_enroll', {
       type: 'face',
       save: true,
       user_id: tempUserId,
       panic: false,
-    }, 60000);
+    }, 60000, signal);
 
-    // Check if enrollment succeeded
-    const enrollSuccess = enrollResult?.user_id === tempUserId || enrollResult?.code === 0 || enrollResult?.response?.user_id === tempUserId;
-    
-    // Even if we can't confirm, try to get the image
-    onStatus('Buscando foto capturada...');
+    checkAbort();
+    onStatus('Buscando foto capturada...', 'fetching', 70);
     const photoResult = await queueCommandAndWait(serial, 'user_get_image', {
       user_id: tempUserId,
-    }, 30000);
+    }, 30000, signal);
 
-    // Step 4: Clean up temp user
+    onStatus('Finalizando...', 'cleaning', 90);
     try {
       await queueCommandAndWait(serial, 'destroy_objects', {
         object: 'users',
         where: { users: { id: tempUserId } },
       }, 15000);
-    } catch {
-      console.warn('Failed to clean up temp user');
-    }
+    } catch { /* ignore */ }
 
-    // Extract image from result
     const base64 = photoResult?.user_image || photoResult?.image || photoResult?.photo;
     if (base64) {
       const clean = String(base64).replace(/^data:image\/[a-z]+;base64,/, '');
-      onStatus('Foto capturada com sucesso!');
+      onStatus('Foto capturada com sucesso!', 'done', 100);
       return `data:image/jpeg;base64,${clean}`;
     }
 
-    onStatus('Dispositivo não retornou imagem. Tente novamente.');
+    onStatus('Dispositivo não retornou imagem. Tente novamente.', 'error', 0);
     return null;
   } catch (err: any) {
     // Clean up on error
@@ -161,7 +163,12 @@ export async function capturePhotoFromDevice(
       }, 10000);
     } catch { /* ignore */ }
 
-    onStatus(`Erro: ${err.message}`);
+    if (err.name === 'AbortError') {
+      onStatus('Captura cancelada.', 'error', 0);
+      return null;
+    }
+
+    onStatus(`Erro: ${err.message}`, 'error', 0);
     throw err;
   }
 }

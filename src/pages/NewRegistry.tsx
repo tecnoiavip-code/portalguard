@@ -78,6 +78,13 @@ export const NewRegistry = () => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  // Device capture states
+  const [deviceCaptureLoading, setDeviceCaptureLoading] = useState(false);
+  const [deviceCaptureStatus, setDeviceCaptureStatus] = useState('');
+  const [selectedFacialDeviceId, setSelectedFacialDeviceId] = useState('');
+  const [showDeviceFacialDialog, setShowDeviceFacialDialog] = useState(false);
+  const facialDevices = devices.filter(d => d.type === 'facial_recognition');
+
   useEffect(() => {
     loadBlockedVisitors();
     loadVehicleSuggestions();

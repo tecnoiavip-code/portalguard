@@ -4,36 +4,43 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ScanFace, Wifi, WifiOff, Loader2, User, Tag, Search, CheckCircle2, XCircle, Camera } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ScanFace, Wifi, WifiOff, Loader2, User, Tag, Search, CheckCircle2, XCircle, Camera, Wrench, Building2 } from 'lucide-react';
 import { useDevices } from '@/hooks/useDevices';
 import { useResidents } from '@/hooks/useResidents';
 import { Device, Resident } from '@/types';
 import { toast } from 'sonner';
 
 type RegistrationMode = 'facial' | 'tag';
+type PersonType = 'resident' | 'service_provider';
 
 interface EnrollmentStep {
   status: 'idle' | 'connecting' | 'authenticating' | 'enrolling' | 'success' | 'error';
   message: string;
 }
 
+interface ServiceProvider {
+  name: string;
+  document: string;
+  company: string;
+}
+
 export const FacialRegistration = () => {
   const { devices, loading: devicesLoading } = useDevices();
   const { residents, loading: residentsLoading } = useResidents();
   const [mode, setMode] = useState<RegistrationMode>('facial');
+  const [personType, setPersonType] = useState<PersonType>('resident');
   const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const [selectedResidentId, setSelectedResidentId] = useState('');
   const [searchResident, setSearchResident] = useState('');
   const [enrollStep, setEnrollStep] = useState<EnrollmentStep>({ status: 'idle', message: '' });
   const [tagCode, setTagCode] = useState('');
+  const [serviceProvider, setServiceProvider] = useState<ServiceProvider>({ name: '', document: '', company: '' });
 
-  // Filter devices by type
   const facialDevices = devices.filter(d => d.type === 'facial_recognition');
   const tagDevices = devices.filter(d => d.type === 'vehicle_tag' || d.type === 'card_reader');
   const availableDevices = mode === 'facial' ? facialDevices : tagDevices;
 
-  // Filter residents by search
   const filteredResidents = residents.filter(r =>
     r.name.toLowerCase().includes(searchResident.toLowerCase()) ||
     r.apartment.toLowerCase().includes(searchResident.toLowerCase()) ||
@@ -43,7 +50,31 @@ export const FacialRegistration = () => {
   const selectedDevice = devices.find(d => d.id === selectedDeviceId);
   const selectedResident = residents.find(r => r.id === selectedResidentId);
 
-  const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+  const isPersonSelected = personType === 'resident' ? !!selectedResident : (serviceProvider.name.trim() !== '' && serviceProvider.document.trim() !== '');
+
+  const getPersonName = () => {
+    if (personType === 'resident' && selectedResident) return selectedResident.name;
+    if (personType === 'service_provider') return serviceProvider.name;
+    return '';
+  };
+
+  const getPersonLabel = () => {
+    if (personType === 'resident' && selectedResident) return `${selectedResident.apartment} - ${selectedResident.name}`;
+    if (personType === 'service_provider') return `${serviceProvider.company || 'Prestador'} - ${serviceProvider.name}`;
+    return '';
+  };
+
+  const getPersonRegistration = () => {
+    if (personType === 'resident' && selectedResident) return selectedResident.cpf || selectedResident.id.slice(0, 8);
+    if (personType === 'service_provider') return serviceProvider.document;
+    return '';
+  };
+
+  const getPersonHashId = () => {
+    if (personType === 'resident' && selectedResident) return selectedResident.id;
+    if (personType === 'service_provider') return `sp-${serviceProvider.document}`;
+    return '';
+  };
 
   const callDeviceApi = async (device: Device, endpoint: string, body?: any) => {
     const ip = device.ipAddress;
@@ -59,7 +90,7 @@ export const FacialRegistration = () => {
   };
 
   const handleFacialEnroll = async () => {
-    if (!selectedDevice || !selectedResident) return;
+    if (!selectedDevice || !isPersonSelected) return;
     if (!selectedDevice.ipAddress) {
       toast.error('Dispositivo sem IP configurado. Configure o IP na tela de Dispositivos.');
       return;
@@ -68,32 +99,27 @@ export const FacialRegistration = () => {
     setEnrollStep({ status: 'connecting', message: 'Conectando ao dispositivo...' });
 
     try {
-      // 1. Login
       setEnrollStep({ status: 'authenticating', message: 'Autenticando no dispositivo...' });
       const loginRes = await callDeviceApi(selectedDevice, 'login.fcgi', { login: 'admin', password: 'admin' });
       const session = loginRes.session;
       if (!session) throw new Error('Falha na autenticação');
 
-      // 2. Create or update user on device
-      setEnrollStep({ status: 'enrolling', message: `Cadastrando usuário ${selectedResident.name}...` });
+      const personName = getPersonName();
+      setEnrollStep({ status: 'enrolling', message: `Cadastrando usuário ${personName}...` });
 
-      // Use resident ID as user_id on device (numeric hash)
-      const userId = Math.abs(hashCode(selectedResident.id)) % 1000000000;
+      const userId = Math.abs(hashCode(getPersonHashId())) % 1000000000;
 
       await callDeviceApi(selectedDevice, `create_objects.fcgi?session=${session}`, {
         object: 'users',
-        values: [
-          {
-            id: userId,
-            name: `${selectedResident.apartment} - ${selectedResident.name}`,
-            registration: selectedResident.cpf || selectedResident.id.slice(0, 8),
-            begin_time: 0,
-            end_time: 0,
-          }
-        ]
+        values: [{
+          id: userId,
+          name: getPersonLabel(),
+          registration: getPersonRegistration(),
+          begin_time: 0,
+          end_time: 0,
+        }]
       });
 
-      // 3. Trigger facial capture on device
       setEnrollStep({ status: 'enrolling', message: 'Iniciando captura facial no dispositivo... Posicione o rosto em frente ao equipamento.' });
 
       await callDeviceApi(selectedDevice, `remote_enroll.fcgi?session=${session}`, {
@@ -103,9 +129,9 @@ export const FacialRegistration = () => {
         panic: false,
       });
 
-      setEnrollStep({ status: 'success', message: `Cadastro facial de ${selectedResident.name} iniciado! Acompanhe no dispositivo.` });
+      setEnrollStep({ status: 'success', message: `Cadastro facial de ${personName} iniciado! Acompanhe no dispositivo.` });
       toast.success('Captura facial iniciada no dispositivo!', {
-        description: 'O morador deve posicionar o rosto em frente ao equipamento.',
+        description: 'Posicione o rosto em frente ao equipamento.',
         duration: 8000,
       });
     } catch (err: any) {
@@ -122,7 +148,7 @@ export const FacialRegistration = () => {
   };
 
   const handleTagEnroll = async () => {
-    if (!selectedDevice || !selectedResident) return;
+    if (!selectedDevice || !isPersonSelected) return;
     if (!selectedDevice.ipAddress) {
       toast.error('Dispositivo sem IP configurado.');
       return;
@@ -140,36 +166,30 @@ export const FacialRegistration = () => {
       const session = loginRes.session;
       if (!session) throw new Error('Falha na autenticação');
 
-      const userId = Math.abs(hashCode(selectedResident.id)) % 1000000000;
+      const userId = Math.abs(hashCode(getPersonHashId())) % 1000000000;
 
-      // Create user
       setEnrollStep({ status: 'enrolling', message: 'Cadastrando usuário...' });
       await callDeviceApi(selectedDevice, `create_objects.fcgi?session=${session}`, {
         object: 'users',
-        values: [
-          {
-            id: userId,
-            name: `${selectedResident.apartment} - ${selectedResident.name}`,
-            registration: selectedResident.cpf || selectedResident.id.slice(0, 8),
-            begin_time: 0,
-            end_time: 0,
-          }
-        ]
+        values: [{
+          id: userId,
+          name: getPersonLabel(),
+          registration: getPersonRegistration(),
+          begin_time: 0,
+          end_time: 0,
+        }]
       });
 
-      // Register card/tag
       setEnrollStep({ status: 'enrolling', message: 'Vinculando tag/cartão...' });
       await callDeviceApi(selectedDevice, `create_objects.fcgi?session=${session}`, {
         object: 'cards',
-        values: [
-          {
-            value: parseInt(tagCode, 10) || tagCode,
-            user_id: userId,
-          }
-        ]
+        values: [{
+          value: parseInt(tagCode, 10) || tagCode,
+          user_id: userId,
+        }]
       });
 
-      setEnrollStep({ status: 'success', message: `Tag ${tagCode} vinculada a ${selectedResident.name} com sucesso!` });
+      setEnrollStep({ status: 'success', message: `Tag ${tagCode} vinculada a ${getPersonName()} com sucesso!` });
       toast.success('Tag/cartão cadastrado!');
     } catch (err: any) {
       console.error('Tag enrollment error:', err);
@@ -272,57 +292,117 @@ export const FacialRegistration = () => {
           </CardContent>
         </Card>
 
-        {/* Resident Selection */}
+        {/* Person Selection with Tabs */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">2. Selecione o Morador</CardTitle>
-            <CardDescription>Busque por nome, apartamento ou CPF</CardDescription>
+            <CardTitle className="text-lg">2. Selecione a Pessoa</CardTitle>
+            <CardDescription>Escolha o tipo de cadastro</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar morador..."
-                value={searchResident}
-                onChange={(e) => setSearchResident(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <div className="max-h-80 overflow-y-auto space-y-2">
-              {residentsLoading ? (
-                <div className="flex items-center gap-2 text-muted-foreground py-4">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Carregando...
+            <Tabs value={personType} onValueChange={(v) => { setPersonType(v as PersonType); setSelectedResidentId(''); setServiceProvider({ name: '', document: '', company: '' }); resetEnroll(); }}>
+              <TabsList className="w-full">
+                <TabsTrigger value="resident" className="flex-1 gap-2">
+                  <User className="h-4 w-4" /> Morador
+                </TabsTrigger>
+                <TabsTrigger value="service_provider" className="flex-1 gap-2">
+                  <Wrench className="h-4 w-4" /> Prestador Fixo
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="resident" className="space-y-3 mt-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar morador..."
+                    value={searchResident}
+                    onChange={(e) => setSearchResident(e.target.value)}
+                    className="pl-10"
+                  />
                 </div>
-              ) : filteredResidents.length === 0 ? (
-                <p className="text-muted-foreground text-sm py-4 text-center">Nenhum morador encontrado.</p>
-              ) : (
-                filteredResidents.slice(0, 20).map((resident) => (
-                  <button
-                    key={resident.id}
-                    onClick={() => { setSelectedResidentId(resident.id); resetEnroll(); }}
-                    className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left ${
-                      selectedResidentId === resident.id
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border hover:border-primary/30'
-                    }`}
-                  >
-                    <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center shrink-0">
-                      <User className="h-4 w-4 text-muted-foreground" />
+                <div className="max-h-64 overflow-y-auto space-y-2">
+                  {residentsLoading ? (
+                    <div className="flex items-center gap-2 text-muted-foreground py-4">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Carregando...
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-foreground text-sm truncate">{resident.name}</p>
-                      <p className="text-xs text-muted-foreground">Apto {resident.apartment}</p>
+                  ) : filteredResidents.length === 0 ? (
+                    <p className="text-muted-foreground text-sm py-4 text-center">Nenhum morador encontrado.</p>
+                  ) : (
+                    filteredResidents.slice(0, 20).map((resident) => (
+                      <button
+                        key={resident.id}
+                        onClick={() => { setSelectedResidentId(resident.id); resetEnroll(); }}
+                        className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left ${
+                          selectedResidentId === resident.id
+                            ? 'border-primary bg-primary/5'
+                            : 'border-border hover:border-primary/30'
+                        }`}
+                      >
+                        <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center shrink-0">
+                          <User className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-foreground text-sm truncate">{resident.name}</p>
+                          <p className="text-xs text-muted-foreground">Apto {resident.apartment}</p>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="service_provider" className="space-y-4 mt-3">
+                <div className="space-y-3">
+                  <div>
+                    <Label htmlFor="sp-name">Nome Completo *</Label>
+                    <Input
+                      id="sp-name"
+                      placeholder="Nome do prestador"
+                      value={serviceProvider.name}
+                      onChange={(e) => setServiceProvider(prev => ({ ...prev, name: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="sp-doc">CPF / Documento *</Label>
+                    <Input
+                      id="sp-doc"
+                      placeholder="000.000.000-00"
+                      value={serviceProvider.document}
+                      onChange={(e) => setServiceProvider(prev => ({ ...prev, document: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="sp-company">Empresa</Label>
+                    <div className="relative">
+                      <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="sp-company"
+                        placeholder="Nome da empresa"
+                        value={serviceProvider.company}
+                        onChange={(e) => setServiceProvider(prev => ({ ...prev, company: e.target.value }))}
+                        className="pl-10"
+                      />
                     </div>
-                  </button>
-                ))
-              )}
-            </div>
+                  </div>
+                </div>
+                {serviceProvider.name && serviceProvider.document && (
+                  <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+                    <div className="flex items-center gap-2">
+                      <Wrench className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-medium text-foreground">{serviceProvider.name}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {serviceProvider.company && `${serviceProvider.company} • `}{serviceProvider.document}
+                    </p>
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
       </div>
 
       {/* Tag Code Input (only for tag mode) */}
-      {mode === 'tag' && selectedDevice && selectedResident && (
+      {mode === 'tag' && selectedDevice && isPersonSelected && (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">3. Código da Tag/Cartão</CardTitle>
@@ -345,7 +425,7 @@ export const FacialRegistration = () => {
       )}
 
       {/* Action & Status */}
-      {selectedDevice && selectedResident && (
+      {selectedDevice && isPersonSelected && (
         <Card>
           <CardContent className="p-6">
             <div className="flex flex-col items-center gap-4">
@@ -353,8 +433,8 @@ export const FacialRegistration = () => {
                 <>
                   <p className="text-muted-foreground text-center">
                     {mode === 'facial'
-                      ? `Pronto para cadastrar o rosto de ${selectedResident.name} no dispositivo ${selectedDevice.name}`
-                      : `Pronto para vincular tag ao morador ${selectedResident.name} no dispositivo ${selectedDevice.name}`
+                      ? `Pronto para cadastrar o rosto de ${getPersonName()} no dispositivo ${selectedDevice.name}`
+                      : `Pronto para vincular tag a ${getPersonName()} no dispositivo ${selectedDevice.name}`
                     }
                   </p>
                   <Button
@@ -397,7 +477,6 @@ export const FacialRegistration = () => {
           </CardContent>
         </Card>
       )}
-
     </div>
   );
 };

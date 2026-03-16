@@ -8,15 +8,15 @@ export const useDevices = () => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const loadDevices = async () => {
-    setLoading(true);
+  const loadDevices = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     const data = await supabaseStorage.getDevices();
     setDevices(data);
     setLoading(false);
   };
 
   useEffect(() => {
-    loadDevices();
+    loadDevices(true);
 
     // Realtime subscription for device status updates
     const channel = supabase

@@ -1062,5 +1062,58 @@ export const NewRegistry = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Device Facial Capture Dialog */}
+      <Dialog open={showDeviceFacialDialog} onOpenChange={setShowDeviceFacialDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ScanFace className="h-5 w-5 text-primary" />
+              Captura Facial pelo Dispositivo
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Dispositivo Facial</Label>
+              <Select value={selectedFacialDeviceId} onValueChange={setSelectedFacialDeviceId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o dispositivo..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {facialDevices.map(d => (
+                    <SelectItem key={d.id} value={d.id}>
+                      <div className="flex items-center gap-2">
+                        {d.status === 'online' ? <Wifi className="h-3 w-3 text-green-500" /> : <WifiOff className="h-3 w-3 text-destructive" />}
+                        {d.name} - {d.location}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {deviceCaptureStatus && (
+              <div className="p-3 rounded-lg bg-muted text-sm text-muted-foreground flex items-center gap-2">
+                {deviceCaptureLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                {deviceCaptureStatus}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button
+                onClick={handleDeviceCapture}
+                disabled={!selectedFacialDeviceId || deviceCaptureLoading}
+                className="flex-1 gap-2"
+              >
+                {deviceCaptureLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanFace className="h-4 w-4" />}
+                Capturar Foto
+              </Button>
+              <Button variant="secondary" onClick={() => setShowDeviceFacialDialog(false)}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>;
 };

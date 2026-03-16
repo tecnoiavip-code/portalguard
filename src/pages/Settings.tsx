@@ -65,6 +65,17 @@ export const Settings = () => {
   const [integrationPassword, setIntegrationPassword] = useState('');
   const [passwordError, setPasswordError] = useState(false);
 
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+  let webhookHost = 'kxdqffkkufgsizszchvw.supabase.co';
+  try {
+    webhookHost = new URL(supabaseUrl).hostname;
+  } catch {
+    webhookHost = 'kxdqffkkufgsizszchvw.supabase.co';
+  }
+  const monitorPath = '/functions/v1/controlid-webhook';
+  const pushAddress = `https://${webhookHost}${monitorPath}`;
+  const acceptedPushRoutes = `${monitorPath} e ${monitorPath}/push`;
+
   const handleUnlockIntegrations = () => {
     if (integrationPassword === 'admin') {
       setIsIntegrationsUnlocked(true);

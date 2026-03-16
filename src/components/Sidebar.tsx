@@ -13,6 +13,7 @@ const navItems = [
   { id: 'new-registry', label: 'Novo Cadastro', icon: FileText, group: 'Cadastros' },
   { id: 'mail', label: 'Correspondências', icon: Mail, group: 'Cadastros' },
   { id: 'mail-logs', label: 'Log Correspondências', icon: MailSearch, group: 'Cadastros' },
+  { id: 'facial-registration', label: 'Cadastro Facial', icon: ScanFace, group: 'Cadastros' },
   { id: 'staff-chat', label: 'Chat Moradores', icon: MessageSquare, group: 'Comunicação' },
   { id: 'authorizations', label: 'Autorizações', icon: Shield, group: 'Comunicação' },
   { id: 'announcements', label: 'Comunicados', icon: Megaphone, group: 'Comunicação' },

@@ -369,18 +369,21 @@ export const Dashboard = () => {
                   const isAccess = ['dao', 'access_photo', 'identification_event', 'catra_event'].includes(log.event_type);
                   const isTagEvent = mappedDeviceType === 'vehicle_tag';
                   const isRecognized = isAccess && !!userName;
-                  const isUnidentified = isAccess && !userName && !isTagEvent;
+                  const isUnidentified = isAccess && !userName;
                   const isSystemEvent = !isAccess;
+                  // TAG recognized = has userName from device payload
+                  const isTagRecognized = isTagEvent && isRecognized;
+                  const isTagUnknown = isTagEvent && !isRecognized;
 
-                  const displayName = parsedName || (isTagEvent ? 'Acesso via TAG veicular' : log.event_type === 'device_is_alive' ? 'Dispositivo online' : log.event_type === 'door' ? 'Evento de porta' : 'Acesso pela interface web');
+                  const displayName = parsedName || (isTagEvent ? 'TAG não identificada' : log.event_type === 'device_is_alive' ? 'Dispositivo online' : log.event_type === 'door' ? 'Evento de porta' : 'Acesso pela interface web');
                   const displayLabel = apartment && parsedName ? `${apartment} - ${parsedName.toUpperCase()}` : displayName.toUpperCase();
 
-                  // Visual config based on recognition status
-                  const borderColor = isTagEvent ? 'border-primary' : isRecognized ? 'border-success' : isUnidentified ? 'border-warning' : 'border-muted';
-                  const bgHover = isTagEvent ? 'hover:bg-primary/5' : isRecognized ? 'hover:bg-success/5' : isUnidentified ? 'hover:bg-warning/5' : 'hover:bg-muted/40';
-                  const avatarBg = isTagEvent ? 'bg-primary/10 text-primary' : isRecognized ? 'bg-success/10 text-success' : isUnidentified ? 'bg-warning/10 text-warning' : 'bg-muted text-muted-foreground';
-                  const nameColor = isTagEvent ? 'text-primary' : isRecognized ? 'text-foreground' : isUnidentified ? 'text-warning' : 'text-muted-foreground';
-                  const timeColor = isTagEvent ? 'text-primary' : isRecognized ? 'text-success' : isUnidentified ? 'text-warning' : 'text-muted-foreground';
+                  // Visual config: TAG uses same green/red as facial
+                  const borderColor = isRecognized ? 'border-success' : isUnidentified ? 'border-destructive' : 'border-muted';
+                  const bgHover = isRecognized ? 'hover:bg-success/5' : isUnidentified ? 'hover:bg-destructive/5' : 'hover:bg-muted/40';
+                  const avatarBg = isRecognized ? 'bg-success/10 text-success' : isUnidentified ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground';
+                  const nameColor = isRecognized ? 'text-foreground' : isUnidentified ? 'text-destructive' : 'text-muted-foreground';
+                  const timeColor = isRecognized ? 'text-success' : isUnidentified ? 'text-destructive' : 'text-muted-foreground';
 
                   return (
                     <div

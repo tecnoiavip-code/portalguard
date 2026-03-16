@@ -366,9 +366,8 @@ export const FacialRegistration = () => {
       // Queue user_get_image command
       const photoResult = await queueCommandAndWait(deviceSerial, 'user_get_image', { user_id: deviceUserId }, 60000);
 
-      // The device should return the image as base64 in the result
-      const base64Image = photoResult?.image || photoResult?.photo || photoResult?.user_image;
-      
+      const base64Image = extractPushImage(photoResult);
+
       if (!base64Image) {
         throw new Error('O dispositivo não retornou a foto. Verifique se o firmware suporta exportação de imagem via push.');
       }

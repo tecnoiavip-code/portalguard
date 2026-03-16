@@ -41,7 +41,7 @@ export const Dashboard = () => {
   const [controlidLogs, setControlidLogs] = useState<ControlidLog[]>([]);
   const [residents, setResidents] = useState<Resident[]>([]);
   const [deviceNames, setDeviceNames] = useState<Record<string, string>>({});
-  const [fallbackDeviceName, setFallbackDeviceName] = useState('');
+  const [deviceTypes, setDeviceTypes] = useState<Record<string, string>>({});
   const [photoSignedUrls, setPhotoSignedUrls] = useState<Record<string, string>>({});
   const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; name: string; time: string; location: string } | null>(null);
 

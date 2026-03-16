@@ -358,9 +358,9 @@ Deno.serve(async (req) => {
     // ===== PUSH RESULT: Device sends back result of executed command =====
     // POST /push/result or POST /push with result payload
     if (eventType === 'push_result' && req.method === 'POST') {
-      console.log('Push result from device:', deviceId, JSON.stringify(payload).substring(0, 200));
+      console.log('Push result from device:', deviceId, JSON.stringify(payload).substring(0, 300));
 
-      // Mark the oldest executing command as done
+      // Mark the oldest executing command as done and store result
       const { data: executingCmd } = await supabaseClient
         .from('push_command_queue')
         .select('id')
@@ -373,7 +373,11 @@ Deno.serve(async (req) => {
       if (executingCmd) {
         await supabaseClient
           .from('push_command_queue')
-          .update({ status: 'done', executed_at: new Date().toISOString() })
+          .update({ 
+            status: 'done', 
+            executed_at: new Date().toISOString(),
+            result: payload,
+          })
           .eq('id', executingCmd.id);
       }
 
@@ -381,7 +385,7 @@ Deno.serve(async (req) => {
       await supabaseClient.from('controlid_logs').insert({
         device_id: deviceId || 'unknown',
         event_type: 'push_result',
-        payload: payload,
+        payload: { ...payload, command_id: executingCmd?.id || null },
         processed: true,
       });
 

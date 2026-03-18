@@ -455,7 +455,9 @@ Deno.serve(async (req) => {
         // Transform command to Control iD push protocol format
         const cmd = pendingCmd.command as any;
         const endpoint = String(cmd.endpoint || '').replace(/\.fcgi$/i, '');
-        const body = cmd.body ?? {};
+        const rawBody = cmd.body ?? {};
+        // Control iD push protocol requires body as a JSON string, not an object
+        const body = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);
         const pushCommand = {
           verb: cmd.verb || 'POST',
           endpoint,

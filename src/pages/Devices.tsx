@@ -414,10 +414,11 @@ async function run() {
     addLog('6. Configurando Monitor...', 'info');
     await postConfig({
       monitor: {
-        request_timeout: '15000',
+        request_timeout: 15000,
         hostname: desiredHost,
-        port: '443',
-        path: webhookPath
+        port: 443,
+        path: webhookPath,
+        request_min_period: 5
       }
     }, 'monitor');
     addLog('✓ Monitor configurado', 'ok');
@@ -428,8 +429,8 @@ async function run() {
     await postConfig({
       push_server: {
         push_remote_address: pushRemoteAddress,
-        push_request_timeout: '120000',
-        push_request_period: '5'
+        push_request_timeout: 15000,
+        push_request_period: 5
       }
     }, 'push_server');
     addLog('✓ Push Server configurado (' + pushRemoteAddress + ')', 'ok');

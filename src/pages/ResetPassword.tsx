@@ -16,18 +16,17 @@ const ResetPassword = () => {
   const [isValidSession, setIsValidSession] = useState(false);
   const [checking, setChecking] = useState(true);
   const navigate = useNavigate();
+  const auth = supabase.auth as any;
 
   useEffect(() => {
-    // Listen for the PASSWORD_RECOVERY event
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = auth.onAuthStateChange((event: string) => {
       if (event === 'PASSWORD_RECOVERY') {
         setIsValidSession(true);
         setChecking(false);
       }
     });
 
-    // Also check if there's already a session (user clicked the link)
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    auth.getSession().then(({ data: { session } }: any) => {
       if (session) {
         setIsValidSession(true);
       }
@@ -35,7 +34,7 @@ const ResetPassword = () => {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [auth]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,7 +51,7 @@ const ResetPassword = () => {
 
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({ password });
+      const { error } = await auth.updateUser({ password });
 
       if (error) {
         toast.error(translateAuthError(error.message));
@@ -61,8 +60,7 @@ const ResetPassword = () => {
 
       toast.success('Senha atualizada com sucesso!');
       
-      // Check role to redirect appropriately
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await auth.getUser();
       if (user) {
         const { data: residentRole } = await supabase
           .from('user_roles')

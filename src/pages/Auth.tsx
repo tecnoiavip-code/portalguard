@@ -19,6 +19,7 @@ export const Auth = () => {
   const [resetEmail, setResetEmail] = useState('');
   const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
+  const auth = supabase.auth as any;
 
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -31,7 +32,7 @@ export const Auth = () => {
     e.preventDefault();
     setIsSendingReset(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+      const { error } = await auth.resetPasswordForEmail(resetEmail, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
       if (error) {
@@ -60,8 +61,7 @@ export const Auth = () => {
         return;
       }
 
-      // Check if user is a resident
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await auth.getUser();
       if (user) {
         const { data: residentRole } = await supabase
           .from('user_roles')
@@ -79,7 +79,7 @@ export const Auth = () => {
 
       toast.success('Login realizado com sucesso!');
       navigate('/');
-    } catch (error) {
+    } catch {
       toast.error('Erro ao fazer login');
     } finally {
       setIsLoading(false);

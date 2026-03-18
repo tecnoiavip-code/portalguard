@@ -103,6 +103,15 @@ export async function capturePhotoFromDevice(
 
   onStatus('Preparando captura facial...', 'preparing', 10);
 
+  // Clean up stale executing/pending commands for this device before starting
+  try {
+    await supabase
+      .from('push_command_queue')
+      .update({ status: 'error', result: { error: 'stale_cleanup_before_capture' } as any })
+      .eq('device_id', serial)
+      .in('status', ['executing', 'pending']);
+  } catch { /* ignore cleanup errors */ }
+
   try {
     checkAbort();
     // Step 1: Remove temp user if exists

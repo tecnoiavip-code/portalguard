@@ -4,12 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node --loader ./scripts/resolve-rollup-loader.mjs ./scripts/vite-local.mjs",
-    "build": "node --loader ./scripts/resolve-rollup-loader.mjs ./scripts/vite-local.mjs build",
-    "build:dev": "node --loader ./scripts/resolve-rollup-loader.mjs ./scripts/vite-local.mjs build --mode development",
+    "dev": "node ./scripts/vite-local.mjs",
+    "build": "node ./scripts/vite-local.mjs build",
+    "build:dev": "node ./scripts/vite-local.mjs build --mode development",
     "lint": "eslint .",
-    "preview": "node --loader ./scripts/resolve-rollup-loader.mjs ./scripts/vite-local.mjs preview"
-  }
+    "preview": "node ./scripts/vite-local.mjs preview"
+  },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accordion": "^1.2.11",

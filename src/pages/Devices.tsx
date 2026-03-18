@@ -438,16 +438,16 @@ async function run() {
     // Step 6: Activate online mode - try combined first, then separate for older firmware
     addLog('8. Ativando modo online...', 'info');
     const activationPayload = {
-      general: { online: '1', local_identification: '1' },
-      online_client: { extract_template: '0', max_request_attempts: '3' }
+      general: { online: 1, local_identification: 1 },
+      online_client: { extract_template: 0, max_request_attempts: 3 }
     };
 
     const combinedOk = await tryPostConfig(activationPayload, 'online+client combinado');
     if (!combinedOk) {
       // Older firmware might need these separately
       addLog('  Tentando configurações separadas...', 'info');
-      await tryPostConfig({ general: { online: '1', local_identification: '1' } }, 'general.online');
-      await tryPostConfig({ online_client: { extract_template: '0', max_request_attempts: '3' } }, 'online_client extras');
+      await tryPostConfig({ general: { online: 1, local_identification: 1 } }, 'general.online');
+      await tryPostConfig({ online_client: { extract_template: 0, max_request_attempts: 3 } }, 'online_client extras');
     }
     addLog('✓ Modo online ativado', 'ok');
 

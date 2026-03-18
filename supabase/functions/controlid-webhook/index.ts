@@ -82,9 +82,10 @@ const getMonitorConfig = () => {
   return {
     monitor: {
       request_timeout: "15000",
-      hostname: hostname,
+      hostname: `${hostname}`,
       port: "443",
       path: "/functions/v1/controlid-webhook",
+      push_remote_address: `https://${hostname}/functions/v1/controlid-webhook`,
       request_min_period: "5"
     }
   };

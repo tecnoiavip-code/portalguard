@@ -58,10 +58,12 @@ const checkRateLimit = (deviceId: string): boolean => {
   return true;
 };
 
-const runBackground = (label: string, task: Promise<unknown>) => {
-  task.catch((error) => {
-    console.error(`Background task failed: ${label}`, error);
-  });
+const runBackground = (label: string, task: Promise<unknown> | unknown) => {
+  if (task && typeof (task as any).catch === 'function') {
+    (task as Promise<unknown>).catch((error) => {
+      console.error(`Background task failed: ${label}`, error);
+    });
+  }
 };
 
 /**

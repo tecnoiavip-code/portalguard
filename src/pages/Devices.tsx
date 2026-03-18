@@ -62,6 +62,39 @@ export const Devices = () => {
     }
   };
 
+  const handlePushConfigAll = async () => {
+    const devicesWithSerial = devices.filter(d => d.serialNumber);
+    if (devicesWithSerial.length === 0) {
+      toast.error('Nenhum dispositivo com número de série configurado');
+      return;
+    }
+
+    setPushingAllConfig(true);
+    let success = 0;
+    let errors = 0;
+
+    for (const device of devicesWithSerial) {
+      try {
+        const { error } = await supabase.functions.invoke('controlid-webhook/push-config', {
+          method: 'POST',
+          body: { device_id: device.serialNumber },
+        });
+        if (error) throw error;
+        success++;
+      } catch (err: any) {
+        console.error(`Error pushing config to ${device.name}:`, err);
+        errors++;
+      }
+    }
+
+    if (errors === 0) {
+      toast.success(`Configuração enviada para ${success} dispositivo(s)!`);
+    } else {
+      toast.warning(`${success} OK, ${errors} erro(s). Verifique os dispositivos com falha.`);
+    }
+    setPushingAllConfig(false);
+  };
+
   const handleLocalConfig = async (device: Device) => {
     if (!device.ipAddress) {
       toast.error('Dispositivo sem IP configurado');

@@ -336,7 +336,7 @@ Deno.serve(async (req) => {
       if (req.method === 'POST' && rawPayload && rawPayload.trim()) {
         const { data: executingCmd } = await supabaseClient
           .from('push_command_queue')
-          .select('id')
+          .select('id, command')
           .eq('device_id', deviceId)
           .eq('status', 'executing')
           .order('created_at', { ascending: true })
@@ -345,6 +345,35 @@ Deno.serve(async (req) => {
 
         if (executingCmd) {
           console.log('Push result (via /push POST) from device:', deviceId, JSON.stringify(payload).substring(0, 300));
+
+          // Check if this is a user_get_image result — extract and save photo
+          const cmd = executingCmd.command as any;
+          const isImageResult = cmd?.endpoint === 'user_get_image' || cmd?.endpoint === 'user_get_image.fcgi';
+          let photoUpdatePromise: Promise<unknown> = Promise.resolve();
+
+          if (isImageResult) {
+            const imageBase64 = extractPhotoBase64(payload);
+            if (imageBase64) {
+              photoUpdatePromise = (async () => {
+                const photoPath = await saveAccessPhoto(supabaseClient, deviceId, imageBase64);
+                if (photoPath && cmd?.meta?.log_id) {
+                  // Update the original identification log with the photo
+                  const { data: origLog } = await supabaseClient
+                    .from('controlid_logs')
+                    .select('payload')
+                    .eq('id', cmd.meta.log_id)
+                    .maybeSingle();
+                  if (origLog) {
+                    await supabaseClient
+                      .from('controlid_logs')
+                      .update({ payload: { ...origLog.payload, saved_photo_path: photoPath } })
+                      .eq('id', cmd.meta.log_id);
+                    console.log('Photo linked to identification log:', cmd.meta.log_id, photoPath);
+                  }
+                }
+              })();
+            }
+          }
 
           runBackground('storePushResultViaPush', Promise.all([
             supabaseClient
@@ -360,7 +389,8 @@ Deno.serve(async (req) => {
               event_type: 'push_result',
               payload: { ...payload, command_id: executingCmd.id },
               processed: true,
-            })
+            }),
+            photoUpdatePromise,
           ]));
 
           return new Response('', { status: 200, headers: corsHeaders });
@@ -421,7 +451,7 @@ Deno.serve(async (req) => {
       // Mark the oldest executing command as done and store result
       const { data: executingCmd } = await supabaseClient
         .from('push_command_queue')
-        .select('id')
+        .select('id, command')
         .eq('device_id', deviceId)
         .eq('status', 'executing')
         .order('created_at', { ascending: true })
@@ -429,6 +459,33 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (executingCmd) {
+        const cmd = executingCmd.command as any;
+        const isImageResult = cmd?.endpoint === 'user_get_image' || cmd?.endpoint === 'user_get_image.fcgi';
+        let photoUpdatePromise: Promise<unknown> = Promise.resolve();
+
+        if (isImageResult) {
+          const imageBase64 = extractPhotoBase64(payload);
+          if (imageBase64) {
+            photoUpdatePromise = (async () => {
+              const photoPath = await saveAccessPhoto(supabaseClient, deviceId, imageBase64);
+              if (photoPath && cmd?.meta?.log_id) {
+                const { data: origLog } = await supabaseClient
+                  .from('controlid_logs')
+                  .select('payload')
+                  .eq('id', cmd.meta.log_id)
+                  .maybeSingle();
+                if (origLog) {
+                  await supabaseClient
+                    .from('controlid_logs')
+                    .update({ payload: { ...origLog.payload, saved_photo_path: photoPath } })
+                    .eq('id', cmd.meta.log_id);
+                  console.log('Photo linked to identification log:', cmd.meta.log_id, photoPath);
+                }
+              }
+            })();
+          }
+        }
+
         runBackground('storePushResult', Promise.all([
           supabaseClient
             .from('push_command_queue')
@@ -443,7 +500,8 @@ Deno.serve(async (req) => {
             event_type: 'push_result',
             payload: { ...payload, command_id: executingCmd?.id || null },
             processed: true,
-          })
+          }),
+          photoUpdatePromise,
         ]));
       }
 
@@ -657,15 +715,19 @@ Deno.serve(async (req) => {
       ? { ...payload, saved_photo_path: savedPhotoPath }
       : payload;
 
-    // Save log
-    const { error: logError } = await supabaseClient
+    // Save log and capture the ID for later photo linking
+    const { data: logData, error: logError } = await supabaseClient
       .from('controlid_logs')
       .insert({
         device_id: effectiveDeviceId,
         event_type: eventType,
         payload: enrichedPayload,
         processed: false
-      });
+      })
+      .select('id')
+      .single();
+
+    const logEntryId = logData?.id || null;
 
     if (logError) {
       console.error('Error saving Control iD log:', logError);
@@ -723,6 +785,27 @@ Deno.serve(async (req) => {
         } catch (e) {
           console.error('Error auto-syncing vehicle_tag:', e);
         }
+      }
+
+      // Queue user_get_image to fetch the face photo from the device
+      const userId = Number.parseInt(String(payload?.user_id ?? '0'), 10);
+      const hasImage = payload?.user_has_image === 1 || payload?.user_has_image === '1';
+      if (hasImage && Number.isFinite(userId) && userId > 0 && !savedPhotoPath) {
+        runBackground('queueUserGetImage', supabaseClient
+          .from('push_command_queue')
+          .insert({
+            device_id: effectiveDeviceId,
+            command: {
+              verb: 'POST',
+              endpoint: 'user_get_image',
+              body: { user_id: userId },
+              contentType: 'application/json',
+              meta: { log_id: logEntryId, user_id: userId },
+            },
+            status: 'pending',
+          })
+          .then(() => console.log(`Queued user_get_image for user ${userId} on device ${effectiveDeviceId}`))
+        );
       }
 
       return new Response(

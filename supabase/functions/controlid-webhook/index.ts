@@ -787,11 +787,12 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Queue user_get_image to fetch the face photo from the device
+      // Queue user_get_image to fetch the face photo from the device (MUST be awaited before response)
       const userId = Number.parseInt(String(payload?.user_id ?? '0'), 10);
-      const hasImage = payload?.user_has_image === 1 || payload?.user_has_image === '1';
+      const hasImage = payload?.user_has_image === 1 || payload?.user_has_image === '1'
+        || payload?.user_has_image === true;
       if (hasImage && Number.isFinite(userId) && userId > 0 && !savedPhotoPath) {
-        runBackground('queueUserGetImage', supabaseClient
+        const { error: queueErr } = await supabaseClient
           .from('push_command_queue')
           .insert({
             device_id: effectiveDeviceId,
@@ -803,9 +804,12 @@ Deno.serve(async (req) => {
               meta: { log_id: logEntryId, user_id: userId },
             },
             status: 'pending',
-          })
-          .then(() => console.log(`Queued user_get_image for user ${userId} on device ${effectiveDeviceId}`))
-        );
+          });
+        if (queueErr) {
+          console.error('Failed to queue user_get_image:', queueErr);
+        } else {
+          console.log(`Queued user_get_image for user ${userId} on device ${effectiveDeviceId}, log_id: ${logEntryId}`);
+        }
       }
 
       return new Response(

@@ -92,12 +92,12 @@ const StaffChat = () => {
       const lastMessageData = lastMsg as { message?: string; created_at?: string } | null;
 
       threadList.push({
-        resident_id: rid,
-        resident_name: residentData.name || '',
-        apartment: residentData.apartment || '',
+        resident_id: String(rid),
+        resident_name: String(residentData.name || ''),
+        apartment: String(residentData.apartment || ''),
         unread_count: count || 0,
-        last_message: lastMessageData?.message || '',
-        last_time: lastMessageData?.created_at || '',
+        last_message: String(lastMessageData?.message || ''),
+        last_time: String(lastMessageData?.created_at || ''),
       });
     }
 

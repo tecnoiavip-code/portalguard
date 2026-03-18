@@ -22,6 +22,7 @@ export const Devices = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string>('');
   const [pushingConfig, setPushingConfig] = useState<string | null>(null);
+  const [pushingAllConfig, setPushingAllConfig] = useState(false);
   const [localConfigLoading, setLocalConfigLoading] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
@@ -59,6 +60,39 @@ export const Devices = () => {
     } finally {
       setPushingConfig(null);
     }
+  };
+
+  const handlePushConfigAll = async () => {
+    const devicesWithSerial = devices.filter(d => d.serialNumber);
+    if (devicesWithSerial.length === 0) {
+      toast.error('Nenhum dispositivo com número de série configurado');
+      return;
+    }
+
+    setPushingAllConfig(true);
+    let success = 0;
+    let errors = 0;
+
+    for (const device of devicesWithSerial) {
+      try {
+        const { error } = await supabase.functions.invoke('controlid-webhook/push-config', {
+          method: 'POST',
+          body: { device_id: device.serialNumber },
+        });
+        if (error) throw error;
+        success++;
+      } catch (err: any) {
+        console.error(`Error pushing config to ${device.name}:`, err);
+        errors++;
+      }
+    }
+
+    if (errors === 0) {
+      toast.success(`Configuração enviada para ${success} dispositivo(s)!`);
+    } else {
+      toast.warning(`${success} OK, ${errors} erro(s). Verifique os dispositivos com falha.`);
+    }
+    setPushingAllConfig(false);
   };
 
   const handleLocalConfig = async (device: Device) => {
@@ -935,6 +969,18 @@ async function run() {
           <Button variant="outline" onClick={handleDiscoverSerials}>
             <Search className="h-4 w-4 mr-2" />
             Descobrir Seriais
+          </Button>
+          <Button 
+            variant="outline" 
+            onClick={handlePushConfigAll}
+            disabled={pushingAllConfig}
+          >
+            {pushingAllConfig ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Settings2 className="h-4 w-4 mr-2" />
+            )}
+            Config Todos
           </Button>
           <Button onClick={() => setShowForm(!showForm)}>
             <Plus className="h-4 w-4 mr-2" />

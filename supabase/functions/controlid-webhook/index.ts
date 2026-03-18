@@ -334,11 +334,23 @@ Deno.serve(async (req) => {
         runBackground('updateDeviceStatus', updateDeviceStatus(supabaseClient, deviceId));
       }
 
+      // Auto-expire stale executing commands (>120s old) to prevent queue blockage
+      if (deviceId) {
+        const staleThreshold = new Date(Date.now() - 120000).toISOString();
+        runBackground('expireStaleCommands', supabaseClient
+          .from('push_command_queue')
+          .update({ status: 'error', result: { error: 'auto_expired_stale_executing' } })
+          .eq('device_id', deviceId)
+          .eq('status', 'executing')
+          .lt('executed_at', staleThreshold)
+        );
+      }
+
       // Check if this POST is actually a result from a previously sent command
       if (req.method === 'POST' && rawPayload && rawPayload.trim()) {
         const { data: executingCmd } = await supabaseClient
           .from('push_command_queue')
-          .select('id, command')
+          .select('id, command, executed_at')
           .eq('device_id', deviceId)
           .eq('status', 'executing')
           .order('created_at', { ascending: true })
@@ -346,54 +358,65 @@ Deno.serve(async (req) => {
           .maybeSingle();
 
         if (executingCmd) {
-          console.log('Push result (via /push POST) from device:', deviceId, JSON.stringify(payload).substring(0, 300));
-
-          // Check if this is a user_get_image result — extract and save photo
-          const cmd = executingCmd.command as any;
-          const isImageResult = cmd?.endpoint === 'user_get_image' || cmd?.endpoint === 'user_get_image.fcgi';
-          let photoUpdatePromise: Promise<unknown> = Promise.resolve();
-
-          if (isImageResult) {
-            const imageBase64 = extractPhotoBase64(payload);
-            if (imageBase64) {
-              photoUpdatePromise = (async () => {
-                const photoPath = await saveAccessPhoto(supabaseClient, deviceId, imageBase64);
-                if (photoPath && cmd?.meta?.log_id) {
-                  // Update the original identification log with the photo
-                  const { data: origLog } = await supabaseClient
-                    .from('controlid_logs')
-                    .select('payload')
-                    .eq('id', cmd.meta.log_id)
-                    .maybeSingle();
-                  if (origLog) {
-                    await supabaseClient
-                      .from('controlid_logs')
-                      .update({ payload: { ...origLog.payload, saved_photo_path: photoPath } })
-                      .eq('id', cmd.meta.log_id);
-                    console.log('Photo linked to identification log:', cmd.meta.log_id, photoPath);
-                  }
-                }
-              })();
-            }
-          }
-
-          runBackground('storePushResultViaPush', Promise.all([
-            supabaseClient
+          // Skip if this executing command is stale (>120s) - result is likely for a different command
+          const executedAt = executingCmd.executed_at ? new Date(executingCmd.executed_at).getTime() : 0;
+          const isStale = executedAt > 0 && (Date.now() - executedAt) > 120000;
+          
+          if (isStale) {
+            console.log('Ignoring stale result for command:', executingCmd.id, 'device:', deviceId);
+            await supabaseClient
               .from('push_command_queue')
-              .update({
-                status: 'done',
-                executed_at: new Date().toISOString(),
-                result: payload,
-              })
-              .eq('id', executingCmd.id),
-            supabaseClient.from('controlid_logs').insert({
-              device_id: deviceId || 'unknown',
-              event_type: 'push_result',
-              payload: { ...payload, command_id: executingCmd.id },
-              processed: true,
-            }),
-            photoUpdatePromise,
-          ]));
+              .update({ status: 'error', result: { error: 'stale_result_discarded', received_payload: payload } })
+              .eq('id', executingCmd.id);
+          } else {
+            console.log('Push result (via /push POST) from device:', deviceId, JSON.stringify(payload).substring(0, 300));
+
+            // Check if this is a user_get_image result — extract and save photo
+            const cmd = executingCmd.command as any;
+            const isImageResult = cmd?.endpoint === 'user_get_image' || cmd?.endpoint === 'user_get_image.fcgi';
+            let photoUpdatePromise: Promise<unknown> = Promise.resolve();
+
+            if (isImageResult) {
+              const imageBase64 = extractPhotoBase64(payload);
+              if (imageBase64) {
+                photoUpdatePromise = (async () => {
+                  const photoPath = await saveAccessPhoto(supabaseClient, deviceId, imageBase64);
+                  if (photoPath && cmd?.meta?.log_id) {
+                    const { data: origLog } = await supabaseClient
+                      .from('controlid_logs')
+                      .select('payload')
+                      .eq('id', cmd.meta.log_id)
+                      .maybeSingle();
+                    if (origLog) {
+                      await supabaseClient
+                        .from('controlid_logs')
+                        .update({ payload: { ...origLog.payload, saved_photo_path: photoPath } })
+                        .eq('id', cmd.meta.log_id);
+                      console.log('Photo linked to identification log:', cmd.meta.log_id, photoPath);
+                    }
+                  }
+                })();
+              }
+            }
+
+            runBackground('storePushResultViaPush', Promise.all([
+              supabaseClient
+                .from('push_command_queue')
+                .update({
+                  status: 'done',
+                  executed_at: new Date().toISOString(),
+                  result: payload,
+                })
+                .eq('id', executingCmd.id),
+              supabaseClient.from('controlid_logs').insert({
+                device_id: deviceId || 'unknown',
+                event_type: 'push_result',
+                payload: { ...payload, command_id: executingCmd.id },
+                processed: true,
+              }),
+              photoUpdatePromise,
+            ]));
+          }
 
           return new Response('', { status: 200, headers: corsHeaders });
         }
@@ -455,6 +478,17 @@ Deno.serve(async (req) => {
     // POST /push/result or POST /push with result payload
     if (eventType === 'push_result' && req.method === 'POST') {
       console.log('Push result from device:', deviceId, JSON.stringify(payload).substring(0, 300));
+
+      // Auto-expire stale executing commands before matching
+      if (deviceId) {
+        const staleThreshold = new Date(Date.now() - 120000).toISOString();
+        await supabaseClient
+          .from('push_command_queue')
+          .update({ status: 'error', result: { error: 'auto_expired_stale_executing' } })
+          .eq('device_id', deviceId)
+          .eq('status', 'executing')
+          .lt('executed_at', staleThreshold);
+      }
 
       // Mark the oldest executing command as done and store result
       const { data: executingCmd } = await supabaseClient

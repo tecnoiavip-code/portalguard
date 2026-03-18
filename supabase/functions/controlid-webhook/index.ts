@@ -451,7 +451,7 @@ Deno.serve(async (req) => {
       // Mark the oldest executing command as done and store result
       const { data: executingCmd } = await supabaseClient
         .from('push_command_queue')
-        .select('id')
+        .select('id, command')
         .eq('device_id', deviceId)
         .eq('status', 'executing')
         .order('created_at', { ascending: true })
@@ -459,6 +459,33 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (executingCmd) {
+        const cmd = executingCmd.command as any;
+        const isImageResult = cmd?.endpoint === 'user_get_image' || cmd?.endpoint === 'user_get_image.fcgi';
+        let photoUpdatePromise: Promise<unknown> = Promise.resolve();
+
+        if (isImageResult) {
+          const imageBase64 = extractPhotoBase64(payload);
+          if (imageBase64) {
+            photoUpdatePromise = (async () => {
+              const photoPath = await saveAccessPhoto(supabaseClient, deviceId, imageBase64);
+              if (photoPath && cmd?.meta?.log_id) {
+                const { data: origLog } = await supabaseClient
+                  .from('controlid_logs')
+                  .select('payload')
+                  .eq('id', cmd.meta.log_id)
+                  .maybeSingle();
+                if (origLog) {
+                  await supabaseClient
+                    .from('controlid_logs')
+                    .update({ payload: { ...origLog.payload, saved_photo_path: photoPath } })
+                    .eq('id', cmd.meta.log_id);
+                  console.log('Photo linked to identification log:', cmd.meta.log_id, photoPath);
+                }
+              }
+            })();
+          }
+        }
+
         runBackground('storePushResult', Promise.all([
           supabaseClient
             .from('push_command_queue')
@@ -473,7 +500,8 @@ Deno.serve(async (req) => {
             event_type: 'push_result',
             payload: { ...payload, command_id: executingCmd?.id || null },
             processed: true,
-          })
+          }),
+          photoUpdatePromise,
         ]));
       }
 

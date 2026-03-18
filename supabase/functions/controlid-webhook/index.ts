@@ -479,6 +479,17 @@ Deno.serve(async (req) => {
     if (eventType === 'push_result' && req.method === 'POST') {
       console.log('Push result from device:', deviceId, JSON.stringify(payload).substring(0, 300));
 
+      // Auto-expire stale executing commands before matching
+      if (deviceId) {
+        const staleThreshold = new Date(Date.now() - 120000).toISOString();
+        await supabaseClient
+          .from('push_command_queue')
+          .update({ status: 'error', result: { error: 'auto_expired_stale_executing' } })
+          .eq('device_id', deviceId)
+          .eq('status', 'executing')
+          .lt('executed_at', staleThreshold);
+      }
+
       // Mark the oldest executing command as done and store result
       const { data: executingCmd } = await supabaseClient
         .from('push_command_queue')

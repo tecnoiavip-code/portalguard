@@ -58,6 +58,12 @@ const checkRateLimit = (deviceId: string): boolean => {
   return true;
 };
 
+const runBackground = (label: string, task: Promise<unknown>) => {
+  task.catch((error) => {
+    console.error(`Background task failed: ${label}`, error);
+  });
+};
+
 /**
  * Get the correct monitor configuration for a device.
  * Uses the Supabase project hostname.

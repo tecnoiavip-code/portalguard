@@ -22,6 +22,7 @@ export const Devices = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string>('');
   const [pushingConfig, setPushingConfig] = useState<string | null>(null);
+  const [pushingAllConfig, setPushingAllConfig] = useState(false);
   const [localConfigLoading, setLocalConfigLoading] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',

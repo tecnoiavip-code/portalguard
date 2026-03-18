@@ -62,7 +62,7 @@ const StaffChat = () => {
 
     if (!chatResidents) return;
 
-    const uniqueIds = [...new Set(chatResidents.map(c => c.resident_id))];
+    const uniqueIds = [...new Set(chatResidents.map(c => String(c.resident_id)).filter(Boolean))];
     if (uniqueIds.length === 0) { setThreads([]); return; }
 
     const threadList: ChatThread[] = [];

@@ -81,18 +81,18 @@ const getMonitorConfig = () => {
 
   return {
     monitor: {
-      request_timeout: 15000,
+      request_timeout: "15000",
       hostname: hostname,
-      port: 443,
+      port: "443",
       path: "/functions/v1/controlid-webhook",
-      request_min_period: 5
+      request_min_period: "5"
     }
   };
 };
 
 const getGeneralConfig = () => ({
   general: {
-    online: 1
+    online: "1"
   }
 });
 
@@ -112,8 +112,8 @@ const getPushServerConfig = () => {
   return {
     push_server: {
       push_remote_address: `https://${hostname}/functions/v1/controlid-webhook`,
-      push_request_timeout: 15000,
-      push_request_period: 5
+      push_request_timeout: "15000",
+      push_request_period: "5"
     }
   };
 };
@@ -455,9 +455,7 @@ Deno.serve(async (req) => {
         // Transform command to Control iD push protocol format
         const cmd = pendingCmd.command as any;
         const endpoint = String(cmd.endpoint || '').replace(/\.fcgi$/i, '');
-        const rawBody = cmd.body ?? {};
-        // Control iD push protocol requires body as a JSON string, not an object
-        const body = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);
+        const body = cmd.body ?? {};
         const pushCommand = {
           verb: cmd.verb || 'POST',
           endpoint,

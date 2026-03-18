@@ -715,15 +715,19 @@ Deno.serve(async (req) => {
       ? { ...payload, saved_photo_path: savedPhotoPath }
       : payload;
 
-    // Save log
-    const { error: logError } = await supabaseClient
+    // Save log and capture the ID for later photo linking
+    const { data: logData, error: logError } = await supabaseClient
       .from('controlid_logs')
       .insert({
         device_id: effectiveDeviceId,
         event_type: eventType,
         payload: enrichedPayload,
         processed: false
-      });
+      })
+      .select('id')
+      .single();
+
+    const logEntryId = logData?.id || null;
 
     if (logError) {
       console.error('Error saving Control iD log:', logError);

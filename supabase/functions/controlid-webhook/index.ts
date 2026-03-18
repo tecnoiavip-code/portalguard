@@ -329,7 +329,7 @@ Deno.serve(async (req) => {
     // Device also sends results back via POST to the same /push endpoint.
     if (eventType === 'push_request' && (req.method === 'GET' || req.method === 'POST')) {
       if (deviceId) {
-        await updateDeviceStatus(supabaseClient, deviceId);
+        runBackground('updateDeviceStatus', updateDeviceStatus(supabaseClient, deviceId));
       }
 
       // Check if this POST is actually a result from a previously sent command
@@ -345,22 +345,23 @@ Deno.serve(async (req) => {
 
         if (executingCmd) {
           console.log('Push result (via /push POST) from device:', deviceId, JSON.stringify(payload).substring(0, 300));
-          
-          await supabaseClient
-            .from('push_command_queue')
-            .update({ 
-              status: 'done', 
-              executed_at: new Date().toISOString(),
-              result: payload,
-            })
-            .eq('id', executingCmd.id);
 
-          await supabaseClient.from('controlid_logs').insert({
-            device_id: deviceId || 'unknown',
-            event_type: 'push_result',
-            payload: { ...payload, command_id: executingCmd.id },
-            processed: true,
-          });
+          runBackground('storePushResultViaPush', Promise.all([
+            supabaseClient
+              .from('push_command_queue')
+              .update({
+                status: 'done',
+                executed_at: new Date().toISOString(),
+                result: payload,
+              })
+              .eq('id', executingCmd.id),
+            supabaseClient.from('controlid_logs').insert({
+              device_id: deviceId || 'unknown',
+              event_type: 'push_result',
+              payload: { ...payload, command_id: executingCmd.id },
+              processed: true,
+            })
+          ]));
 
           return new Response('', { status: 200, headers: corsHeaders });
         }
@@ -381,10 +382,13 @@ Deno.serve(async (req) => {
       }
 
       if (pendingCmd) {
-        await supabaseClient
-          .from('push_command_queue')
-          .update({ status: 'executing', executed_at: new Date().toISOString() })
-          .eq('id', pendingCmd.id);
+        runBackground(
+          'markPushCommandExecuting',
+          supabaseClient
+            .from('push_command_queue')
+            .update({ status: 'executing', executed_at: new Date().toISOString() })
+            .eq('id', pendingCmd.id)
+        );
 
         // Transform command to Control iD push protocol format
         const cmd = pendingCmd.command as any;

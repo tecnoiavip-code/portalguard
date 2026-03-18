@@ -429,23 +429,23 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (executingCmd) {
-        await supabaseClient
-          .from('push_command_queue')
-          .update({ 
-            status: 'done', 
-            executed_at: new Date().toISOString(),
-            result: payload,
+        runBackground('storePushResult', Promise.all([
+          supabaseClient
+            .from('push_command_queue')
+            .update({
+              status: 'done',
+              executed_at: new Date().toISOString(),
+              result: payload,
+            })
+            .eq('id', executingCmd.id),
+          supabaseClient.from('controlid_logs').insert({
+            device_id: deviceId || 'unknown',
+            event_type: 'push_result',
+            payload: { ...payload, command_id: executingCmd?.id || null },
+            processed: true,
           })
-          .eq('id', executingCmd.id);
+        ]));
       }
-
-      // Log the result
-      await supabaseClient.from('controlid_logs').insert({
-        device_id: deviceId || 'unknown',
-        event_type: 'push_result',
-        payload: { ...payload, command_id: executingCmd?.id || null },
-        processed: true,
-      });
 
       // Return empty (iDSecure protocol)
       return new Response('', { status: 200, headers: corsHeaders });

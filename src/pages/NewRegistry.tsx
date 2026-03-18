@@ -117,11 +117,15 @@ export const NewRegistry = () => {
       supabase.from('access_entries').select('vehicle_color').not('vehicle_color', 'is', null).not('vehicle_color', 'eq', ''),
     ]);
     if (modelsRes.data) {
-      const unique = [...new Set(modelsRes.data.map(r => (r.vehicle_model as string).trim().toUpperCase()))].filter(Boolean).sort();
+      const unique = [...new Set(modelsRes.data.map(r => String(r.vehicle_model ?? '').trim().toUpperCase()))]
+        .filter((value): value is string => Boolean(value))
+        .sort();
       setAllVehicleModels(unique);
     }
     if (colorsRes.data) {
-      const unique = [...new Set(colorsRes.data.map(r => (r.vehicle_color as string).trim().toUpperCase()))].filter(Boolean).sort();
+      const unique = [...new Set(colorsRes.data.map(r => String(r.vehicle_color ?? '').trim().toUpperCase()))]
+        .filter((value): value is string => Boolean(value))
+        .sort();
       setAllVehicleColors(unique);
     }
   };

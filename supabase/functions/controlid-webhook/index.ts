@@ -414,13 +414,19 @@ Deno.serve(async (req) => {
       }
 
       if (pendingCmd) {
-        runBackground(
-          'markPushCommandExecuting',
-          supabaseClient
-            .from('push_command_queue')
-            .update({ status: 'executing', executed_at: new Date().toISOString() })
-            .eq('id', pendingCmd.id)
-        );
+        const dispatchTime = new Date().toISOString();
+        const { data: markedCmd, error: markExecutingError } = await supabaseClient
+          .from('push_command_queue')
+          .update({ status: 'executing', executed_at: dispatchTime })
+          .eq('id', pendingCmd.id)
+          .eq('status', 'pending')
+          .select('id')
+          .maybeSingle();
+
+        if (markExecutingError || !markedCmd) {
+          console.error('Failed to mark push command as executing:', markExecutingError ?? 'command already claimed');
+          return new Response('', { status: 200, headers: corsHeaders });
+        }
 
         // Transform command to Control iD push protocol format
         const cmd = pendingCmd.command as any;
@@ -742,75 +748,95 @@ Deno.serve(async (req) => {
 
     // Online identification events expect a JSON return message
     if (eventType === 'identification_event') {
-      // Auto-sync card_value to resident's vehicle_tag for tag antenna devices
       const cardValue = String(payload.card_value || '');
       const identUserName = String(payload.user_name || '');
       if (cardValue && identUserName) {
-        try {
-          // Check if this device is a vehicle_tag type
-          const { data: deviceRow } = await supabaseClient
-            .from('devices')
-            .select('type')
-            .or(`serial_number.eq.${effectiveDeviceId},ip_address.eq.${effectiveDeviceId}`)
-            .limit(1)
-            .maybeSingle();
+        runBackground('autoSyncVehicleTag', (async () => {
+          try {
+            const { data: deviceRow } = await supabaseClient
+              .from('devices')
+              .select('type')
+              .or(`serial_number.eq.${effectiveDeviceId},ip_address.eq.${effectiveDeviceId}`)
+              .limit(1)
+              .maybeSingle();
 
-          if (deviceRow?.type === 'vehicle_tag') {
-            // Parse "APT - NAME" format
-            const aptMatch = identUserName.match(/^(\d+\w?)\s*[-–]\s*(.+)$/i);
-            if (aptMatch) {
-              const [, apt, extractedName] = aptMatch;
-              const normalizedName = extractedName.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            if (deviceRow?.type === 'vehicle_tag') {
+              const aptMatch = identUserName.match(/^(\d+\w?)\s*[-–]\s*(.+)$/i);
+              if (aptMatch) {
+                const [, apt, extractedName] = aptMatch;
+                const normalizedName = extractedName.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
-              // Find resident by apartment ending with the number (supports "Sausalito 108" matching "108")
-              const { data: residents } = await supabaseClient
-                .from('residents')
-                .select('id, name, vehicle_tag')
-                .ilike('apartment', `%${apt.trim()}`);
+                const { data: residents } = await supabaseClient
+                  .from('residents')
+                  .select('id, name, vehicle_tag')
+                  .ilike('apartment', `%${apt.trim()}`);
 
-              if (residents && residents.length > 0) {
-                const matched = residents.find(r => {
-                  const rName = r.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-                  return rName.includes(normalizedName) || normalizedName.includes(rName);
-                }) || (residents.length === 1 ? residents[0] : null);
+                if (residents && residents.length > 0) {
+                  const matched = residents.find((resident) => {
+                    const residentName = resident.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+                    return residentName.includes(normalizedName) || normalizedName.includes(residentName);
+                  }) || (residents.length === 1 ? residents[0] : null);
 
-                if (matched && matched.vehicle_tag !== cardValue) {
-                  await supabaseClient
-                    .from('residents')
-                    .update({ vehicle_tag: cardValue })
-                    .eq('id', matched.id);
-                  console.log(`Auto-synced vehicle_tag ${cardValue} to resident ${matched.name} (${apt})`);
+                  if (matched && matched.vehicle_tag !== cardValue) {
+                    await supabaseClient
+                      .from('residents')
+                      .update({ vehicle_tag: cardValue })
+                      .eq('id', matched.id);
+                    console.log(`Auto-synced vehicle_tag ${cardValue} to resident ${matched.name} (${apt})`);
+                  }
                 }
               }
             }
+          } catch (e) {
+            console.error('Error auto-syncing vehicle_tag:', e);
           }
-        } catch (e) {
-          console.error('Error auto-syncing vehicle_tag:', e);
-        }
+        })());
       }
 
-      // Queue user_get_image to fetch the face photo from the device (MUST be awaited before response)
       const userId = Number.parseInt(String(payload?.user_id ?? '0'), 10);
       const hasImage = payload?.user_has_image === 1 || payload?.user_has_image === '1'
-        || payload?.user_has_image === true;
+        || payload?.user_has_image === true || payload?.user_has_image === 'true';
       if (hasImage && Number.isFinite(userId) && userId > 0 && !savedPhotoPath) {
-        const { error: queueErr } = await supabaseClient
+        const { data: queuedImageCommands, error: queuedImageCommandsError } = await supabaseClient
           .from('push_command_queue')
-          .insert({
-            device_id: effectiveDeviceId,
-            command: {
-              verb: 'POST',
-              endpoint: 'user_get_image',
-              body: { user_id: userId },
-              contentType: 'application/json',
-              meta: { log_id: logEntryId, user_id: userId },
-            },
-            status: 'pending',
-          });
-        if (queueErr) {
-          console.error('Failed to queue user_get_image:', queueErr);
+          .select('id, command, status')
+          .eq('device_id', effectiveDeviceId)
+          .in('status', ['pending', 'executing'])
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        if (queuedImageCommandsError) {
+          console.error('Failed to inspect existing user_get_image commands:', queuedImageCommandsError);
+        }
+
+        const alreadyQueued = queuedImageCommands?.some((row) => {
+          const command = row.command as any;
+          const endpoint = String(command?.endpoint || '').replace(/\.fcgi$/i, '');
+          const queuedUserId = Number.parseInt(String(command?.body?.user_id ?? '0'), 10);
+          return endpoint === 'user_get_image' && queuedUserId === userId;
+        }) ?? false;
+
+        if (!alreadyQueued) {
+          const { error: queueErr } = await supabaseClient
+            .from('push_command_queue')
+            .insert({
+              device_id: effectiveDeviceId,
+              command: {
+                verb: 'POST',
+                endpoint: 'user_get_image',
+                body: { user_id: userId },
+                contentType: 'application/json',
+                meta: { log_id: logEntryId, user_id: userId },
+              },
+              status: 'pending',
+            });
+          if (queueErr) {
+            console.error('Failed to queue user_get_image:', queueErr);
+          } else {
+            console.log(`Queued user_get_image for user ${userId} on device ${effectiveDeviceId}, log_id: ${logEntryId}`);
+          }
         } else {
-          console.log(`Queued user_get_image for user ${userId} on device ${effectiveDeviceId}, log_id: ${logEntryId}`);
+          console.log(`Skipped duplicate user_get_image for user ${userId} on device ${effectiveDeviceId}`);
         }
       }
 

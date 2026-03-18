@@ -336,7 +336,7 @@ Deno.serve(async (req) => {
       if (req.method === 'POST' && rawPayload && rawPayload.trim()) {
         const { data: executingCmd } = await supabaseClient
           .from('push_command_queue')
-          .select('id')
+          .select('id, command')
           .eq('device_id', deviceId)
           .eq('status', 'executing')
           .order('created_at', { ascending: true })
@@ -345,6 +345,35 @@ Deno.serve(async (req) => {
 
         if (executingCmd) {
           console.log('Push result (via /push POST) from device:', deviceId, JSON.stringify(payload).substring(0, 300));
+
+          // Check if this is a user_get_image result — extract and save photo
+          const cmd = executingCmd.command as any;
+          const isImageResult = cmd?.endpoint === 'user_get_image' || cmd?.endpoint === 'user_get_image.fcgi';
+          let photoUpdatePromise: Promise<unknown> = Promise.resolve();
+
+          if (isImageResult) {
+            const imageBase64 = extractPhotoBase64(payload);
+            if (imageBase64) {
+              photoUpdatePromise = (async () => {
+                const photoPath = await saveAccessPhoto(supabaseClient, deviceId, imageBase64);
+                if (photoPath && cmd?.meta?.log_id) {
+                  // Update the original identification log with the photo
+                  const { data: origLog } = await supabaseClient
+                    .from('controlid_logs')
+                    .select('payload')
+                    .eq('id', cmd.meta.log_id)
+                    .maybeSingle();
+                  if (origLog) {
+                    await supabaseClient
+                      .from('controlid_logs')
+                      .update({ payload: { ...origLog.payload, saved_photo_path: photoPath } })
+                      .eq('id', cmd.meta.log_id);
+                    console.log('Photo linked to identification log:', cmd.meta.log_id, photoPath);
+                  }
+                }
+              })();
+            }
+          }
 
           runBackground('storePushResultViaPush', Promise.all([
             supabaseClient
@@ -360,7 +389,8 @@ Deno.serve(async (req) => {
               event_type: 'push_result',
               payload: { ...payload, command_id: executingCmd.id },
               processed: true,
-            })
+            }),
+            photoUpdatePromise,
           ]));
 
           return new Response('', { status: 200, headers: corsHeaders });

@@ -937,6 +937,18 @@ async function run() {
             <Search className="h-4 w-4 mr-2" />
             Descobrir Seriais
           </Button>
+          <Button 
+            variant="outline" 
+            onClick={handlePushConfigAll}
+            disabled={pushingAllConfig}
+          >
+            {pushingAllConfig ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Settings2 className="h-4 w-4 mr-2" />
+            )}
+            Config Todos
+          </Button>
           <Button onClick={() => setShowForm(!showForm)}>
             <Plus className="h-4 w-4 mr-2" />
             Novo Dispositivo

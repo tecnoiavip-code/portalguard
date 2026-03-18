@@ -72,7 +72,8 @@ const StaffChat = () => {
         .select('name, apartment')
         .eq('id', rid)
         .maybeSingle();
-      if (!res) continue;
+      const residentData = res as { name?: string; apartment?: string } | null;
+      if (!residentData) continue;
 
       const { count } = await supabase
         .from('chat_messages')
@@ -88,14 +89,15 @@ const StaffChat = () => {
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
+      const lastMessageData = lastMsg as { message?: string; created_at?: string } | null;
 
       threadList.push({
         resident_id: rid,
-        resident_name: res.name,
-        apartment: res.apartment,
+        resident_name: residentData.name || '',
+        apartment: residentData.apartment || '',
         unread_count: count || 0,
-        last_message: lastMsg?.message || '',
-        last_time: lastMsg?.created_at || '',
+        last_message: lastMessageData?.message || '',
+        last_time: lastMessageData?.created_at || '',
       });
     }
 

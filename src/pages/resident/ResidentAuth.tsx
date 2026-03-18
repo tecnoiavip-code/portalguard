@@ -19,12 +19,13 @@ const ResidentAuth = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const navigate = useNavigate();
+  const auth = supabase.auth as any;
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSendingReset(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
+      const { error } = await auth.resetPasswordForEmail(resetEmail.trim(), {
         redirectTo: `${window.location.origin}/reset-password`,
       });
       if (error) {
@@ -51,13 +52,12 @@ const ResidentAuth = () => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await auth.signInWithPassword({ email, password });
       if (error) {
         toast.error(error.message.includes('Invalid login') ? 'Email ou senha incorretos' : error.message);
         return;
       }
 
-      // Check if user is a resident
       const { data: role } = await supabase
         .from('user_roles')
         .select('role')

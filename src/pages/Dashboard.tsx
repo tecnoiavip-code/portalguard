@@ -7,7 +7,15 @@ import { Badge } from '@/components/ui/badge';
 import { supabaseStorage } from '@/lib/supabase-storage';
 import { supabase } from '@/integrations/supabase/client';
 import { DashboardStats, AccessEntry, Mail as MailType, RealtimeEvent, Resident } from '@/types';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { AreaChart as RechartsAreaChart, Area as RechartsArea, XAxis as RechartsXAxis, YAxis as RechartsYAxis, CartesianGrid as RechartsCartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer as RechartsResponsiveContainer } from 'recharts';
+
+const AreaChart: any = RechartsAreaChart;
+const Area: any = RechartsArea;
+const XAxis: any = RechartsXAxis;
+const YAxis: any = RechartsYAxis;
+const CartesianGrid: any = RechartsCartesianGrid;
+const Tooltip: any = RechartsTooltip;
+const ResponsiveContainer: any = RechartsResponsiveContainer;
 
 interface ControlidLog {
   id: string;

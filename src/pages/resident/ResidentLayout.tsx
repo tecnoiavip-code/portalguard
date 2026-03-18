@@ -313,7 +313,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
   const handleSignOut = async () => {
     document.title = 'Portal do Morador';
     setAppBadge(0);
-    await supabase.auth.signOut();
+    await (supabase.auth as any).signOut();
     navigate('/morador/login');
   };
 

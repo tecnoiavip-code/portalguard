@@ -363,7 +363,7 @@ const StaffAuthorizations = () => {
                           {list.items.map((a) => (
                             <div key={a.id} className="px-4 py-3 flex items-center justify-between">
                               <div className="flex items-center gap-3">
-                                <div className={`w-2 h-2 rounded-full ${a.status === 'approved' ? 'bg-primary' : a.status === 'rejected' ? 'bg-destructive' : 'bg-amber-500'}`} />
+                            <div className={`w-2 h-2 rounded-full shrink-0 ${a.status === 'approved' ? 'bg-primary' : a.status === 'rejected' ? 'bg-destructive' : 'bg-amber-500'}`} />
                                 <div>
                                   <p className="text-sm font-medium">{a.visitor_name}</p>
                                   {a.visitor_document && <p className="text-xs text-muted-foreground">Doc: {a.visitor_document}</p>}
@@ -372,23 +372,7 @@ const StaffAuthorizations = () => {
                               <div className="flex items-center gap-2">
                                 <Badge variant={statusVariant(a.status)} className="text-xs">{statusLabels[a.status || 'pending']}</Badge>
                                 {a.status === 'pending' && (
-                                  <Dialog open={reviewId === a.id} onOpenChange={(o) => { if (!o) setReviewId(null); }}>
-                                    <DialogTrigger asChild>
-                                      <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setReviewId(a.id); }}>Revisar</Button>
-                                    </DialogTrigger>
-                                    <DialogContent>
-                                      <DialogHeader><DialogTitle>Revisar Autorização</DialogTitle></DialogHeader>
-                                      <div className="space-y-4">
-                                        <p><strong>Visitante:</strong> {a.visitor_name}</p>
-                                        <p><strong>Morador:</strong> {a.resident?.name} - Apto {a.resident?.apartment}</p>
-                                        <Textarea placeholder="Observações (opcional)" value={staffNotes} onChange={(e) => setStaffNotes(e.target.value)} />
-                                        <div className="flex gap-2">
-                                          <Button className="flex-1" onClick={() => handleReview(a.id, 'approved')}><Check className="h-4 w-4 mr-1" /> Aprovar</Button>
-                                          <Button variant="destructive" className="flex-1" onClick={() => handleReview(a.id, 'rejected')}><X className="h-4 w-4 mr-1" /> Rejeitar</Button>
-                                        </div>
-                                      </div>
-                                    </DialogContent>
-                                  </Dialog>
+                                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setReviewId(a.id); }}>Revisar</Button>
                                 )}
                               </div>
                             </div>

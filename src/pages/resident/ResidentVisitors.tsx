@@ -7,6 +7,7 @@ import { Users, Clock, ArrowRight, User, FileText, Car, Building, Calendar } fro
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import ResidentPagination from '@/components/resident/ResidentPagination';
 
 interface VisitorEntry {
   id: string;
@@ -32,7 +33,8 @@ const ResidentVisitors = () => {
   const [entries, setEntries] = useState<VisitorEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<VisitorEntry | null>(null);
-
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   useEffect(() => {
     if (!user) return;
     const load = async () => {
@@ -63,6 +65,8 @@ const ResidentVisitors = () => {
 
   const activeVisitors = entries.filter(e => !e.exit_time);
   const pastVisitors = entries.filter(e => e.exit_time);
+  const pastTotalPages = Math.ceil(pastVisitors.length / PAGE_SIZE);
+  const paginatedPast = pastVisitors.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="space-y-5 animate-in fade-in duration-500">
@@ -95,9 +99,10 @@ const ResidentVisitors = () => {
               {activeVisitors.length > 0 && (
                 <span className="text-sm font-semibold text-muted-foreground">Anteriores</span>
               )}
-              {pastVisitors.map((e) => (
+              {paginatedPast.map((e) => (
                 <VisitorCard key={e.id} entry={e} onClick={() => setSelected(e)} />
               ))}
+              <ResidentPagination currentPage={page} totalPages={pastTotalPages} onPageChange={setPage} />
             </div>
           )}
         </>

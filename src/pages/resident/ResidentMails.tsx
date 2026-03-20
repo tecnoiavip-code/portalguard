@@ -6,6 +6,7 @@ import { Mail, Package, Clock, Hash } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import ResidentPagination from '@/components/resident/ResidentPagination';
 
 interface MailItem {
   id: string;
@@ -23,6 +24,9 @@ const ResidentMails = () => {
   const { user } = useAuth();
   const [mails, setMails] = useState<MailItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pendingPage, setPendingPage] = useState(1);
+  const [deliveredPage, setDeliveredPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   useEffect(() => {
     if (!user) return;
@@ -54,6 +58,10 @@ const ResidentMails = () => {
 
   const pending = mails.filter(m => m.status === 'pending');
   const delivered = mails.filter(m => m.status !== 'pending');
+  const pendingTotalPages = Math.ceil(pending.length / PAGE_SIZE);
+  const deliveredTotalPages = Math.ceil(delivered.length / PAGE_SIZE);
+  const paginatedPending = pending.slice((pendingPage - 1) * PAGE_SIZE, pendingPage * PAGE_SIZE);
+  const paginatedDelivered = delivered.slice((deliveredPage - 1) * PAGE_SIZE, deliveredPage * PAGE_SIZE);
 
   return (
     <div className="space-y-5 animate-in fade-in duration-500">
@@ -76,9 +84,10 @@ const ResidentMails = () => {
                 <span className="text-sm font-semibold text-foreground">Aguardando retirada</span>
                 <Badge variant="secondary" className="text-xs">{pending.length}</Badge>
               </div>
-              {pending.map((m) => (
+              {paginatedPending.map((m) => (
                 <MailCard key={m.id} mail={m} isPending />
               ))}
+              <ResidentPagination currentPage={pendingPage} totalPages={pendingTotalPages} onPageChange={setPendingPage} />
             </div>
           )}
 
@@ -87,9 +96,10 @@ const ResidentMails = () => {
               {pending.length > 0 && (
                 <span className="text-sm font-semibold text-muted-foreground">Entregues</span>
               )}
-              {delivered.map((m) => (
+              {paginatedDelivered.map((m) => (
                 <MailCard key={m.id} mail={m} />
               ))}
+              <ResidentPagination currentPage={deliveredPage} totalPages={deliveredTotalPages} onPageChange={setDeliveredPage} />
             </div>
           )}
         </>

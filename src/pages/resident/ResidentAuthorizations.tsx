@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import ResidentPagination from '@/components/resident/ResidentPagination';
 
 interface Authorization {
   id: string;
@@ -47,7 +48,8 @@ const ResidentAuthorizations = () => {
   const [guestListOpen, setGuestListOpen] = useState(false);
   const [detailAuth, setDetailAuth] = useState<Authorization | null>(null);
   const [form, setForm] = useState({ visitor_name: '', visitor_document: '', authorized_date: '', authorized_until: '', purpose: '', vehicle_plate: '' });
-
+  const [authPage, setAuthPage] = useState(1);
+  const PAGE_SIZE = 10;
   // Guest list state
   const [guests, setGuests] = useState<GuestItem[]>([{ name: '', document: '' }]);
   const [guestListForm, setGuestListForm] = useState({ title: '', authorized_date: '', vehicle_plate: '' });
@@ -320,38 +322,47 @@ const ResidentAuthorizations = () => {
           <p className="text-muted-foreground">Nenhuma autorização registrada</p>
         </div>
       ) : (
-        auths.map((a) => {
-          const cfg = statusConfig[a.status || 'pending'];
+        (() => {
+          const totalPages = Math.ceil(auths.length / PAGE_SIZE);
+          const paginated = auths.slice((authPage - 1) * PAGE_SIZE, authPage * PAGE_SIZE);
           return (
-            <div
-              key={a.id}
-              className="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl p-4 transition-all cursor-pointer hover:border-primary/30 active:scale-[0.98]"
-              onClick={() => setDetailAuth(a)}
-            >
-              <div className="flex items-start gap-3">
-                <div className={cn("p-2.5 rounded-xl flex-shrink-0", cfg.color.split(' ')[0])}>
-                  <Shield className={cn("h-5 w-5", cfg.color.split(' ').slice(1).join(' '))} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-semibold text-foreground truncate">{a.visitor_name}</p>
-                    <Badge variant={cfg.variant} className={cn("text-xs shrink-0", cfg.color, "hover:" + cfg.color.split(' ')[0])}>
-                      {cfg.label}
-                    </Badge>
+            <div className="space-y-3">
+              {paginated.map((a) => {
+                const cfg = statusConfig[a.status || 'pending'];
+                return (
+                  <div
+                    key={a.id}
+                    className="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl p-4 transition-all cursor-pointer hover:border-primary/30 active:scale-[0.98]"
+                    onClick={() => setDetailAuth(a)}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className={cn("p-2.5 rounded-xl flex-shrink-0", cfg.color.split(' ')[0])}>
+                        <Shield className={cn("h-5 w-5", cfg.color.split(' ').slice(1).join(' '))} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-semibold text-foreground truncate">{a.visitor_name}</p>
+                          <Badge variant={cfg.variant} className={cn("text-xs shrink-0", cfg.color, "hover:" + cfg.color.split(' ')[0])}>
+                            {cfg.label}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-1.5 text-sm text-muted-foreground">
+                          <CalendarDays className="h-3.5 w-3.5" />
+                          <span>{format(new Date(a.authorized_date), 'dd/MM/yyyy', { locale: ptBR })}</span>
+                          {a.authorized_until && (
+                            <span>até {format(new Date(a.authorized_until), 'dd/MM/yyyy', { locale: ptBR })}</span>
+                          )}
+                        </div>
+                        {a.purpose && <p className="text-xs text-muted-foreground mt-1.5 truncate">{a.purpose}</p>}
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5 mt-1.5 text-sm text-muted-foreground">
-                    <CalendarDays className="h-3.5 w-3.5" />
-                    <span>{format(new Date(a.authorized_date), 'dd/MM/yyyy', { locale: ptBR })}</span>
-                    {a.authorized_until && (
-                      <span>até {format(new Date(a.authorized_until), 'dd/MM/yyyy', { locale: ptBR })}</span>
-                    )}
-                  </div>
-                  {a.purpose && <p className="text-xs text-muted-foreground mt-1.5 truncate">{a.purpose}</p>}
-                </div>
-              </div>
+                );
+              })}
+              <ResidentPagination currentPage={authPage} totalPages={totalPages} onPageChange={setAuthPage} />
             </div>
           );
-        })
+        })()
       )}
 
       {/* Detail Dialog */}

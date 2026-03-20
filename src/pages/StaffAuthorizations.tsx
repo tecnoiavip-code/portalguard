@@ -296,15 +296,7 @@ const StaffAuthorizations = () => {
                   </Dialog>
                 );
               })()}
-              {singlesTotalPages > 1 && (
-                <div className="flex items-center justify-between pt-2">
-                  <p className="text-sm text-muted-foreground">Página {safePage} de {singlesTotalPages}</p>
-                  <div className="flex gap-1">
-                    <Button size="sm" variant="outline" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}><ChevronLeft className="h-4 w-4" /></Button>
-                    <Button size="sm" variant="outline" disabled={safePage >= singlesTotalPages} onClick={() => setPage(safePage + 1)}><ChevronRight className="h-4 w-4" /></Button>
-                  </div>
-                </div>
-              )}
+              <StandardPagination currentPage={safePage} totalPages={singlesTotalPages} onPageChange={setPage} />
             </>
           )}
         </TabsContent>

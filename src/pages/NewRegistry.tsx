@@ -322,11 +322,19 @@ export const NewRegistry = () => {
     setDeviceCaptureStep('preparing');
     setDeviceCaptureProgress(5);
     try {
+      const resident = residents.find(r => r.id === formData.residentId);
+      const personInfo = formData.visitorName && formData.visitorDocument ? {
+        name: formData.visitorName,
+        apartment: resident?.apartment,
+        document: formData.visitorDocument,
+        identifier: `sp-${formData.visitorDocument}`,
+        registration: formData.visitorDocument,
+      } : undefined;
       const photo = await capturePhotoFromDevice(device, (msg, step, progress) => {
         setDeviceCaptureStatus(msg);
         if (step) setDeviceCaptureStep(step);
         if (progress !== undefined) setDeviceCaptureProgress(progress);
-      }, abortCtrl.signal);
+      }, abortCtrl.signal, personInfo);
       if (photo) {
         setFormData(prev => ({ ...prev, photo }));
         setShowDeviceFacialDialog(false);

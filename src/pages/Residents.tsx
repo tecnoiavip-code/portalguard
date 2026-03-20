@@ -194,11 +194,18 @@ export const Residents = () => {
     setDeviceCaptureProgress(5);
 
     try {
+      const personInfo = {
+        name: formData.name,
+        apartment: formData.apartment,
+        document: formData.cpf,
+        identifier: editingId || formData.cpf || formData.name,
+        registration: formData.cpf || undefined,
+      };
       const photo = await capturePhotoFromDevice(device, (msg, step, progress) => {
         setDeviceCaptureStatus(msg);
         if (step) setDeviceCaptureStep(step);
         if (progress !== undefined) setDeviceCaptureProgress(progress);
-      }, abortCtrl.signal);
+      }, abortCtrl.signal, personInfo);
       if (photo) {
         setFormData(prev => ({ ...prev, photo }));
         setShowDeviceCaptureDialog(false);

@@ -84,9 +84,10 @@ const ResidentMails = () => {
                 <span className="text-sm font-semibold text-foreground">Aguardando retirada</span>
                 <Badge variant="secondary" className="text-xs">{pending.length}</Badge>
               </div>
-              {pending.map((m) => (
+              {paginatedPending.map((m) => (
                 <MailCard key={m.id} mail={m} isPending />
               ))}
+              <ResidentPagination currentPage={pendingPage} totalPages={pendingTotalPages} onPageChange={setPendingPage} />
             </div>
           )}
 

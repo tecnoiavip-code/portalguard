@@ -361,7 +361,7 @@ const StaffAuthorizations = () => {
                       {isExpanded && (
                         <div className="border-t divide-y">
                           {list.items.map((a) => (
-                            <div key={a.id} className="px-4 py-3 flex items-center justify-between">
+                            <div key={a.id} className="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => setSelectedAuth(a)}>
                               <div className="flex items-center gap-3">
                             <div className={`w-2 h-2 rounded-full shrink-0 ${a.status === 'approved' ? 'bg-primary' : a.status === 'rejected' ? 'bg-destructive' : 'bg-amber-500'}`} />
                                 <div>

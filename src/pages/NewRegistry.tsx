@@ -50,6 +50,7 @@ export const NewRegistry = () => {
   const [badgeError, setBadgeError] = useState<string | null>(null);
   const [blockingEntry, setBlockingEntry] = useState<AccessEntry | null>(null);
   const [showBlockReasonDialog, setShowBlockReasonDialog] = useState(false);
+  const [selectedDetailEntry, setSelectedDetailEntry] = useState<AccessEntry | null>(null);
   const itemsPerPage = 12;
   const itemsPerPageTable = 10;
   const [formData, setFormData] = useState({

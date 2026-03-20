@@ -396,6 +396,104 @@ const StaffAuthorizations = () => {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Review dialog for guest list items */}
+      {reviewId && auths.find(a => a.id === reviewId) && !singles.find(s => s.id === reviewId) && (() => {
+        const a = auths.find(a => a.id === reviewId)!;
+        return (
+          <Dialog open={true} onOpenChange={(o) => { if (!o) setReviewId(null); }}>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Revisar Autorização</DialogTitle></DialogHeader>
+              <div className="space-y-4">
+                <p><strong>Visitante:</strong> {a.visitor_name}</p>
+                <p><strong>Morador:</strong> {a.resident?.name} - Apto {a.resident?.apartment}</p>
+                <Textarea placeholder="Observações (opcional)" value={staffNotes} onChange={(e) => setStaffNotes(e.target.value)} />
+                <div className="flex gap-2">
+                  <Button className="flex-1" onClick={() => handleReview(a.id, 'approved')}><Check className="h-4 w-4 mr-1" /> Aprovar</Button>
+                  <Button variant="destructive" className="flex-1" onClick={() => handleReview(a.id, 'rejected')}><X className="h-4 w-4 mr-1" /> Rejeitar</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
+
+      {/* Detail dialog for any authorization */}
+      <Dialog open={!!selectedAuth} onOpenChange={(o) => { if (!o) setSelectedAuth(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Detalhes da Autorização</DialogTitle>
+          </DialogHeader>
+          {selectedAuth && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-full bg-muted">
+                  <User className="h-6 w-6 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="font-semibold text-lg">{selectedAuth.visitor_name}</p>
+                  <Badge variant={statusVariant(selectedAuth.status)}>{statusLabels[selectedAuth.status || 'pending']}</Badge>
+                </div>
+              </div>
+
+              <div className="grid gap-3">
+                {selectedAuth.visitor_document && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">Documento:</span>
+                    <span className="font-medium">{selectedAuth.visitor_document}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 text-sm">
+                  <User className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">Morador:</span>
+                  <span className="font-medium">{selectedAuth.resident?.name} - Apto {selectedAuth.resident?.apartment}</span>
+                </div>
+
+                <div className="flex items-center gap-2 text-sm">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">Data:</span>
+                  <span className="font-medium">
+                    {format(new Date(selectedAuth.authorized_date), 'dd/MM/yyyy', { locale: ptBR })}
+                    {selectedAuth.authorized_until && ` até ${format(new Date(selectedAuth.authorized_until), 'dd/MM/yyyy', { locale: ptBR })}`}
+                  </span>
+                </div>
+
+                {selectedAuth.purpose && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">Motivo:</span>
+                    <span className="font-medium">{selectedAuth.purpose}</span>
+                  </div>
+                )}
+
+                {selectedAuth.vehicle_plate && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Car className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">Placa:</span>
+                    <span className="font-medium">{selectedAuth.vehicle_plate}</span>
+                  </div>
+                )}
+
+                {selectedAuth.staff_notes && (
+                  <div className="flex items-start gap-2 text-sm">
+                    <FileText className="h-4 w-4 text-muted-foreground mt-0.5" />
+                    <span className="text-muted-foreground">Obs. portaria:</span>
+                    <span className="font-medium">{selectedAuth.staff_notes}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 text-sm">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">Criada em:</span>
+                  <span className="font-medium">{format(new Date(selectedAuth.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

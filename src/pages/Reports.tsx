@@ -742,13 +742,7 @@ export const Reports = () => {
                   </div>
                 ))}
               </div>
-              {totalIncidentPages > 1 && (
-                <div className="flex justify-center gap-2 mt-4">
-                  <Button variant="outline" size="sm" onClick={() => setIncidentPage(p => Math.max(1, p - 1))} disabled={incidentPage === 1}>Anterior</Button>
-                  <span className="flex items-center px-4">Página {incidentPage} de {totalIncidentPages}</span>
-                  <Button variant="outline" size="sm" onClick={() => setIncidentPage(p => Math.min(totalIncidentPages, p + 1))} disabled={incidentPage === totalIncidentPages}>Próxima</Button>
-                </div>
-              )}
+              <StandardPagination currentPage={incidentPage} totalPages={totalIncidentPages} onPageChange={setIncidentPage} className="mt-4" />
             </CardContent>
           </Card>
         </div>

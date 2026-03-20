@@ -6,6 +6,7 @@ import { Mail, Package, Clock, Hash } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import ResidentPagination from '@/components/resident/ResidentPagination';
 
 interface MailItem {
   id: string;

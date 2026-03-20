@@ -48,7 +48,8 @@ const ResidentAuthorizations = () => {
   const [guestListOpen, setGuestListOpen] = useState(false);
   const [detailAuth, setDetailAuth] = useState<Authorization | null>(null);
   const [form, setForm] = useState({ visitor_name: '', visitor_document: '', authorized_date: '', authorized_until: '', purpose: '', vehicle_plate: '' });
-
+  const [authPage, setAuthPage] = useState(1);
+  const PAGE_SIZE = 10;
   // Guest list state
   const [guests, setGuests] = useState<GuestItem[]>([{ name: '', document: '' }]);
   const [guestListForm, setGuestListForm] = useState({ title: '', authorized_date: '', vehicle_plate: '' });

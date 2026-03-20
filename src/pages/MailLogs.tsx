@@ -27,13 +27,15 @@ import {
   PaginationPrevious,
 } from '@/components/ui/pagination';
 import { Badge } from '@/components/ui/badge';
-import { Search, Download, ScrollText, CalendarIcon, FileSpreadsheet } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Search, Download, ScrollText, FileSpreadsheet, Package, User, Calendar, FileText, Hash } from 'lucide-react';
 import { useMails } from '@/hooks/useMails';
 import { useResidents } from '@/hooks/useResidents';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import type { Mail, Resident } from '@/types';
 
 export const MailLogs = () => {
   const { mails } = useMails();

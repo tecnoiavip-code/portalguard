@@ -85,20 +85,51 @@ async function queueCommandAndWait(
 }
 
 /**
+ * Info about the person being enrolled, used to persist biometrics on the device.
+ */
+export interface CapturePersonInfo {
+  /** Person name */
+  name: string;
+  /** Apartment number (for residents) */
+  apartment?: string;
+  /** Document (CPF for residents, visitor doc for visitors/providers) */
+  document?: string;
+  /** Unique identifier (resident UUID or visitor document) used to generate device user ID */
+  identifier: string;
+  /** Registration string saved on device (e.g. CPF or document) */
+  registration?: string;
+}
+
+/**
  * Capture photo from a Control iD facial device via push queue.
- * Strategy: enroll face to a temporary user, fetch the image, then remove the temp user.
+ * When personInfo is provided, the biometric is persisted on the device (like iD Secure).
+ * When personInfo is omitted, falls back to temporary user strategy.
  */
 export type CaptureStep = 'preparing' | 'creating_user' | 'enrolling' | 'fetching' | 'cleaning' | 'done' | 'error';
 
 export async function capturePhotoFromDevice(
   device: Device,
   onStatus: (msg: string, step?: CaptureStep, progress?: number) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  personInfo?: CapturePersonInfo
 ): Promise<string | null> {
   const serial = getDeviceSerial(device);
   if (!serial) throw new Error('Dispositivo sem número de série configurado.');
 
-  const tempUserId = 999999;
+  const persistOnDevice = !!personInfo;
+  const deviceUserId = persistOnDevice
+    ? Math.abs(hashCode(personInfo.identifier))
+    : 999999;
+
+  // Build device user name in "APT - Name" format (like iD Secure)
+  const deviceUserName = persistOnDevice
+    ? (personInfo.apartment ? `${personInfo.apartment} - ${personInfo.name}` : personInfo.name)
+    : 'TEMP_CAPTURE';
+
+  const deviceRegistration = persistOnDevice
+    ? (personInfo.registration || personInfo.document || personInfo.identifier)
+    : 'TEMP';
+
   const checkAbort = () => { if (signal?.aborted) throw new DOMException('Captura cancelada', 'AbortError'); };
 
   onStatus('Preparando captura facial...', 'preparing', 10);
@@ -114,21 +145,27 @@ export async function capturePhotoFromDevice(
 
   try {
     checkAbort();
-    // Step 1: Remove temp user if exists
+
+    // Step 1: Remove existing user on device (to update data if re-enrolling)
     try {
       await queueCommandAndWait(serial, 'destroy_objects', {
         object: 'users',
-        where: { users: { id: tempUserId } },
+        where: { users: { id: deviceUserId } },
       }, 15000, signal);
     } catch (e: any) {
       if (e.name === 'AbortError') throw e;
     }
 
     checkAbort();
-    onStatus('Criando usuário temporário...', 'creating_user', 25);
+    onStatus(
+      persistOnDevice
+        ? `Registrando ${personInfo.name} no dispositivo...`
+        : 'Criando usuário temporário...',
+      'creating_user', 25
+    );
     await queueCommandAndWait(serial, 'create_objects', {
       object: 'users',
-      values: [{ id: tempUserId, name: 'TEMP_CAPTURE', registration: 'TEMP' }],
+      values: [{ id: deviceUserId, name: deviceUserName, registration: deviceRegistration }],
     }, 15000, signal);
 
     checkAbort();
@@ -136,41 +173,53 @@ export async function capturePhotoFromDevice(
     await queueCommandAndWait(serial, 'remote_enroll', {
       type: 'face',
       save: true,
-      user_id: tempUserId,
+      user_id: deviceUserId,
       panic: false,
     }, 60000, signal);
 
     checkAbort();
     onStatus('Buscando foto capturada...', 'fetching', 70);
     const photoResult = await queueCommandAndWait(serial, 'user_get_image', {
-      user_id: tempUserId,
+      user_id: deviceUserId,
     }, 30000, signal);
 
-    onStatus('Finalizando...', 'cleaning', 90);
-    try {
-      await queueCommandAndWait(serial, 'destroy_objects', {
-        object: 'users',
-        where: { users: { id: tempUserId } },
-      }, 15000);
-    } catch { /* ignore */ }
+    // Only clean up if NOT persisting on device
+    if (!persistOnDevice) {
+      onStatus('Finalizando...', 'cleaning', 90);
+      try {
+        await queueCommandAndWait(serial, 'destroy_objects', {
+          object: 'users',
+          where: { users: { id: deviceUserId } },
+        }, 15000);
+      } catch { /* ignore */ }
+    } else {
+      onStatus('Biometria salva no dispositivo!', 'cleaning', 90);
+    }
 
     const base64 = photoResult?.user_image || photoResult?.image || photoResult?.photo;
     if (base64) {
       const clean = String(base64).replace(/^data:image\/[a-z]+;base64,/, '');
-      onStatus('Foto capturada com sucesso!', 'done', 100);
+      onStatus(
+        persistOnDevice
+          ? 'Foto capturada e biometria registrada no dispositivo!'
+          : 'Foto capturada com sucesso!',
+        'done', 100
+      );
       return `data:image/jpeg;base64,${clean}`;
     }
 
     onStatus('Dispositivo não retornou imagem. Tente novamente.', 'error', 0);
     return null;
   } catch (err: any) {
-    // Clean up on error
-    try {
-      await queueCommandAndWait(serial, 'destroy_objects', {
-        object: 'users',
-        where: { users: { id: tempUserId } },
-      }, 10000);
-    } catch { /* ignore */ }
+    // Clean up on error only if using temp user
+    if (!persistOnDevice) {
+      try {
+        await queueCommandAndWait(serial, 'destroy_objects', {
+          object: 'users',
+          where: { users: { id: deviceUserId } },
+        }, 10000);
+      } catch { /* ignore */ }
+    }
 
     if (err.name === 'AbortError') {
       onStatus('Captura cancelada.', 'error', 0);

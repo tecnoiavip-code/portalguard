@@ -121,37 +121,46 @@ const ResidentAnnouncements = () => {
           <p className="text-muted-foreground">Nenhum comunicado ainda</p>
         </div>
       ) : (
-        announcements.map((ann) => {
-          const isRead = readIds.has(ann.id);
-          const pCfg = priorityConfig[ann.priority] || priorityConfig.normal;
+        (() => {
+          const totalPages = Math.ceil(announcements.length / PAGE_SIZE);
+          const paginated = announcements.slice((annPage - 1) * PAGE_SIZE, annPage * PAGE_SIZE);
           return (
-            <div
-              key={ann.id}
-              className={cn(
-                "bg-card/80 backdrop-blur-sm border rounded-2xl p-4 cursor-pointer transition-all active:scale-[0.98]",
-                !isRead ? "border-primary/30 shadow-[0_0_15px_-5px] shadow-primary/20" : "border-border/50"
-              )}
-              onClick={() => openDetail(ann)}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <Badge variant="outline" className={cn("text-xs", pCfg.className)}>
-                      {pCfg.label}
-                    </Badge>
-                    {!isRead && <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />}
+            <div className="space-y-3">
+              {paginated.map((ann) => {
+                const isRead = readIds.has(ann.id);
+                const pCfg = priorityConfig[ann.priority] || priorityConfig.normal;
+                return (
+                  <div
+                    key={ann.id}
+                    className={cn(
+                      "bg-card/80 backdrop-blur-sm border rounded-2xl p-4 cursor-pointer transition-all active:scale-[0.98]",
+                      !isRead ? "border-primary/30 shadow-[0_0_15px_-5px] shadow-primary/20" : "border-border/50"
+                    )}
+                    onClick={() => openDetail(ann)}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <Badge variant="outline" className={cn("text-xs", pCfg.className)}>
+                            {pCfg.label}
+                          </Badge>
+                          {!isRead && <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />}
+                        </div>
+                        <h3 className="font-semibold text-foreground">{ann.title}</h3>
+                        <p className="text-sm text-muted-foreground line-clamp-2 mt-1">{ann.body}</p>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          {format(new Date(ann.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                        </p>
+                      </div>
+                      {isRead && <CheckCircle className="h-5 w-5 text-primary shrink-0 mt-1" />}
+                    </div>
                   </div>
-                  <h3 className="font-semibold text-foreground">{ann.title}</h3>
-                  <p className="text-sm text-muted-foreground line-clamp-2 mt-1">{ann.body}</p>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    {format(new Date(ann.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                  </p>
-                </div>
-                {isRead && <CheckCircle className="h-5 w-5 text-primary shrink-0 mt-1" />}
-              </div>
+                );
+              })}
+              <ResidentPagination currentPage={annPage} totalPages={totalPages} onPageChange={setAnnPage} />
             </div>
           );
-        })
+        })()
       )}
 
       <Dialog open={detailDialog.open} onOpenChange={(open) => setDetailDialog({ open, announcement: open ? detailDialog.announcement : null })}>

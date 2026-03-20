@@ -388,3 +388,75 @@ export async function syncPhotosFromDevices(
 
   return { synced, skipped, errors };
 }
+
+/**
+ * Sync a resident's biometric (photo) to all facial recognition devices.
+ * Creates the user on each device and sets their facial image.
+ */
+export async function syncBiometricToAllDevices(
+  facialDevices: Device[],
+  personInfo: CapturePersonInfo,
+  photoBase64: string,
+  onProgress?: (msg: string, current: number, total: number) => void
+): Promise<{ synced: number; errors: number; details: string[] }> {
+  if (facialDevices.length === 0) {
+    return { synced: 0, errors: 0, details: ['Nenhum dispositivo facial cadastrado.'] };
+  }
+
+  const deviceUserId = Math.abs(hashCode(personInfo.identifier));
+  const deviceUserName = personInfo.apartment
+    ? `${personInfo.apartment} - ${personInfo.name}`
+    : personInfo.name;
+  const deviceRegistration = personInfo.registration || personInfo.document || personInfo.identifier;
+
+  // Clean base64 for device (remove data URI prefix)
+  const cleanBase64 = photoBase64.replace(/^data:image\/[a-z]+;base64,/, '');
+
+  let synced = 0;
+  let errors = 0;
+  const details: string[] = [];
+
+  for (let i = 0; i < facialDevices.length; i++) {
+    const device = facialDevices[i];
+    const serial = getDeviceSerial(device);
+    if (!serial) {
+      details.push(`${device.name}: sem número de série`);
+      errors++;
+      continue;
+    }
+
+    onProgress?.(`Sincronizando ${device.name} (${i + 1}/${facialDevices.length})...`, i, facialDevices.length);
+
+    try {
+      // Remove existing user if present (to update)
+      try {
+        await queueCommandAndWait(serial, 'destroy_objects', {
+          object: 'users',
+          where: { users: { id: deviceUserId } },
+        }, 15000);
+      } catch { /* user may not exist */ }
+
+      // Create user on device
+      await queueCommandAndWait(serial, 'create_objects', {
+        object: 'users',
+        values: [{ id: deviceUserId, name: deviceUserName, registration: deviceRegistration }],
+      }, 15000);
+
+      // Set the facial image on the device
+      await queueCommandAndWait(serial, 'user_set_image', {
+        user_id: deviceUserId,
+        image: cleanBase64,
+      }, 30000);
+
+      synced++;
+      details.push(`${device.name}: ✓ sincronizado`);
+    } catch (err: any) {
+      errors++;
+      details.push(`${device.name}: ✗ ${err.message}`);
+      console.error(`Biometric sync error on ${device.name}:`, err);
+    }
+  }
+
+  onProgress?.('Sincronização concluída!', facialDevices.length, facialDevices.length);
+  return { synced, errors, details };
+}

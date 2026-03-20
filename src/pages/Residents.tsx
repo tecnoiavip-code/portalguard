@@ -14,7 +14,7 @@ import { Resident, Device } from '@/types';
 import { useResidents } from '@/hooks/useResidents';
 import { useDevices } from '@/hooks/useDevices';
 import { toast } from 'sonner';
-import { capturePhotoFromDevice, syncTagsFromDevice, syncPhotosFromDevices } from '@/lib/device-capture';
+import { capturePhotoFromDevice, syncTagsFromDevice, syncPhotosFromDevices, syncBiometricToAllDevices } from '@/lib/device-capture';
 import {
   Pagination,
   PaginationContent,
@@ -107,6 +107,29 @@ export const Residents = () => {
 
     const success = await saveResident(residentData);
     if (success) {
+      // Auto-sync biometrics to all facial devices if resident has a photo
+      if (formData.photo && facialDevices.length > 0) {
+        const personInfo = {
+          name: formData.name,
+          apartment: formData.apartment,
+          document: formData.cpf,
+          identifier: residentData.id,
+          registration: formData.cpf || undefined,
+        };
+        // Run in background - don't block the form
+        syncBiometricToAllDevices(facialDevices, personInfo, formData.photo, (msg) => {
+          console.log('[BiometricSync]', msg);
+        }).then(result => {
+          if (result.synced > 0) {
+            toast.success(`Biometria sincronizada em ${result.synced} dispositivo(s)`);
+          }
+          if (result.errors > 0) {
+            toast.warning(`Falha em ${result.errors} dispositivo(s): ${result.details.filter(d => d.includes('✗')).join(', ')}`);
+          }
+        }).catch(err => {
+          console.error('Biometric sync error:', err);
+        });
+      }
       resetForm();
     }
   };

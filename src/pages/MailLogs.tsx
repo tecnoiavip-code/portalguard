@@ -293,39 +293,23 @@ export const MailLogs = () => {
           </div>
 
           {totalPages > 1 && (
-            <div className="mt-4">
-              <Pagination>
-                <PaginationContent>
-                  <PaginationItem>
-                    <PaginationPrevious
-                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                      className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                    />
-                  </PaginationItem>
-                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                    const start = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
-                    const page = start + i;
-                    if (page > totalPages) return null;
-                    return (
-                      <PaginationItem key={page}>
-                        <PaginationLink
-                          onClick={() => setCurrentPage(page)}
-                          isActive={currentPage === page}
-                          className="cursor-pointer"
-                        >
-                          {page}
-                        </PaginationLink>
-                      </PaginationItem>
-                    );
-                  })}
-                  <PaginationItem>
-                    <PaginationNext
-                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                      className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                    />
-                  </PaginationItem>
-                </PaginationContent>
-              </Pagination>
+            <div className="flex items-center justify-center gap-1.5 mt-4">
+              <Button size="icon" variant="ghost" className="h-8 w-8" disabled={currentPage <= 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => {
+                const start = Math.max(1, Math.min(currentPage - 5, totalPages - 9));
+                const p = start + i;
+                if (p > totalPages) return null;
+                return (
+                  <Button key={p} size="sm" variant={currentPage === p ? 'default' : 'ghost'} className={`h-8 w-8 text-xs p-0 ${currentPage === p ? 'bg-blue-600 hover:bg-blue-700 text-white' : ''}`} onClick={() => setCurrentPage(p)}>
+                    {p}
+                  </Button>
+                );
+              })}
+              <Button size="icon" variant="ghost" className="h-8 w-8" disabled={currentPage >= totalPages} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
           )}
         </CardContent>

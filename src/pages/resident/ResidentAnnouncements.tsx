@@ -39,7 +39,8 @@ const ResidentAnnouncements = () => {
   const [loading, setLoading] = useState(true);
   const [detailDialog, setDetailDialog] = useState<{ open: boolean; announcement: Announcement | null }>({ open: false, announcement: null });
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-
+  const [annPage, setAnnPage] = useState(1);
+  const PAGE_SIZE = 10;
   const loadData = async () => {
     if (!user) return;
 

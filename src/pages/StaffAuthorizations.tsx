@@ -247,7 +247,7 @@ const StaffAuthorizations = () => {
           ) : (
             <>
               {paginatedSingles.map((a) => (
-                <Card key={a.id}>
+                <Card key={a.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedAuth(a)}>
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-start gap-3">
@@ -268,29 +268,34 @@ const StaffAuthorizations = () => {
                       <div className="flex items-center gap-2">
                         <Badge variant={statusVariant(a.status)}>{statusLabels[a.status || 'pending']}</Badge>
                         {a.status === 'pending' && (
-                          <Dialog open={reviewId === a.id} onOpenChange={(o) => { if (!o) setReviewId(null); }}>
-                            <DialogTrigger asChild>
-                              <Button size="sm" variant="outline" onClick={() => setReviewId(a.id)}>Revisar</Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader><DialogTitle>Revisar Autorização</DialogTitle></DialogHeader>
-                              <div className="space-y-4">
-                                <p><strong>Visitante:</strong> {a.visitor_name}</p>
-                                <p><strong>Morador:</strong> {a.resident?.name} - Apto {a.resident?.apartment}</p>
-                                <Textarea placeholder="Observações (opcional)" value={staffNotes} onChange={(e) => setStaffNotes(e.target.value)} />
-                                <div className="flex gap-2">
-                                  <Button className="flex-1" onClick={() => handleReview(a.id, 'approved')}><Check className="h-4 w-4 mr-1" /> Aprovar</Button>
-                                  <Button variant="destructive" className="flex-1" onClick={() => handleReview(a.id, 'rejected')}><X className="h-4 w-4 mr-1" /> Rejeitar</Button>
-                                </div>
-                              </div>
-                            </DialogContent>
-                          </Dialog>
+                          <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setReviewId(a.id); }}>Revisar</Button>
                         )}
                       </div>
                     </div>
                   </CardContent>
                 </Card>
               ))}
+
+              {/* Review dialog for pending individual */}
+              {reviewId && singles.find(s => s.id === reviewId) && (() => {
+                const a = singles.find(s => s.id === reviewId)!;
+                return (
+                  <Dialog open={!!reviewId && !!singles.find(s => s.id === reviewId)} onOpenChange={(o) => { if (!o) setReviewId(null); }}>
+                    <DialogContent>
+                      <DialogHeader><DialogTitle>Revisar Autorização</DialogTitle></DialogHeader>
+                      <div className="space-y-4">
+                        <p><strong>Visitante:</strong> {a.visitor_name}</p>
+                        <p><strong>Morador:</strong> {a.resident?.name} - Apto {a.resident?.apartment}</p>
+                        <Textarea placeholder="Observações (opcional)" value={staffNotes} onChange={(e) => setStaffNotes(e.target.value)} />
+                        <div className="flex gap-2">
+                          <Button className="flex-1" onClick={() => handleReview(a.id, 'approved')}><Check className="h-4 w-4 mr-1" /> Aprovar</Button>
+                          <Button variant="destructive" className="flex-1" onClick={() => handleReview(a.id, 'rejected')}><X className="h-4 w-4 mr-1" /> Rejeitar</Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                );
+              })()}
               {singlesTotalPages > 1 && (
                 <div className="flex items-center justify-between pt-2">
                   <p className="text-sm text-muted-foreground">Página {safePage} de {singlesTotalPages}</p>

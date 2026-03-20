@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import StandardPagination from '@/components/StandardPagination';
 import { exportToCSV } from '@/lib/export-csv';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';

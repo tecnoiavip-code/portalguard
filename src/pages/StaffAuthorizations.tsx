@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import StandardPagination from '@/components/StandardPagination';
 import { supabase } from '@/integrations/supabase/client';
 import { sendPushToUser } from '@/lib/push-subscription';
 import { useAuth } from '@/contexts/AuthContext';

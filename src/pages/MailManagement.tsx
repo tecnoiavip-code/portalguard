@@ -35,7 +35,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { sendPushToUser } from '@/lib/push-subscription';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import StandardPagination from '@/components/StandardPagination';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
@@ -750,53 +750,7 @@ export const MailManagement = () => {
               </Table>
             </div>
 
-            {totalPages > 1 && (
-              <div className="mt-4">
-                <Pagination>
-                  <PaginationContent>
-                    <PaginationItem>
-                      <PaginationPrevious
-                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                        className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                      />
-                    </PaginationItem>
-
-                    {(() => {
-                      const pages: (number | 'ellipsis')[] = [];
-                      if (totalPages <= 10) {
-                        for (let i = 1; i <= totalPages; i++) pages.push(i);
-                      } else {
-                        pages.push(1);
-                        if (currentPage > 6) pages.push('ellipsis');
-                        for (let i = Math.max(2, currentPage - 3); i <= Math.min(totalPages - 1, currentPage + 3); i++) pages.push(i);
-                        if (currentPage < totalPages - 5) pages.push('ellipsis');
-                        pages.push(totalPages);
-                      }
-                      return pages.map((page, idx) =>
-                        page === 'ellipsis' ? (
-                          <PaginationItem key={`ellipsis-${idx}`}>
-                            <span className="flex h-9 w-9 items-center justify-center text-muted-foreground">…</span>
-                          </PaginationItem>
-                        ) : (
-                          <PaginationItem key={page}>
-                            <PaginationLink onClick={() => setCurrentPage(page)} isActive={currentPage === page} className="cursor-pointer">
-                              {page}
-                            </PaginationLink>
-                          </PaginationItem>
-                        )
-                      );
-                    })()}
-
-                    <PaginationItem>
-                      <PaginationNext
-                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                        className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                      />
-                    </PaginationItem>
-                  </PaginationContent>
-                </Pagination>
-              </div>
-            )}
+            <StandardPagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} className="mt-4" />
           </CardContent>
         </Card>
       </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import StandardPagination from '@/components/StandardPagination';
 import { exportToCSV } from '@/lib/export-csv';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -667,13 +668,7 @@ export const Reports = () => {
                 ))}
                 {filteredShifts.length === 0 && <p className="text-center text-muted-foreground py-8">Nenhum plantão encontrado</p>}
               </div>
-              {totalShiftPages > 1 && (
-                <div className="flex justify-center gap-2 mt-4">
-                  <Button variant="outline" size="sm" onClick={() => setShiftPage(p => Math.max(1, p - 1))} disabled={shiftPage === 1}>Anterior</Button>
-                  <span className="flex items-center px-4">Página {shiftPage} de {totalShiftPages}</span>
-                  <Button variant="outline" size="sm" onClick={() => setShiftPage(p => Math.min(totalShiftPages, p + 1))} disabled={shiftPage === totalShiftPages}>Próxima</Button>
-                </div>
-              )}
+              <StandardPagination currentPage={shiftPage} totalPages={totalShiftPages} onPageChange={setShiftPage} className="mt-4" />
             </CardContent>
           </Card>
         </div>
@@ -748,13 +743,7 @@ export const Reports = () => {
                   </div>
                 ))}
               </div>
-              {totalIncidentPages > 1 && (
-                <div className="flex justify-center gap-2 mt-4">
-                  <Button variant="outline" size="sm" onClick={() => setIncidentPage(p => Math.max(1, p - 1))} disabled={incidentPage === 1}>Anterior</Button>
-                  <span className="flex items-center px-4">Página {incidentPage} de {totalIncidentPages}</span>
-                  <Button variant="outline" size="sm" onClick={() => setIncidentPage(p => Math.min(totalIncidentPages, p + 1))} disabled={incidentPage === totalIncidentPages}>Próxima</Button>
-                </div>
-              )}
+              <StandardPagination currentPage={incidentPage} totalPages={totalIncidentPages} onPageChange={setIncidentPage} className="mt-4" />
             </CardContent>
           </Card>
         </div>
@@ -801,13 +790,7 @@ export const Reports = () => {
                   <p className="text-center text-muted-foreground py-8">Nenhum equipamento cadastrado</p>
                 )}
               </div>
-              {totalEquipmentPages > 1 && (
-                <div className="flex justify-center gap-2 mt-4">
-                  <Button variant="outline" size="sm" onClick={() => setEquipmentPage(p => Math.max(1, p - 1))} disabled={equipmentPage === 1}>Anterior</Button>
-                  <span className="flex items-center px-4">Página {equipmentPage} de {totalEquipmentPages}</span>
-                  <Button variant="outline" size="sm" onClick={() => setEquipmentPage(p => Math.min(totalEquipmentPages, p + 1))} disabled={equipmentPage === totalEquipmentPages}>Próxima</Button>
-                </div>
-              )}
+              <StandardPagination currentPage={equipmentPage} totalPages={totalEquipmentPages} onPageChange={setEquipmentPage} className="mt-4" />
             </CardContent>
           </Card>
         </div>

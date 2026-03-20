@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import StandardPagination from '@/components/StandardPagination';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -337,26 +338,7 @@ const StaffAnnouncements = () => {
                       <Eye className="h-5 w-5 text-muted-foreground ml-2 shrink-0" />
                     </div>
                   ))}
-                  {totalPages > 1 && (
-                    <div className="flex items-center justify-center gap-1.5 pt-2">
-                      <Button size="icon" variant="ghost" className="h-8 w-8" disabled={annPage <= 1} onClick={() => setAnnPage(annPage - 1)}>
-                        <ChevronLeft className="h-4 w-4" />
-                      </Button>
-                      {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => {
-                        const start = Math.max(1, Math.min(annPage - 5, totalPages - 9));
-                        const p = start + i;
-                        if (p > totalPages) return null;
-                        return (
-                          <Button key={p} size="sm" variant={annPage === p ? 'default' : 'ghost'} className={`h-8 w-8 text-xs p-0 ${annPage === p ? 'bg-blue-600 hover:bg-blue-700 text-white' : ''}`} onClick={() => setAnnPage(p)}>
-                            {p}
-                          </Button>
-                        );
-                      })}
-                      <Button size="icon" variant="ghost" className="h-8 w-8" disabled={annPage >= totalPages} onClick={() => setAnnPage(annPage + 1)}>
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  )}
+                  <StandardPagination currentPage={annPage} totalPages={totalPages} onPageChange={setAnnPage} />
                 </>
               );
             })()

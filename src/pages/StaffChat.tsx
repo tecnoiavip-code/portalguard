@@ -240,36 +240,66 @@ const StaffChat = () => {
         {threads.length === 0 ? (
           <Card><CardContent className="p-6 text-center text-muted-foreground">Nenhuma conversa iniciada. Clique em "Nova Conversa" para enviar uma mensagem a um morador.</CardContent></Card>
         ) : (
-          threads.map((t) => (
-            <Card key={t.resident_id} className="cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setSelectedThread(t)}>
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                  <span className="text-lg font-bold text-primary">{t.resident_name.charAt(0).toUpperCase()}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-semibold">{t.resident_name}</p>
-                    {t.last_time && (
-                      <p className="text-xs text-muted-foreground shrink-0">
-                        {isToday(new Date(t.last_time))
-                          ? format(new Date(t.last_time), 'HH:mm', { locale: ptBR })
-                          : format(new Date(t.last_time), 'dd/MM/yyyy', { locale: ptBR })}
-                      </p>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground">Apto {t.apartment}</p>
-                  <div className="flex items-center justify-between mt-0.5">
-                    <p className="text-sm text-muted-foreground truncate">{t.last_message}</p>
-                    {t.unread_count > 0 && (
-                      <Badge className="ml-2 bg-primary text-primary-foreground rounded-full h-5 min-w-5 flex items-center justify-center text-xs shrink-0">
-                        {t.unread_count}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))
+          <>
+            {(() => {
+              const totalPages = Math.ceil(threads.length / THREAD_PAGE_SIZE);
+              const paginated = threads.slice((threadPage - 1) * THREAD_PAGE_SIZE, threadPage * THREAD_PAGE_SIZE);
+              return (
+                <>
+                  {paginated.map((t) => (
+                    <Card key={t.resident_id} className="cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setSelectedThread(t)}>
+                      <CardContent className="p-4 flex items-center gap-3">
+                        <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                          <span className="text-lg font-bold text-primary">{t.resident_name.charAt(0).toUpperCase()}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-semibold">{t.resident_name}</p>
+                            {t.last_time && (
+                              <p className="text-xs text-muted-foreground shrink-0">
+                                {isToday(new Date(t.last_time))
+                                  ? format(new Date(t.last_time), 'HH:mm', { locale: ptBR })
+                                  : format(new Date(t.last_time), 'dd/MM/yyyy', { locale: ptBR })}
+                              </p>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground">Apto {t.apartment}</p>
+                          <div className="flex items-center justify-between mt-0.5">
+                            <p className="text-sm text-muted-foreground truncate">{t.last_message}</p>
+                            {t.unread_count > 0 && (
+                              <Badge className="ml-2 bg-primary text-primary-foreground rounded-full h-5 min-w-5 flex items-center justify-center text-xs shrink-0">
+                                {t.unread_count}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-center gap-1.5 pt-2">
+                      <Button size="icon" variant="ghost" className="h-8 w-8" disabled={threadPage <= 1} onClick={() => setThreadPage(threadPage - 1)}>
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => {
+                        const start = Math.max(1, Math.min(threadPage - 5, totalPages - 9));
+                        const p = start + i;
+                        if (p > totalPages) return null;
+                        return (
+                          <Button key={p} size="sm" variant={threadPage === p ? 'default' : 'ghost'} className={cn("h-8 w-8 text-xs p-0", threadPage === p && "bg-blue-600 hover:bg-blue-700 text-white")} onClick={() => setThreadPage(p)}>
+                            {p}
+                          </Button>
+                        );
+                      })}
+                      <Button size="icon" variant="ghost" className="h-8 w-8" disabled={threadPage >= totalPages} onClick={() => setThreadPage(threadPage + 1)}>
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </>
         )}
 
         <Dialog open={showNewChatDialog} onOpenChange={setShowNewChatDialog}>

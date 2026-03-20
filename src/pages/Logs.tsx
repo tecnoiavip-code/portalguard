@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollText, Search, LogIn, LogOut, Download, ShieldBan, FileSpreadsheet, User, Building, Car, Clock, FileText, Hash, Camera } from 'lucide-react';
 import { useAccessEntries } from '@/hooks/useAccessEntries';
 import { AccessEntry } from '@/types';
-import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import StandardPagination from '@/components/StandardPagination';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';

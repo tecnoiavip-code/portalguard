@@ -667,13 +667,7 @@ export const Reports = () => {
                 ))}
                 {filteredShifts.length === 0 && <p className="text-center text-muted-foreground py-8">Nenhum plantão encontrado</p>}
               </div>
-              {totalShiftPages > 1 && (
-                <div className="flex justify-center gap-2 mt-4">
-                  <Button variant="outline" size="sm" onClick={() => setShiftPage(p => Math.max(1, p - 1))} disabled={shiftPage === 1}>Anterior</Button>
-                  <span className="flex items-center px-4">Página {shiftPage} de {totalShiftPages}</span>
-                  <Button variant="outline" size="sm" onClick={() => setShiftPage(p => Math.min(totalShiftPages, p + 1))} disabled={shiftPage === totalShiftPages}>Próxima</Button>
-                </div>
-              )}
+              <StandardPagination currentPage={shiftPage} totalPages={totalShiftPages} onPageChange={setShiftPage} className="mt-4" />
             </CardContent>
           </Card>
         </div>

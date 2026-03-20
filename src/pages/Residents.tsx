@@ -41,6 +41,9 @@ export const Residents = () => {
   const { devices } = useDevices();
   const [editingId, setEditingId] = useState<string>('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [selectedResident, setSelectedResident] = useState<Resident | null>(null);
+  const [selectedResidentPhoto, setSelectedResidentPhoto] = useState<string>('');
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const itemsPerPage = 10;
@@ -281,6 +284,14 @@ export const Residents = () => {
     toast.success(`TAG ${tagValue} selecionada!`);
   };
 
+  const handleViewDetail = async (resident: Resident) => {
+    setSelectedResident(resident);
+    setSelectedResidentPhoto('');
+    setIsDetailOpen(true);
+    const photo = await supabaseStorage.getResidentPhoto(resident.id);
+    setSelectedResidentPhoto(photo);
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm('Tem certeza? Isso também removerá correspondências associadas.')) return;
     await deleteResident(id);
@@ -459,7 +470,7 @@ export const Residents = () => {
                   </TableRow>
                 ) : (
                   paginatedResidents.map((resident) => (
-                    <TableRow key={resident.id} className="hover:bg-muted/50">
+                    <TableRow key={resident.id} className="hover:bg-muted/50 cursor-pointer" onClick={() => handleViewDetail(resident)}>
                       <TableCell>
                         <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-3xl">
                           👤
@@ -491,7 +502,7 @@ export const Residents = () => {
                           <Button
                             size="icon"
                             variant="ghost"
-                            onClick={() => handleEdit(resident)}
+                            onClick={(e) => { e.stopPropagation(); handleEdit(resident); }}
                             className="h-8 w-8"
                           >
                             <Pencil className="h-4 w-4" />
@@ -499,7 +510,7 @@ export const Residents = () => {
                           <Button
                             size="icon"
                             variant="ghost"
-                            onClick={() => handleDelete(resident.id)}
+                            onClick={(e) => { e.stopPropagation(); handleDelete(resident.id); }}
                             className="h-8 w-8 text-destructive hover:text-destructive"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -512,6 +523,80 @@ export const Residents = () => {
               </TableBody>
             </Table>
           </div>
+
+          {/* Detail Modal */}
+          <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Detalhes do Morador</DialogTitle>
+              </DialogHeader>
+              {selectedResident && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-4">
+                    {selectedResidentPhoto ? (
+                      <img src={selectedResidentPhoto} alt={selectedResident.name} className="w-24 h-24 rounded-full object-cover border-2 border-primary/20" />
+                    ) : (
+                      <div className="w-24 h-24 rounded-full bg-muted flex items-center justify-center text-4xl">👤</div>
+                    )}
+                    <div>
+                      <h3 className="text-xl font-semibold">{selectedResident.name}</h3>
+                      <p className="text-muted-foreground">Apartamento {selectedResident.apartment}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-muted-foreground block">CPF</span>
+                      <span className="font-medium">{selectedResident.cpf || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block">Telefone</span>
+                      <span className="font-medium">{selectedResident.phone || '-'}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-muted-foreground block">E-mail</span>
+                      <span className="font-medium">{selectedResident.email || '-'}</span>
+                    </div>
+                  </div>
+
+                  {(selectedResident.vehiclePlate || selectedResident.vehicleModel || selectedResident.vehicleColor || selectedResident.vehicleTag) && (
+                    <div className="border-t pt-3">
+                      <h4 className="font-semibold mb-2">Veículo</h4>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <span className="text-muted-foreground block">Placa</span>
+                          <span className="font-medium">{selectedResident.vehiclePlate || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground block">Modelo</span>
+                          <span className="font-medium">{selectedResident.vehicleModel || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground block">Cor</span>
+                          <span className="font-medium">{selectedResident.vehicleColor || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground block">TAG</span>
+                          <span className="font-medium">{selectedResident.vehicleTag || '-'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="border-t pt-3 text-xs text-muted-foreground">
+                    Cadastrado em: {selectedResident.createdAt ? format(new Date(selectedResident.createdAt), 'dd/MM/yyyy HH:mm', { locale: ptBR }) : '-'}
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button variant="outline" onClick={() => { setIsDetailOpen(false); handleEdit(selectedResident); }}>
+                      <Pencil className="h-4 w-4 mr-2" />
+                      Editar
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
           
           {totalPages > 1 && (
             <div className="mt-6">

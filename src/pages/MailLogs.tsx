@@ -20,7 +20,8 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Search, Download, ScrollText, FileSpreadsheet, Package, User, Calendar, FileText, Hash, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Download, ScrollText, FileSpreadsheet, Package, User, Calendar, FileText, Hash } from 'lucide-react';
+import StandardPagination from '@/components/StandardPagination';
 import { useMails } from '@/hooks/useMails';
 import { useResidents } from '@/hooks/useResidents';
 import { format } from 'date-fns';

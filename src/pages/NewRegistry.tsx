@@ -873,6 +873,7 @@ export const NewRegistry = () => {
       </Dialog>
 
 
+      <Dialog open={isDialogOpen} onOpenChange={open => {
       if (!open) resetForm();
       setIsDialogOpen(open);
     }}>

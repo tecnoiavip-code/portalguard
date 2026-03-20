@@ -46,6 +46,7 @@ export const MailLogs = () => {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedMail, setSelectedMail] = useState<{ mail: Mail; resident?: Resident } | null>(null);
   const itemsPerPage = 15;
 
   const filtered = mails.filter((mail) => {

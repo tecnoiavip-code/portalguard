@@ -269,7 +269,7 @@ export const MailLogs = () => {
                   paginated.map((mail) => {
                     const resident = residents.find((r) => r.id === mail.residentId);
                     return (
-                      <TableRow key={mail.id}>
+                      <TableRow key={mail.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedMail({ mail, resident })}>
                         <TableCell className="font-medium">{resident?.name || 'Desconhecido'}</TableCell>
                         <TableCell>{resident?.apartment || '-'}</TableCell>
                         <TableCell>{mail.sender}</TableCell>

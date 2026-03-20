@@ -284,6 +284,14 @@ export const Residents = () => {
     toast.success(`TAG ${tagValue} selecionada!`);
   };
 
+  const handleViewDetail = async (resident: Resident) => {
+    setSelectedResident(resident);
+    setSelectedResidentPhoto('');
+    setIsDetailOpen(true);
+    const photo = await supabaseStorage.getResidentPhoto(resident.id);
+    setSelectedResidentPhoto(photo);
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm('Tem certeza? Isso também removerá correspondências associadas.')) return;
     await deleteResident(id);

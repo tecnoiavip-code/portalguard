@@ -41,6 +41,9 @@ export const Residents = () => {
   const { devices } = useDevices();
   const [editingId, setEditingId] = useState<string>('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [selectedResident, setSelectedResident] = useState<Resident | null>(null);
+  const [selectedResidentPhoto, setSelectedResidentPhoto] = useState<string>('');
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const itemsPerPage = 10;

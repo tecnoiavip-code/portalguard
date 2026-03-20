@@ -13,7 +13,7 @@ import { useAccessEntries } from '@/hooks/useAccessEntries';
 import { useResidents } from '@/hooks/useResidents';
 import { useDevices } from '@/hooks/useDevices';
 import { toast } from 'sonner';
-import { capturePhotoFromDevice } from '@/lib/device-capture';
+import { capturePhotoFromDevice, syncBiometricToAllDevices } from '@/lib/device-capture';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from '@/components/ui/badge';
@@ -434,6 +434,29 @@ export const NewRegistry = () => {
     
     await saveEntry(entryData);
     
+    // Auto-sync biometrics to all facial devices if visitor/provider has a photo
+    if (formData.photo && formData.visitorDocument && facialDevices.length > 0) {
+      const personInfo = {
+        name: formData.visitorName,
+        apartment: resident.apartment,
+        document: formData.visitorDocument,
+        identifier: `sp-${formData.visitorDocument}`,
+        registration: formData.visitorDocument,
+      };
+      syncBiometricToAllDevices(facialDevices, personInfo, formData.photo, (msg) => {
+        console.log('[BiometricSync Visitor]', msg);
+      }).then(result => {
+        if (result.synced > 0) {
+          toast.success(`Biometria sincronizada em ${result.synced} dispositivo(s)`);
+        }
+        if (result.errors > 0) {
+          toast.warning(`Falha em ${result.errors} dispositivo(s)`);
+        }
+      }).catch(err => {
+        console.error('Biometric sync error:', err);
+      });
+    }
+
     // Notify resident about visitor arrival (only for new entries)
     if (!editingId && resident) {
       try {

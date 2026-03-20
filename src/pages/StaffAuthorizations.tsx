@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Shield, Check, X, Clock, Users, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Shield, Check, X, Clock, Users, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, User, Car, FileText, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';

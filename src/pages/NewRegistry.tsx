@@ -14,7 +14,7 @@ import { useResidents } from '@/hooks/useResidents';
 import { useDevices } from '@/hooks/useDevices';
 import { toast } from 'sonner';
 import { capturePhotoFromDevice, syncBiometricToAllDevices } from '@/lib/device-capture';
-import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import StandardPagination from '@/components/StandardPagination';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';

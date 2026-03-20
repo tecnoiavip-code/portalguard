@@ -96,9 +96,10 @@ const ResidentMails = () => {
               {pending.length > 0 && (
                 <span className="text-sm font-semibold text-muted-foreground">Entregues</span>
               )}
-              {delivered.map((m) => (
+              {paginatedDelivered.map((m) => (
                 <MailCard key={m.id} mail={m} />
               ))}
+              <ResidentPagination currentPage={deliveredPage} totalPages={deliveredTotalPages} onPageChange={setDeliveredPage} />
             </div>
           )}
         </>

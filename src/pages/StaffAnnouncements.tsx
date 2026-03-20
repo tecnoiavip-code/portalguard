@@ -18,7 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Megaphone, Send, Paperclip, X, Eye, FileText, Loader2, Trash2 } from 'lucide-react';
+import { Megaphone, Send, Paperclip, X, Eye, FileText, Loader2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';

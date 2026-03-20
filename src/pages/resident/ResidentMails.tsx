@@ -58,6 +58,10 @@ const ResidentMails = () => {
 
   const pending = mails.filter(m => m.status === 'pending');
   const delivered = mails.filter(m => m.status !== 'pending');
+  const pendingTotalPages = Math.ceil(pending.length / PAGE_SIZE);
+  const deliveredTotalPages = Math.ceil(delivered.length / PAGE_SIZE);
+  const paginatedPending = pending.slice((pendingPage - 1) * PAGE_SIZE, pendingPage * PAGE_SIZE);
+  const paginatedDelivered = delivered.slice((deliveredPage - 1) * PAGE_SIZE, deliveredPage * PAGE_SIZE);
 
   return (
     <div className="space-y-5 animate-in fade-in duration-500">

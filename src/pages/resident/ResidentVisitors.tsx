@@ -33,7 +33,8 @@ const ResidentVisitors = () => {
   const [entries, setEntries] = useState<VisitorEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<VisitorEntry | null>(null);
-
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   useEffect(() => {
     if (!user) return;
     const load = async () => {

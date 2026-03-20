@@ -14,7 +14,7 @@ import { Resident, Device } from '@/types';
 import { useResidents } from '@/hooks/useResidents';
 import { useDevices } from '@/hooks/useDevices';
 import { toast } from 'sonner';
-import { capturePhotoFromDevice, syncTagsFromDevice, syncPhotosFromDevices } from '@/lib/device-capture';
+import { capturePhotoFromDevice, syncTagsFromDevice, syncPhotosFromDevices, syncBiometricToAllDevices } from '@/lib/device-capture';
 import {
   Pagination,
   PaginationContent,

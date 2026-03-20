@@ -65,6 +65,8 @@ const ResidentVisitors = () => {
 
   const activeVisitors = entries.filter(e => !e.exit_time);
   const pastVisitors = entries.filter(e => e.exit_time);
+  const pastTotalPages = Math.ceil(pastVisitors.length / PAGE_SIZE);
+  const paginatedPast = pastVisitors.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="space-y-5 animate-in fade-in duration-500">

@@ -63,6 +63,8 @@ const StaffAnnouncements = () => {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [reads, setReads] = useState<ReadInfo[]>([]);
   const [totalResidents, setTotalResidents] = useState(0);
+  const [annPage, setAnnPage] = useState(1);
+  const ANN_PAGE_SIZE = 10;
 
   const loadAnnouncements = async () => {
     const { data } = await supabase

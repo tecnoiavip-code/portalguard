@@ -24,6 +24,9 @@ const ResidentMails = () => {
   const { user } = useAuth();
   const [mails, setMails] = useState<MailItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pendingPage, setPendingPage] = useState(1);
+  const [deliveredPage, setDeliveredPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   useEffect(() => {
     if (!user) return;

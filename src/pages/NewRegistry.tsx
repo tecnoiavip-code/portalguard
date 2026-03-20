@@ -670,7 +670,7 @@ export const NewRegistry = () => {
                     <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                       {searchTerm ? 'Nenhum registro encontrado' : 'Nenhuma pessoa no momento'}
                     </TableCell>
-                  </TableRow> : paginatedEntries.map(entry => <TableRow key={entry.id} className={entry.visitorType === 'service_provider' ? 'bg-warning/5' : 'bg-success/5'}>
+                  </TableRow> : paginatedEntries.map(entry => <TableRow key={entry.id} className={`cursor-pointer ${entry.visitorType === 'service_provider' ? 'bg-warning/5 hover:bg-warning/10' : 'bg-success/5 hover:bg-success/10'}`} onClick={() => setSelectedDetailEntry(entry)}>
                       <TableCell>
                         {entry.photo ? <img src={entry.photo} alt={entry.visitorName} className="w-20 h-20 rounded-full object-cover border-2 border-primary/20" /> : <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-3xl">
                             {entry.visitorType === 'service_provider' ? '🔧' : '👤'}
@@ -708,16 +708,16 @@ export const NewRegistry = () => {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
-                          <Button size="icon" variant="ghost" onClick={() => handleEdit(entry)} className="h-8 w-8" title="Editar">
+                          <Button size="icon" variant="ghost" onClick={(e) => { e.stopPropagation(); handleEdit(entry); }} className="h-8 w-8" title="Editar">
                             <Pencil className="h-4 w-4" />
                           </Button>
-                          <Button size="icon" variant="ghost" onClick={() => handleBlockVisitor(entry)} className="h-8 w-8 text-destructive hover:text-destructive" title="Bloquear">
+                          <Button size="icon" variant="ghost" onClick={(e) => { e.stopPropagation(); handleBlockVisitor(entry); }} className="h-8 w-8 text-destructive hover:text-destructive" title="Bloquear">
                             <Ban className="h-4 w-4" />
                           </Button>
-                          <Button size="icon" variant="ghost" onClick={() => handleDelete(entry.id)} className="h-8 w-8 text-destructive hover:text-destructive" title="Excluir">
+                          <Button size="icon" variant="ghost" onClick={(e) => { e.stopPropagation(); handleDelete(entry.id); }} className="h-8 w-8 text-destructive hover:text-destructive" title="Excluir">
                             <Trash2 className="h-4 w-4" />
                           </Button>
-                          <Button size="sm" onClick={() => handleExit(entry.id)} className="h-8">
+                          <Button size="sm" onClick={(e) => { e.stopPropagation(); handleExit(entry.id); }} className="h-8">
                             <LogOut className="h-4 w-4 mr-1" />
                             Saída
                           </Button>

@@ -277,26 +277,7 @@ const StaffChat = () => {
                       </CardContent>
                     </Card>
                   ))}
-                  {totalPages > 1 && (
-                    <div className="flex items-center justify-center gap-1.5 pt-2">
-                      <Button size="icon" variant="ghost" className="h-8 w-8" disabled={threadPage <= 1} onClick={() => setThreadPage(threadPage - 1)}>
-                        <ChevronLeft className="h-4 w-4" />
-                      </Button>
-                      {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => {
-                        const start = Math.max(1, Math.min(threadPage - 5, totalPages - 9));
-                        const p = start + i;
-                        if (p > totalPages) return null;
-                        return (
-                          <Button key={p} size="sm" variant={threadPage === p ? 'default' : 'ghost'} className={cn("h-8 w-8 text-xs p-0", threadPage === p && "bg-blue-600 hover:bg-blue-700 text-white")} onClick={() => setThreadPage(p)}>
-                            {p}
-                          </Button>
-                        );
-                      })}
-                      <Button size="icon" variant="ghost" className="h-8 w-8" disabled={threadPage >= totalPages} onClick={() => setThreadPage(threadPage + 1)}>
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  )}
+                  <StandardPagination currentPage={threadPage} totalPages={totalPages} onPageChange={setThreadPage} />
                 </>
               );
             })()}

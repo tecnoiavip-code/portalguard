@@ -375,15 +375,7 @@ const StaffAuthorizations = () => {
                   </Card>
                 );
               })}
-              {guestTotalPages > 1 && (
-                <div className="flex items-center justify-between pt-2">
-                  <p className="text-sm text-muted-foreground">Página {safeGuestPage} de {guestTotalPages}</p>
-                  <div className="flex gap-1">
-                    <Button size="sm" variant="outline" disabled={safeGuestPage <= 1} onClick={() => setGuestPage(safeGuestPage - 1)}><ChevronLeft className="h-4 w-4" /></Button>
-                    <Button size="sm" variant="outline" disabled={safeGuestPage >= guestTotalPages} onClick={() => setGuestPage(safeGuestPage + 1)}><ChevronRight className="h-4 w-4" /></Button>
-                  </div>
-                </div>
-              )}
+              <StandardPagination currentPage={safeGuestPage} totalPages={guestTotalPages} onPageChange={setGuestPage} />
             </>
           )}
         </TabsContent>

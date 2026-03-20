@@ -789,13 +789,7 @@ export const Reports = () => {
                   <p className="text-center text-muted-foreground py-8">Nenhum equipamento cadastrado</p>
                 )}
               </div>
-              {totalEquipmentPages > 1 && (
-                <div className="flex justify-center gap-2 mt-4">
-                  <Button variant="outline" size="sm" onClick={() => setEquipmentPage(p => Math.max(1, p - 1))} disabled={equipmentPage === 1}>Anterior</Button>
-                  <span className="flex items-center px-4">Página {equipmentPage} de {totalEquipmentPages}</span>
-                  <Button variant="outline" size="sm" onClick={() => setEquipmentPage(p => Math.min(totalEquipmentPages, p + 1))} disabled={equipmentPage === totalEquipmentPages}>Próxima</Button>
-                </div>
-              )}
+              <StandardPagination currentPage={equipmentPage} totalPages={totalEquipmentPages} onPageChange={setEquipmentPage} className="mt-4" />
             </CardContent>
           </Card>
         </div>

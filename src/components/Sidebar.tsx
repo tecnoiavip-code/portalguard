@@ -72,7 +72,7 @@ export const Sidebar = ({ activeSection, onSectionChange, isOpen }: SidebarProps
       
       <div className="border-t border-border p-4 space-y-2 bg-muted/30">
         <div className="text-xs text-muted-foreground space-y-1">
-          <p className="font-semibold text-foreground">© 2024 PortalGuard</p>
+          <p className="font-semibold text-foreground">© 2024 CondoGuard Pro</p>
           <p>Todos os direitos reservados</p>
           <div className="flex flex-wrap gap-2 pt-2">
             <a href="#" className="hover:text-primary transition-colors">Política de Privacidade</a>

@@ -330,6 +330,87 @@ export const MailLogs = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Detail Dialog */}
+      <Dialog open={!!selectedMail} onOpenChange={(o) => { if (!o) setSelectedMail(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Detalhes da Correspondência</DialogTitle>
+          </DialogHeader>
+          {selectedMail && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                {selectedMail.mail.photoUrl ? (
+                  <img src={selectedMail.mail.photoUrl} alt="" className="w-16 h-16 rounded-xl object-cover border-2 border-border" />
+                ) : (
+                  <div className="p-3 rounded-xl bg-muted">
+                    <Package className="h-7 w-7 text-muted-foreground" />
+                  </div>
+                )}
+                <div>
+                  <p className="font-semibold text-lg">{selectedMail.mail.packageType}</p>
+                  {selectedMail.mail.status === 'delivered'
+                    ? <Badge variant="default" className="bg-primary hover:bg-primary/90">Entregue</Badge>
+                    : <Badge variant="secondary">Pendente</Badge>
+                  }
+                </div>
+              </div>
+
+              <div className="grid gap-3">
+                <div className="flex items-center gap-2 text-sm">
+                  <User className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="text-muted-foreground">Morador:</span>
+                  <span className="font-medium">{selectedMail.resident?.name || 'Desconhecido'} - Apto {selectedMail.resident?.apartment || '-'}</span>
+                </div>
+
+                <div className="flex items-center gap-2 text-sm">
+                  <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="text-muted-foreground">Remetente:</span>
+                  <span className="font-medium">{selectedMail.mail.sender}</span>
+                </div>
+
+                {selectedMail.mail.trackingCode && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Hash className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="text-muted-foreground">Rastreio:</span>
+                    <span className="font-medium font-mono">{selectedMail.mail.trackingCode}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 text-sm">
+                  <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="text-muted-foreground">Recebido:</span>
+                  <span className="font-medium">{format(new Date(selectedMail.mail.receivedAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
+                </div>
+
+                {selectedMail.mail.deliveredAt && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="text-muted-foreground">Entregue:</span>
+                    <span className="font-medium">{format(new Date(selectedMail.mail.deliveredAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
+                  </div>
+                )}
+
+                {selectedMail.mail.withdrawnBy && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <User className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="text-muted-foreground">Retirado por:</span>
+                    <span className="font-medium">{selectedMail.mail.withdrawnBy}</span>
+                  </div>
+                )}
+
+                {selectedMail.mail.notes && (
+                  <div className="flex items-start gap-2 text-sm">
+                    <FileText className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                    <span className="text-muted-foreground">Obs:</span>
+                    <span className="font-medium">{selectedMail.mail.notes}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

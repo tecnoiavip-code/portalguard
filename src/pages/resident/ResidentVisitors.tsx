@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Badge } from '@/components/ui/badge';
-import { Users, Clock, MapPin, ArrowRight } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Users, Clock, ArrowRight, User, FileText, Car, Building, Calendar } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -10,17 +11,27 @@ import { cn } from '@/lib/utils';
 interface VisitorEntry {
   id: string;
   visitor_name: string;
+  visitor_document: string;
   visitor_type: string | null;
   purpose: string | null;
   entry_time: string | null;
   exit_time: string | null;
   company: string | null;
+  vehicle_plate: string | null;
+  vehicle_model: string | null;
+  vehicle_color: string | null;
+  photo_url: string | null;
+  badge_number: string | null;
+  resident_name: string | null;
+  apartment: string;
+  notes: string | null;
 }
 
 const ResidentVisitors = () => {
   const { user } = useAuth();
   const [entries, setEntries] = useState<VisitorEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<VisitorEntry | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -34,11 +45,11 @@ const ResidentVisitors = () => {
 
       const { data } = await supabase
         .from('access_entries')
-        .select('id, visitor_name, visitor_type, purpose, entry_time, exit_time, company')
+        .select('*')
         .eq('apartment', res.apartment)
         .order('entry_time', { ascending: false })
         .limit(50);
-      setEntries(data || []);
+      setEntries((data as any) || []);
       setLoading(false);
     };
     load();
@@ -74,7 +85,7 @@ const ResidentVisitors = () => {
                 <span className="text-sm font-semibold text-foreground">No local agora</span>
               </div>
               {activeVisitors.map((e) => (
-                <VisitorCard key={e.id} entry={e} active />
+                <VisitorCard key={e.id} entry={e} active onClick={() => setSelected(e)} />
               ))}
             </div>
           )}
@@ -85,21 +96,91 @@ const ResidentVisitors = () => {
                 <span className="text-sm font-semibold text-muted-foreground">Anteriores</span>
               )}
               {pastVisitors.map((e) => (
-                <VisitorCard key={e.id} entry={e} />
+                <VisitorCard key={e.id} entry={e} onClick={() => setSelected(e)} />
               ))}
             </div>
           )}
         </>
       )}
+
+      {/* Detail Dialog */}
+      <Dialog open={!!selected} onOpenChange={(o) => { if (!o) setSelected(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Detalhes da Visita</DialogTitle>
+          </DialogHeader>
+          {selected && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                {selected.photo_url ? (
+                  <img src={selected.photo_url} alt="" className="w-14 h-14 rounded-full object-cover border-2 border-border" />
+                ) : (
+                  <div className="p-3 rounded-full bg-muted">
+                    <User className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                )}
+                <div>
+                  <p className="font-semibold text-lg">{selected.visitor_name}</p>
+                  <Badge variant={!selected.exit_time ? 'default' : 'secondary'} className={cn(
+                    "text-xs",
+                    !selected.exit_time && "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/15"
+                  )}>
+                    {selected.visitor_type === 'service_provider' ? 'Prestador' : 'Visitante'}
+                    {!selected.exit_time ? ' • No local' : ''}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="grid gap-3">
+                {selected.visitor_document && (
+                  <DetailRow icon={FileText} label="Documento" value={selected.visitor_document} />
+                )}
+                {selected.badge_number && (
+                  <DetailRow icon={FileText} label="Crachá" value={selected.badge_number} />
+                )}
+                {selected.company && (
+                  <DetailRow icon={Building} label="Empresa" value={selected.company} />
+                )}
+                {selected.purpose && (
+                  <DetailRow icon={FileText} label="Motivo" value={selected.purpose} />
+                )}
+                {(selected.vehicle_plate || selected.vehicle_model) && (
+                  <DetailRow icon={Car} label="Veículo" value={[selected.vehicle_plate, selected.vehicle_model, selected.vehicle_color].filter(Boolean).join(' • ')} />
+                )}
+                {selected.entry_time && (
+                  <DetailRow icon={Calendar} label="Entrada" value={format(new Date(selected.entry_time), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })} />
+                )}
+                {selected.exit_time && (
+                  <DetailRow icon={Calendar} label="Saída" value={format(new Date(selected.exit_time), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })} />
+                )}
+                {selected.notes && (
+                  <DetailRow icon={FileText} label="Observações" value={selected.notes} />
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
 
-const VisitorCard = ({ entry: e, active }: { entry: VisitorEntry; active?: boolean }) => (
-  <div className={cn(
-    "bg-card/80 backdrop-blur-sm border rounded-2xl p-4 transition-all",
-    active ? "border-emerald-500/30 shadow-[0_0_15px_-5px] shadow-emerald-500/20" : "border-border/50"
-  )}>
+const DetailRow = ({ icon: Icon, label, value }: { icon: any; label: string; value: string }) => (
+  <div className="flex items-center gap-2 text-sm">
+    <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
+    <span className="text-muted-foreground">{label}:</span>
+    <span className="font-medium">{value}</span>
+  </div>
+);
+
+const VisitorCard = ({ entry: e, active, onClick }: { entry: VisitorEntry; active?: boolean; onClick: () => void }) => (
+  <div
+    onClick={onClick}
+    className={cn(
+      "bg-card/80 backdrop-blur-sm border rounded-2xl p-4 transition-all cursor-pointer active:scale-[0.98]",
+      active ? "border-emerald-500/30 shadow-[0_0_15px_-5px] shadow-emerald-500/20 hover:shadow-emerald-500/30" : "border-border/50 hover:border-border"
+    )}
+  >
     <div className="flex items-start gap-3">
       <div className={cn(
         "p-2.5 rounded-xl flex-shrink-0",

@@ -52,6 +52,8 @@ const StaffChat = () => {
   const [showNewChatDialog, setShowNewChatDialog] = useState(false);
   const [allResidents, setAllResidents] = useState<ResidentOption[]>([]);
   const [residentSearch, setResidentSearch] = useState('');
+  const [threadPage, setThreadPage] = useState(1);
+  const THREAD_PAGE_SIZE = 10;
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const loadThreads = async () => {

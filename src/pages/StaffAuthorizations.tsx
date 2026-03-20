@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Shield, Check, X, Clock, Users, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Shield, Check, X, Clock, Users, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, User, Car, FileText, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -51,6 +51,7 @@ const StaffAuthorizations = () => {
   const [expandedLists, setExpandedLists] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [guestPage, setGuestPage] = useState(1);
+  const [selectedAuth, setSelectedAuth] = useState<(Authorization & { resident?: ResidentInfo }) | null>(null);
   const PAGE_SIZE = 10;
 
   const loadAuths = async () => {
@@ -246,7 +247,7 @@ const StaffAuthorizations = () => {
           ) : (
             <>
               {paginatedSingles.map((a) => (
-                <Card key={a.id}>
+                <Card key={a.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedAuth(a)}>
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-start gap-3">
@@ -267,29 +268,34 @@ const StaffAuthorizations = () => {
                       <div className="flex items-center gap-2">
                         <Badge variant={statusVariant(a.status)}>{statusLabels[a.status || 'pending']}</Badge>
                         {a.status === 'pending' && (
-                          <Dialog open={reviewId === a.id} onOpenChange={(o) => { if (!o) setReviewId(null); }}>
-                            <DialogTrigger asChild>
-                              <Button size="sm" variant="outline" onClick={() => setReviewId(a.id)}>Revisar</Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader><DialogTitle>Revisar Autorização</DialogTitle></DialogHeader>
-                              <div className="space-y-4">
-                                <p><strong>Visitante:</strong> {a.visitor_name}</p>
-                                <p><strong>Morador:</strong> {a.resident?.name} - Apto {a.resident?.apartment}</p>
-                                <Textarea placeholder="Observações (opcional)" value={staffNotes} onChange={(e) => setStaffNotes(e.target.value)} />
-                                <div className="flex gap-2">
-                                  <Button className="flex-1" onClick={() => handleReview(a.id, 'approved')}><Check className="h-4 w-4 mr-1" /> Aprovar</Button>
-                                  <Button variant="destructive" className="flex-1" onClick={() => handleReview(a.id, 'rejected')}><X className="h-4 w-4 mr-1" /> Rejeitar</Button>
-                                </div>
-                              </div>
-                            </DialogContent>
-                          </Dialog>
+                          <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setReviewId(a.id); }}>Revisar</Button>
                         )}
                       </div>
                     </div>
                   </CardContent>
                 </Card>
               ))}
+
+              {/* Review dialog for pending individual */}
+              {reviewId && singles.find(s => s.id === reviewId) && (() => {
+                const a = singles.find(s => s.id === reviewId)!;
+                return (
+                  <Dialog open={!!reviewId && !!singles.find(s => s.id === reviewId)} onOpenChange={(o) => { if (!o) setReviewId(null); }}>
+                    <DialogContent>
+                      <DialogHeader><DialogTitle>Revisar Autorização</DialogTitle></DialogHeader>
+                      <div className="space-y-4">
+                        <p><strong>Visitante:</strong> {a.visitor_name}</p>
+                        <p><strong>Morador:</strong> {a.resident?.name} - Apto {a.resident?.apartment}</p>
+                        <Textarea placeholder="Observações (opcional)" value={staffNotes} onChange={(e) => setStaffNotes(e.target.value)} />
+                        <div className="flex gap-2">
+                          <Button className="flex-1" onClick={() => handleReview(a.id, 'approved')}><Check className="h-4 w-4 mr-1" /> Aprovar</Button>
+                          <Button variant="destructive" className="flex-1" onClick={() => handleReview(a.id, 'rejected')}><X className="h-4 w-4 mr-1" /> Rejeitar</Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                );
+              })()}
               {singlesTotalPages > 1 && (
                 <div className="flex items-center justify-between pt-2">
                   <p className="text-sm text-muted-foreground">Página {safePage} de {singlesTotalPages}</p>
@@ -355,9 +361,9 @@ const StaffAuthorizations = () => {
                       {isExpanded && (
                         <div className="border-t divide-y">
                           {list.items.map((a) => (
-                            <div key={a.id} className="px-4 py-3 flex items-center justify-between">
+                            <div key={a.id} className="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => setSelectedAuth(a)}>
                               <div className="flex items-center gap-3">
-                                <div className={`w-2 h-2 rounded-full ${a.status === 'approved' ? 'bg-primary' : a.status === 'rejected' ? 'bg-destructive' : 'bg-amber-500'}`} />
+                            <div className={`w-2 h-2 rounded-full shrink-0 ${a.status === 'approved' ? 'bg-primary' : a.status === 'rejected' ? 'bg-destructive' : 'bg-amber-500'}`} />
                                 <div>
                                   <p className="text-sm font-medium">{a.visitor_name}</p>
                                   {a.visitor_document && <p className="text-xs text-muted-foreground">Doc: {a.visitor_document}</p>}
@@ -366,23 +372,7 @@ const StaffAuthorizations = () => {
                               <div className="flex items-center gap-2">
                                 <Badge variant={statusVariant(a.status)} className="text-xs">{statusLabels[a.status || 'pending']}</Badge>
                                 {a.status === 'pending' && (
-                                  <Dialog open={reviewId === a.id} onOpenChange={(o) => { if (!o) setReviewId(null); }}>
-                                    <DialogTrigger asChild>
-                                      <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setReviewId(a.id); }}>Revisar</Button>
-                                    </DialogTrigger>
-                                    <DialogContent>
-                                      <DialogHeader><DialogTitle>Revisar Autorização</DialogTitle></DialogHeader>
-                                      <div className="space-y-4">
-                                        <p><strong>Visitante:</strong> {a.visitor_name}</p>
-                                        <p><strong>Morador:</strong> {a.resident?.name} - Apto {a.resident?.apartment}</p>
-                                        <Textarea placeholder="Observações (opcional)" value={staffNotes} onChange={(e) => setStaffNotes(e.target.value)} />
-                                        <div className="flex gap-2">
-                                          <Button className="flex-1" onClick={() => handleReview(a.id, 'approved')}><Check className="h-4 w-4 mr-1" /> Aprovar</Button>
-                                          <Button variant="destructive" className="flex-1" onClick={() => handleReview(a.id, 'rejected')}><X className="h-4 w-4 mr-1" /> Rejeitar</Button>
-                                        </div>
-                                      </div>
-                                    </DialogContent>
-                                  </Dialog>
+                                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setReviewId(a.id); }}>Revisar</Button>
                                 )}
                               </div>
                             </div>
@@ -406,6 +396,104 @@ const StaffAuthorizations = () => {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Review dialog for guest list items */}
+      {reviewId && auths.find(a => a.id === reviewId) && !singles.find(s => s.id === reviewId) && (() => {
+        const a = auths.find(a => a.id === reviewId)!;
+        return (
+          <Dialog open={true} onOpenChange={(o) => { if (!o) setReviewId(null); }}>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Revisar Autorização</DialogTitle></DialogHeader>
+              <div className="space-y-4">
+                <p><strong>Visitante:</strong> {a.visitor_name}</p>
+                <p><strong>Morador:</strong> {a.resident?.name} - Apto {a.resident?.apartment}</p>
+                <Textarea placeholder="Observações (opcional)" value={staffNotes} onChange={(e) => setStaffNotes(e.target.value)} />
+                <div className="flex gap-2">
+                  <Button className="flex-1" onClick={() => handleReview(a.id, 'approved')}><Check className="h-4 w-4 mr-1" /> Aprovar</Button>
+                  <Button variant="destructive" className="flex-1" onClick={() => handleReview(a.id, 'rejected')}><X className="h-4 w-4 mr-1" /> Rejeitar</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
+
+      {/* Detail dialog for any authorization */}
+      <Dialog open={!!selectedAuth} onOpenChange={(o) => { if (!o) setSelectedAuth(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Detalhes da Autorização</DialogTitle>
+          </DialogHeader>
+          {selectedAuth && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-full bg-muted">
+                  <User className="h-6 w-6 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="font-semibold text-lg">{selectedAuth.visitor_name}</p>
+                  <Badge variant={statusVariant(selectedAuth.status)}>{statusLabels[selectedAuth.status || 'pending']}</Badge>
+                </div>
+              </div>
+
+              <div className="grid gap-3">
+                {selectedAuth.visitor_document && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">Documento:</span>
+                    <span className="font-medium">{selectedAuth.visitor_document}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 text-sm">
+                  <User className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">Morador:</span>
+                  <span className="font-medium">{selectedAuth.resident?.name} - Apto {selectedAuth.resident?.apartment}</span>
+                </div>
+
+                <div className="flex items-center gap-2 text-sm">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">Data:</span>
+                  <span className="font-medium">
+                    {format(new Date(selectedAuth.authorized_date), 'dd/MM/yyyy', { locale: ptBR })}
+                    {selectedAuth.authorized_until && ` até ${format(new Date(selectedAuth.authorized_until), 'dd/MM/yyyy', { locale: ptBR })}`}
+                  </span>
+                </div>
+
+                {selectedAuth.purpose && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">Motivo:</span>
+                    <span className="font-medium">{selectedAuth.purpose}</span>
+                  </div>
+                )}
+
+                {selectedAuth.vehicle_plate && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Car className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">Placa:</span>
+                    <span className="font-medium">{selectedAuth.vehicle_plate}</span>
+                  </div>
+                )}
+
+                {selectedAuth.staff_notes && (
+                  <div className="flex items-start gap-2 text-sm">
+                    <FileText className="h-4 w-4 text-muted-foreground mt-0.5" />
+                    <span className="text-muted-foreground">Obs. portaria:</span>
+                    <span className="font-medium">{selectedAuth.staff_notes}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 text-sm">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">Criada em:</span>
+                  <span className="font-medium">{format(new Date(selectedAuth.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

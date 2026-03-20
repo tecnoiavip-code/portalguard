@@ -99,9 +99,10 @@ const ResidentVisitors = () => {
               {activeVisitors.length > 0 && (
                 <span className="text-sm font-semibold text-muted-foreground">Anteriores</span>
               )}
-              {pastVisitors.map((e) => (
+              {paginatedPast.map((e) => (
                 <VisitorCard key={e.id} entry={e} onClick={() => setSelected(e)} />
               ))}
+              <ResidentPagination currentPage={page} totalPages={pastTotalPages} onPageChange={setPage} />
             </div>
           )}
         </>

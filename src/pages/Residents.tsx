@@ -15,14 +15,7 @@ import { useResidents } from '@/hooks/useResidents';
 import { useDevices } from '@/hooks/useDevices';
 import { toast } from 'sonner';
 import { capturePhotoFromDevice, syncTagsFromDevice, syncPhotosFromDevices, syncBiometricToAllDevices } from '@/lib/device-capture';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
+import StandardPagination from '@/components/StandardPagination';
 import {
   Table,
   TableBody,

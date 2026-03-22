@@ -475,7 +475,60 @@ Deno.serve(async (req) => {
         );
       }
 
-      // No pending commands - return empty acknowledgement
+      // No pending commands — check if we need to auto-refresh push config
+      // to prevent devices from dropping connection after ~90 minutes
+      if (deviceId) {
+        const now = Date.now();
+        const lastCheck = lastConfigRefreshCheckMap.get(deviceId) || 0;
+        if (now - lastCheck > CONFIG_REFRESH_CHECK_INTERVAL_MS) {
+          lastConfigRefreshCheckMap.set(deviceId, now);
+          // Check in background; if needed, queue a set_configuration for the NEXT poll
+          runBackground('autoRefreshConfig', (async () => {
+            const cutoff = new Date(now - CONFIG_REFRESH_INTERVAL_MS).toISOString();
+            const { data: lastCfg } = await supabaseClient
+              .from('push_command_queue')
+              .select('created_at')
+              .eq('device_id', deviceId)
+              .eq('status', 'done')
+              .contains('command', { endpoint: 'set_configuration' })
+              .gte('created_at', cutoff)
+              .limit(1)
+              .maybeSingle();
+
+            if (!lastCfg) {
+              // Also check pending/executing to avoid duplicates
+              const { data: pendingCfg } = await supabaseClient
+                .from('push_command_queue')
+                .select('id')
+                .eq('device_id', deviceId)
+                .in('status', ['pending', 'executing'])
+                .contains('command', { endpoint: 'set_configuration' })
+                .limit(1)
+                .maybeSingle();
+
+              if (!pendingCfg) {
+                const monitorConfig = getMonitorConfig();
+                const pushConfig = getPushServerConfig();
+                const generalConfig = getGeneralConfig();
+                const fullConfig = { ...monitorConfig, ...pushConfig, ...generalConfig };
+
+                await supabaseClient.from('push_command_queue').insert({
+                  device_id: deviceId,
+                  command: {
+                    verb: 'POST',
+                    endpoint: 'set_configuration',
+                    body: fullConfig,
+                    contentType: 'application/json',
+                  },
+                  status: 'pending',
+                });
+                console.log('Auto-queued config refresh for device:', deviceId);
+              }
+            }
+          })());
+        }
+      }
+
       return new Response('', { status: 200, headers: corsHeaders });
     }
 

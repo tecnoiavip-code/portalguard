@@ -44,6 +44,11 @@ const MAX_REQUESTS_PER_WINDOW = 200;
 
 // Throttle status writes to keep push responses fast and stable
 const lastDeviceStatusWriteMap = new Map<string, number>();
+
+// Throttle config refresh checks (check DB at most every 5 min per device)
+const lastConfigRefreshCheckMap = new Map<string, number>();
+const CONFIG_REFRESH_CHECK_INTERVAL_MS = 300000; // 5 minutes
+const CONFIG_REFRESH_INTERVAL_MS = 3600000; // 60 minutes — re-send config before 90min dropout
 const DEVICE_STATUS_WRITE_INTERVAL_MS = 10000;
 
 const checkRateLimit = (deviceId: string): boolean => {

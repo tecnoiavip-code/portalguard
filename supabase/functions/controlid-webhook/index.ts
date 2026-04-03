@@ -911,7 +911,7 @@ Deno.serve(async (req) => {
                   command: {
                     verb: 'POST',
                     endpoint: 'user_get_image',
-                    body: { user_id: userId },
+                    body: { user_id: userId, technology: 'visible_light' },
                     contentType: 'application/json',
                     meta: { log_id: logEntryId, user_id: userId },
                   },

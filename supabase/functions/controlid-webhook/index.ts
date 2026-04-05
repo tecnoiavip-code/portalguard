@@ -211,16 +211,12 @@ const buildIdentificationResponse = (payload: any) => {
 
   const resolvedPortal = Number.isFinite(portalId) && portalId > 0 ? portalId : 1;
 
-  // Control iD expects the response at root level (not nested in "result")
-  // for online mode identification callbacks
+  // Control iD firmware expects ONLY these 3 fields for online identification response.
+  // Extra fields (actions, message, user_name, user_image) cause "server communication error".
   return {
     event: granted ? 7 : 6,
     user_id: Number.isFinite(userId) ? userId : 0,
-    user_name: userName || 'Desconhecido',
-    user_image: payload?.user_has_image === 1 || payload?.user_has_image === '1',
     portal_id: resolvedPortal,
-    message: granted ? 'Acesso autorizado' : 'Acesso negado',
-    actions: granted ? [{ action: 'door', parameters: `door=${resolvedPortal}` }] : []
   };
 };
 

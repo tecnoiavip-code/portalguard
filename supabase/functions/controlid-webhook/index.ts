@@ -143,6 +143,20 @@ const detectEventType = (url: URL, payload: any): string => {
     return 'device_is_alive';
   }
 
+  // ** CRITICAL: Detect identification events sent directly to the base webhook URL
+  // (monitor/online mode). The device POSTs identification data to the monitor path.
+  // Must be checked BEFORE push_request fallback so the door-open response is returned.
+  if (payload && typeof payload === 'object') {
+    const hasEvent = payload.event !== undefined;
+    const hasUserId = payload.user_id !== undefined;
+    const hasUserName = payload.user_name !== undefined || payload.name !== undefined;
+    const hasPortal = payload.portal_id !== undefined;
+    // Identification payloads always have event + (user_id or user_name)
+    if (hasEvent && (hasUserId || hasUserName || hasPortal)) {
+      return 'identification_event';
+    }
+  }
+
   // Generic push polling route (supports /push, /push/push and base /controlid-webhook)
   if (path.endsWith('/push') || (path.includes('/push') && !path.includes('.fcgi'))) {
     return 'push_request';

@@ -199,7 +199,7 @@ const extractDeviceId = (url: URL, payload: any, req: Request): string => {
   return '';
 };
 
-const buildIdentificationResponse = (payload: any) => {
+const buildIdentificationResponse = (payload: any, url: URL) => {
   const userId = Number.parseInt(String(payload?.user_id ?? '0'), 10);
   const portalId = Number.parseInt(String(payload?.portal_id ?? '1'), 10);
   const incomingEvent = Number.parseInt(String(payload?.event ?? '0'), 10);
@@ -210,14 +210,22 @@ const buildIdentificationResponse = (payload: any) => {
   const granted = isIdentified && !isDeniedByDevice;
 
   const resolvedPortal = Number.isFinite(portalId) && portalId > 0 ? portalId : 1;
-
-  // Control iD firmware expects ONLY these 3 fields for online identification response.
-  // Extra fields (actions, message, user_name, user_image) cause "server communication error".
-  return {
+  const result = {
     event: granted ? 7 : 6,
     user_id: Number.isFinite(userId) ? userId : 0,
     portal_id: resolvedPortal,
   };
+
+  const path = url.pathname.toLowerCase();
+  const expectsWrappedResult =
+    path.includes('new_user_identified.fcgi') ||
+    path.includes('identification_event.fcgi') ||
+    path.includes('new_user_id_and_password.fcgi') ||
+    path.includes('new_uhf_tag.fcgi');
+
+  // Official .fcgi online-identification callbacks expect { result: { ... } }.
+  // Direct monitor/base webhook posts keep the flat response for compatibility.
+  return expectsWrappedResult ? { result } : result;
 };
 
 const tryParseJsonString = (value: unknown) => {
@@ -813,7 +821,7 @@ Deno.serve(async (req) => {
     // Critical: the device has a short timeout (~15s) and will NOT open the door if
     // the response is delayed by database operations.
     if (eventType === 'identification_event') {
-      const identResponse = buildIdentificationResponse(payload);
+      const identResponse = buildIdentificationResponse(payload, url);
       console.log('Identification response (immediate):', JSON.stringify(identResponse).substring(0, 200));
 
       // ALL database work runs in background AFTER response is sent

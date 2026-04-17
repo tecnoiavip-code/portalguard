@@ -44,6 +44,7 @@ const MAX_REQUESTS_PER_WINDOW = 200;
 
 // Throttle status writes to keep push responses fast and stable
 const lastDeviceStatusWriteMap = new Map<string, number>();
+const deviceTypeCache = new Map<string, string | null>();
 
 // Throttle config refresh checks (check DB at most every 5 min per device)
 const lastConfigRefreshCheckMap = new Map<string, number>();
@@ -199,21 +200,27 @@ const extractDeviceId = (url: URL, payload: any, req: Request): string => {
   return '';
 };
 
-const buildIdentificationActions = (payload: any) => {
+const buildIdentificationActions = (payload: any, deviceType?: string | null) => {
   const portalId = Number.parseInt(String(payload?.portal_id ?? '1'), 10);
   const resolvedPortal = Number.isFinite(portalId) && portalId > 0 ? portalId : 1;
   const identifierId = String(payload?.identifier_id ?? '').toLowerCase();
-  const userName = sanitizeString(payload?.user_name || payload?.name || '', 200).toLowerCase();
-  const isFaceLike = identifierId.includes('face') || userName.length > 0;
+  const hasFaceSignal = identifierId.includes('face') || payload?.face_mask !== undefined || payload?.confidence !== undefined;
 
-  if (isFaceLike) {
+  if (deviceType === 'vehicle_tag') {
+    return [
+      { action: 'door', parameters: `door=${resolvedPortal}` },
+      { action: 'sec_box', parameters: 'id=65793, reason=1' },
+    ];
+  }
+
+  if (deviceType === 'facial_recognition' || hasFaceSignal) {
     return [{ action: 'sec_box', parameters: 'id=65793, reason=1' }];
   }
 
   return [{ action: 'door', parameters: `door=${resolvedPortal}` }];
 };
 
-const buildIdentificationResponse = (payload: any, url: URL) => {
+const buildIdentificationResponse = (payload: any, url: URL, deviceType?: string | null) => {
   const userId = Number.parseInt(String(payload?.user_id ?? '0'), 10);
   const portalId = Number.parseInt(String(payload?.portal_id ?? '1'), 10);
   const incomingEvent = Number.parseInt(String(payload?.event ?? '0'), 10);
@@ -234,7 +241,7 @@ const buildIdentificationResponse = (payload: any, url: URL) => {
     portal_id: resolvedPortal,
     duress: Number.isFinite(duress) ? duress : 0,
     message: granted ? 'ACESSO LIBERADO' : 'ACESSO NEGADO',
-    ...(granted ? { actions: buildIdentificationActions(payload) } : {}),
+    ...(granted ? { actions: buildIdentificationActions(payload, deviceType) } : {}),
   };
 
   const path = url.pathname.toLowerCase();
@@ -246,6 +253,29 @@ const buildIdentificationResponse = (payload: any, url: URL) => {
     path.includes('new_qrcode.fcgi');
 
   return expectsWrappedResult ? { result } : { result };
+};
+
+const resolveDeviceType = async (supabaseClient: any, deviceId: string): Promise<string | null> => {
+  if (!deviceId) return null;
+  if (deviceTypeCache.has(deviceId)) {
+    return deviceTypeCache.get(deviceId) ?? null;
+  }
+
+  try {
+    const { data } = await supabaseClient
+      .from('devices')
+      .select('type')
+      .or(`serial_number.eq.${deviceId},ip_address.eq.${deviceId}`)
+      .limit(1)
+      .maybeSingle();
+
+    const resolvedType = typeof data?.type === 'string' ? data.type : null;
+    deviceTypeCache.set(deviceId, resolvedType);
+    return resolvedType;
+  } catch (error) {
+    console.error('Error resolving device type for identification response:', error);
+    return null;
+  }
 };
 
 const tryParseJsonString = (value: unknown) => {
@@ -841,7 +871,8 @@ Deno.serve(async (req) => {
     // Critical: the device has a short timeout (~15s) and will NOT open the door if
     // the response is delayed by database operations.
     if (eventType === 'identification_event') {
-      const identResponse = buildIdentificationResponse(payload, url);
+      const deviceType = await resolveDeviceType(supabaseClient, effectiveDeviceId);
+      const identResponse = buildIdentificationResponse(payload, url, deviceType);
       console.log('Identification response (immediate):', JSON.stringify(identResponse).substring(0, 200));
 
       // ALL database work runs in background AFTER response is sent

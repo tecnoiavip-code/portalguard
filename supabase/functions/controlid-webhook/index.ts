@@ -199,11 +199,27 @@ const extractDeviceId = (url: URL, payload: any, req: Request): string => {
   return '';
 };
 
+const buildIdentificationActions = (payload: any) => {
+  const portalId = Number.parseInt(String(payload?.portal_id ?? '1'), 10);
+  const resolvedPortal = Number.isFinite(portalId) && portalId > 0 ? portalId : 1;
+  const identifierId = String(payload?.identifier_id ?? '').toLowerCase();
+  const userName = sanitizeString(payload?.user_name || payload?.name || '', 200).toLowerCase();
+  const isFaceLike = identifierId.includes('face') || userName.length > 0;
+
+  if (isFaceLike) {
+    return [{ action: 'sec_box', parameters: 'id=65793, reason=1' }];
+  }
+
+  return [{ action: 'door', parameters: `door=${resolvedPortal}` }];
+};
+
 const buildIdentificationResponse = (payload: any, url: URL) => {
   const userId = Number.parseInt(String(payload?.user_id ?? '0'), 10);
   const portalId = Number.parseInt(String(payload?.portal_id ?? '1'), 10);
   const incomingEvent = Number.parseInt(String(payload?.event ?? '0'), 10);
   const userName = sanitizeString(payload?.user_name || payload?.name || '', 200);
+  const userHasImage = payload?.user_has_image === 1 || payload?.user_has_image === '1' || payload?.user_has_image === true || payload?.user_has_image === 'true';
+  const duress = Number.parseInt(String(payload?.duress ?? '0'), 10);
 
   const isIdentified = (Number.isFinite(userId) && userId > 0) || userName.length > 0;
   const isDeniedByDevice = incomingEvent === 3 || incomingEvent === 6;
@@ -213,7 +229,12 @@ const buildIdentificationResponse = (payload: any, url: URL) => {
   const result = {
     event: granted ? 7 : 6,
     user_id: Number.isFinite(userId) ? userId : 0,
+    user_name: userName,
+    user_image: userHasImage,
     portal_id: resolvedPortal,
+    duress: Number.isFinite(duress) ? duress : 0,
+    message: granted ? 'ACESSO LIBERADO' : 'ACESSO NEGADO',
+    ...(granted ? { actions: buildIdentificationActions(payload) } : {}),
   };
 
   const path = url.pathname.toLowerCase();
@@ -221,11 +242,10 @@ const buildIdentificationResponse = (payload: any, url: URL) => {
     path.includes('new_user_identified.fcgi') ||
     path.includes('identification_event.fcgi') ||
     path.includes('new_user_id_and_password.fcgi') ||
-    path.includes('new_uhf_tag.fcgi');
+    path.includes('new_uhf_tag.fcgi') ||
+    path.includes('new_qrcode.fcgi');
 
-  // Official .fcgi online-identification callbacks expect { result: { ... } }.
-  // Direct monitor/base webhook posts keep the flat response for compatibility.
-  return expectsWrappedResult ? { result } : result;
+  return expectsWrappedResult ? { result } : { result };
 };
 
 const tryParseJsonString = (value: unknown) => {

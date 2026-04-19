@@ -225,34 +225,32 @@ const buildIdentificationResponse = (payload: any, url: URL, deviceType?: string
   const portalId = Number.parseInt(String(payload?.portal_id ?? '1'), 10);
   const incomingEvent = Number.parseInt(String(payload?.event ?? '0'), 10);
   const userName = sanitizeString(payload?.user_name || payload?.name || '', 200);
-  const userHasImage = payload?.user_has_image === 1 || payload?.user_has_image === '1' || payload?.user_has_image === true || payload?.user_has_image === 'true';
-  const duress = Number.parseInt(String(payload?.duress ?? '0'), 10);
 
   const isIdentified = (Number.isFinite(userId) && userId > 0) || userName.length > 0;
+  // Event 3/6 = device-side denial (unknown card, etc.). Don't grant.
   const isDeniedByDevice = incomingEvent === 3 || incomingEvent === 6;
   const granted = isIdentified && !isDeniedByDevice;
 
   const resolvedPortal = Number.isFinite(portalId) && portalId > 0 ? portalId : 1;
-  const result = {
+
+  // MINIMAL Control iD Push API response. Extra fields like message/user_image/duress
+  // can break the firmware JSON parser and trigger "server communication error",
+  // which makes the device repeat the same event without opening the gate.
+  // Spec: { "result": { "event": 7|6, "user_id": <int>, "portal_id": <int>, "actions": [...] } }
+  const result: Record<string, unknown> = {
     event: granted ? 7 : 6,
     user_id: Number.isFinite(userId) ? userId : 0,
-    user_name: userName,
-    user_image: userHasImage,
     portal_id: resolvedPortal,
-    duress: Number.isFinite(duress) ? duress : 0,
-    message: granted ? 'ACESSO LIBERADO' : 'ACESSO NEGADO',
-    ...(granted ? { actions: buildIdentificationActions(payload, deviceType) } : {}),
   };
 
-  const path = url.pathname.toLowerCase();
-  const expectsWrappedResult =
-    path.includes('new_user_identified.fcgi') ||
-    path.includes('identification_event.fcgi') ||
-    path.includes('new_user_id_and_password.fcgi') ||
-    path.includes('new_uhf_tag.fcgi') ||
-    path.includes('new_qrcode.fcgi');
+  if (granted) {
+    result.actions = buildIdentificationActions(payload, deviceType);
+  }
 
-  return expectsWrappedResult ? { result } : { result };
+  // ALWAYS wrap in { result }. The Control iD Push protocol requires it on both
+  // .fcgi callbacks and direct posts to the monitor URL. A flat response causes
+  // the device to display "server communication error".
+  return { result };
 };
 
 const resolveDeviceType = async (supabaseClient: any, deviceId: string): Promise<string | null> => {

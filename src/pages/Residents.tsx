@@ -14,7 +14,7 @@ import { Resident, Device } from '@/types';
 import { useResidents } from '@/hooks/useResidents';
 import { useDevices } from '@/hooks/useDevices';
 import { toast } from 'sonner';
-import { capturePhotoFromDevice, syncTagsFromDevice, syncPhotosFromDevices, syncBiometricToAllDevices } from '@/lib/device-capture';
+import { capturePhotoFromDevice, syncTagsFromDevice, syncPhotosFromDevices, syncBiometricToAllDevices, syncTagToAllDevices, removeUserFromAllDevices } from '@/lib/device-capture';
 import StandardPagination from '@/components/StandardPagination';
 import {
   Table,
@@ -103,29 +103,32 @@ export const Residents = () => {
 
     const success = await saveResident(residentData);
     if (success) {
-      // Auto-sync biometrics to all facial devices if resident has a photo
+      const personInfo = {
+        name: formData.name,
+        apartment: formData.apartment,
+        document: formData.cpf,
+        identifier: residentData.id,
+        registration: formData.cpf || undefined,
+      };
+
+      // Auto-sync biometrics (face) to all facial devices if resident has a photo
       if (formData.photo && facialDevices.length > 0) {
-        const personInfo = {
-          name: formData.name,
-          apartment: formData.apartment,
-          document: formData.cpf,
-          identifier: residentData.id,
-          registration: formData.cpf || undefined,
-        };
-        // Run in background - don't block the form
         syncBiometricToAllDevices(facialDevices, personInfo, formData.photo, (msg) => {
           console.log('[BiometricSync]', msg);
         }).then(result => {
-          if (result.synced > 0) {
-            toast.success(`Biometria sincronizada em ${result.synced} dispositivo(s)`);
-          }
-          if (result.errors > 0) {
-            toast.warning(`Falha em ${result.errors} dispositivo(s): ${result.details.filter(d => d.includes('✗')).join(', ')}`);
-          }
-        }).catch(err => {
-          console.error('Biometric sync error:', err);
-        });
+          if (result.synced > 0) toast.success(`Biometria sincronizada em ${result.synced} dispositivo(s)`);
+          if (result.errors > 0) toast.warning(`Biometria: falha em ${result.errors} dispositivo(s)`);
+        }).catch(err => console.error('Biometric sync error:', err));
       }
+
+      // Auto-sync vehicle TAG to all devices
+      if (formData.vehicleTag && devices.length > 0) {
+        syncTagToAllDevices(devices, personInfo, formData.vehicleTag).then(result => {
+          if (result.synced > 0) toast.success(`TAG veicular sincronizada em ${result.synced} dispositivo(s)`);
+          if (result.errors > 0) toast.warning(`TAG: falha em ${result.errors} dispositivo(s)`);
+        }).catch(err => console.error('TAG sync error:', err));
+      }
+
       resetForm();
     }
   };
@@ -286,8 +289,15 @@ export const Residents = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza? Isso também removerá correspondências associadas.')) return;
-    await deleteResident(id);
+    if (!confirm('Tem certeza? Isso também removerá correspondências e o cadastro nos equipamentos.')) return;
+    const ok = await deleteResident(id);
+    if (ok && devices.length > 0) {
+      // Remove user from all hardware devices in background
+      removeUserFromAllDevices(devices, id).then(result => {
+        if (result.removed > 0) toast.success(`Removido de ${result.removed} dispositivo(s)`);
+        if (result.errors > 0) toast.warning(`Falha em ${result.errors} dispositivo(s)`);
+      }).catch(err => console.error('Device removal error:', err));
+    }
   };
 
   const exportResidentsToPDF = () => {

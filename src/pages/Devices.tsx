@@ -11,18 +11,22 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Wifi, WifiOff, Camera, Tag, CreditCard, Pencil, Trash2, Plus, Settings2, Loader2, Network, Search } from 'lucide-react';
+import { Wifi, WifiOff, Camera, Tag, CreditCard, Pencil, Trash2, Plus, Settings2, Loader2, Network, Search, Download } from 'lucide-react';
 import { Device } from '@/types';
 import { useDevices } from '@/hooks/useDevices';
+import { useResidents } from '@/hooks/useResidents';
+import { reconcileFromDevices } from '@/lib/device-capture';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 
 export const Devices = () => {
   const { devices, loading, saveDevice, deleteDevice, refresh } = useDevices();
+  const { residents, refresh: refreshResidents } = useResidents();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string>('');
   const [pushingConfig, setPushingConfig] = useState<string | null>(null);
   const [pushingAllConfig, setPushingAllConfig] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
   const [localConfigLoading, setLocalConfigLoading] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
@@ -971,8 +975,29 @@ async function run() {
             <Search className="h-4 w-4 mr-2" />
             Descobrir Seriais
           </Button>
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
+            onClick={async () => {
+              if (!confirm('Reconciliar baixa faces e TAGs do hardware para moradores já cadastrados (não cria novos). Continuar?')) return;
+              setReconciling(true);
+              try {
+                const r = await reconcileFromDevices(devices, residents as any, (msg) => console.log('[Reconcile]', msg));
+                toast.success(`Reconciliação concluída: ${r.photosAdded} foto(s), ${r.tagsAdded} TAG(s) adicionadas`);
+                if (r.errors > 0) toast.warning(`${r.errors} erro(s) durante a reconciliação`);
+                await refreshResidents();
+              } catch (e: any) {
+                toast.error(e.message || 'Falha na reconciliação');
+              } finally {
+                setReconciling(false);
+              }
+            }}
+            disabled={reconciling}
+          >
+            {reconciling ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+            Reconciliar do Hardware
+          </Button>
+          <Button
+            variant="outline"
             onClick={handlePushConfigAll}
             disabled={pushingAllConfig}
           >

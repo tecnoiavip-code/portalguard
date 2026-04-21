@@ -22,13 +22,13 @@ export const useResidents = () => {
   }, []);
 
   const saveResident = async (resident: Resident) => {
-    const success = await supabaseStorage.saveResident(resident);
-    if (success) {
+    const savedId = await supabaseStorage.saveResident(resident);
+    if (savedId) {
       await loadResidents();
-      return true;
+      return savedId;
     }
     toast.error('Erro ao salvar morador');
-    return false;
+    return null;
   };
 
   const deleteResident = async (id: string) => {

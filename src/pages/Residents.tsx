@@ -101,13 +101,13 @@ export const Residents = () => {
         : new Date().toISOString(),
     };
 
-    const success = await saveResident(residentData);
-    if (success) {
+    const savedResidentId = await saveResident(residentData);
+    if (savedResidentId) {
       const personInfo = {
         name: formData.name,
         apartment: formData.apartment,
         document: formData.cpf,
-        identifier: residentData.id,
+        identifier: savedResidentId,
         registration: formData.cpf || undefined,
       };
 

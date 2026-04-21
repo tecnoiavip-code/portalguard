@@ -200,14 +200,21 @@ const extractDeviceId = (url: URL, payload: any, req: Request): string => {
   return '';
 };
 
-const buildIdentificationActions = (_payload: any, _deviceType?: string | null) => {
-  // Per Control iD spec: iDFlex / iDAccess Pro / iDAccess Nano / iDFace (V6 line)
-  // require ONLY the `sec_box` action with reason=1 (Authorized).
-  // Sending an extra `door` action together causes the iDAccess Pro UHF reader
-  // to treat the response as malformed and re-send the identification event,
-  // showing "server communication error" on the device display.
-  // Both gate (UHF) and facial readers in this project are V6 line, so always
-  // return the single sec_box action.
+const buildIdentificationActions = (payload: any, deviceType?: string | null) => {
+  const portalId = Number.parseInt(String(payload?.portal_id ?? '1'), 10);
+  const resolvedPortal = Number.isFinite(portalId) && portalId > 0 ? portalId : 1;
+
+  // V6 readers (iDFlex / iDAccess Pro / Nano / iDFace) typically expect sec_box.
+  // For the dedicated vehicle TAG reader we also send the explicit portal open action
+  // so the gate receives a direct open command in firmwares that don't trigger it from
+  // sec_box alone during online authorization.
+  if (deviceType === 'vehicle_tag') {
+    return [
+      { action: 'sec_box', parameters: 'id=65793, reason=1' },
+      { action: 'door', parameters: `door=${resolvedPortal}` },
+    ];
+  }
+
   return [{ action: 'sec_box', parameters: 'id=65793, reason=1' }];
 };
 
@@ -229,6 +236,8 @@ const buildIdentificationResponse = (payload: any, url: URL, deviceType?: string
   const result: Record<string, unknown> = {
     event: granted ? 7 : 6,
     user_id: Number.isFinite(userId) ? userId : 0,
+    user_name: userName,
+    user_image: payload?.user_has_image === 1 || payload?.user_has_image === '1' || payload?.user_has_image === true || payload?.user_has_image === 'true',
     portal_id: resolvedPortal,
   };
 

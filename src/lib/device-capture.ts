@@ -94,16 +94,22 @@ async function queueBinaryCommandAndWait(
 ): Promise<any> {
   if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
 
+  const endpointWithQuery = (() => {
+    const params = new URLSearchParams();
+    Object.entries(queryParams).forEach(([key, value]) => params.set(key, String(value)));
+    const qs = params.toString();
+    return qs ? `${endpoint}?${qs}` : endpoint;
+  })();
+
   const { data: inserted, error: insertErr } = await supabase
     .from('push_command_queue')
     .insert({
       device_id: deviceSerial,
       command: {
         verb: 'POST',
-        endpoint,
+        endpoint: endpointWithQuery,
         body: binaryBase64,
         contentType: 'application/octet-stream',
-        queryParams,
       },
       status: 'pending',
     } as any)

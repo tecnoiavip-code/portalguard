@@ -224,10 +224,8 @@ const buildIdentificationResponse = (payload: any, url: URL, deviceType?: string
 
   const resolvedPortal = Number.isFinite(portalId) && portalId > 0 ? portalId : 1;
 
-  // MINIMAL Control iD Push API response. Extra fields like message/user_image/duress
-  // can break the firmware JSON parser and trigger "server communication error",
-  // which makes the device repeat the same event without opening the gate.
-  // Spec: { "result": { "event": 7|6, "user_id": <int>, "portal_id": <int>, "actions": [...] } }
+  // MINIMAL Control iD response. Extra fields like message/user_image/duress can
+  // break the firmware JSON parser and trigger "server communication error".
   const result: Record<string, unknown> = {
     event: granted ? 7 : 6,
     user_id: Number.isFinite(userId) ? userId : 0,
@@ -238,10 +236,14 @@ const buildIdentificationResponse = (payload: any, url: URL, deviceType?: string
     result.actions = buildIdentificationActions(payload, deviceType);
   }
 
-  // ALWAYS wrap in { result }. The Control iD Push protocol requires it on both
-  // .fcgi callbacks and direct posts to the monitor URL. A flat response causes
-  // the device to display "server communication error".
-  return { result };
+  // Control iD expects DIFFERENT response shapes depending on the callback path:
+  // - official .fcgi callbacks => { result: { ... } }
+  // - direct monitor/online posts to the base webhook URL => flat JSON { ... }
+  // Returning the wrapped payload to base monitor posts causes the device to
+  // recognize the user but still show "server communication error" and not open.
+  const path = url.pathname.toLowerCase();
+  const shouldWrapResult = path.includes('.fcgi');
+  return shouldWrapResult ? { result } : result;
 };
 
 const resolveDeviceType = async (supabaseClient: any, deviceId: string): Promise<string | null> => {

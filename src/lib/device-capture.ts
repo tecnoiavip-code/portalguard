@@ -84,6 +84,61 @@ async function queueCommandAndWait(
   throw new Error('Timeout: o dispositivo não respondeu a tempo. Verifique se está online.');
 }
 
+async function queueBinaryCommandAndWait(
+  deviceSerial: string,
+  endpoint: string,
+  binaryBase64: string,
+  queryParams: Record<string, string | number>,
+  timeoutMs = 60000,
+  signal?: AbortSignal
+): Promise<any> {
+  if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+
+  const { data: inserted, error: insertErr } = await supabase
+    .from('push_command_queue')
+    .insert({
+      device_id: deviceSerial,
+      command: {
+        verb: 'POST',
+        endpoint,
+        body: binaryBase64,
+        contentType: 'application/octet-stream',
+        queryParams,
+      },
+      status: 'pending',
+    } as any)
+    .select('id')
+    .single();
+
+  if (insertErr || !inserted) {
+    throw new Error('Falha ao enfileirar comando binário: ' + (insertErr?.message || 'unknown'));
+  }
+
+  const commandId = inserted.id;
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < timeoutMs) {
+    if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    const { data: cmd } = await supabase
+      .from('push_command_queue')
+      .select('status, result')
+      .eq('id', commandId)
+      .single();
+
+    if (cmd?.status === 'done') {
+      return normalizePushResult(cmd.result);
+    }
+    if (cmd?.status === 'error') {
+      const errorResult = normalizePushResult(cmd.result);
+      throw new Error(errorResult?.message || errorResult?.error || 'Comando binário retornou erro do dispositivo');
+    }
+  }
+
+  throw new Error('Timeout: o dispositivo não respondeu a tempo. Verifique se está online.');
+}
+
 /**
  * Info about the person being enrolled, used to persist biometrics on the device.
  */
@@ -443,9 +498,9 @@ export async function syncBiometricToAllDevices(
       }, 15000);
 
       // Set the facial image on the device
-      await queueCommandAndWait(serial, 'user_set_image', {
+      await queueBinaryCommandAndWait(serial, 'user_set_image', cleanBase64, {
         user_id: deviceUserId,
-        image: cleanBase64,
+        timestamp: Math.floor(Date.now() / 1000),
       }, 30000);
 
       synced++;

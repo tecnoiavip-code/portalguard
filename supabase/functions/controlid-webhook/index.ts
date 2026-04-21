@@ -526,6 +526,10 @@ Deno.serve(async (req) => {
           contentType: cmd.contentType || 'application/json',
         };
 
+        if (cmd?.queryParams && typeof cmd.queryParams === 'object') {
+          (pushCommand as any).queryParams = cmd.queryParams;
+        }
+
         console.log('Sending push command to device:', deviceId, JSON.stringify(pushCommand).substring(0, 200));
 
         return new Response(

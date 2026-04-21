@@ -873,7 +873,14 @@ Deno.serve(async (req) => {
     if (eventType === 'identification_event') {
       const deviceType = await resolveDeviceType(supabaseClient, effectiveDeviceId);
       const identResponse = buildIdentificationResponse(payload, url, deviceType);
-      console.log('Identification response (immediate):', JSON.stringify(identResponse).substring(0, 200));
+      console.log('Identification response (immediate):', {
+        device_id: effectiveDeviceId,
+        device_type: deviceType,
+        path: url.pathname,
+        portal_id: payload?.portal_id,
+        event_in: payload?.event,
+        response: identResponse,
+      });
 
       // ALL database work runs in background AFTER response is sent
       runBackground('identificationPostProcess', (async () => {

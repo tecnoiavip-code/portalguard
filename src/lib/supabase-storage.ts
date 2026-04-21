@@ -186,7 +186,7 @@ export const supabaseStorage = {
     return null;
   },
 
-  async saveResident(resident: Resident): Promise<boolean> {
+  async saveResident(resident: Resident): Promise<string | null> {
     const isNew = !resident.id || resident.id.startsWith('res_');
     const excludeId = isNew ? undefined : resident.id;
 
@@ -195,7 +195,7 @@ export const supabaseStorage = {
     if (duplicateMsg) {
       const { toast } = await import('sonner');
       toast.error(duplicateMsg);
-      return false;
+      return null;
     }
 
     const residentData: any = {
@@ -223,7 +223,7 @@ export const supabaseStorage = {
         .single();
       if (error || !insertedData) {
         console.error('Error inserting resident:', error?.message);
-        return false;
+        return null;
       }
       savedId = insertedData.id;
     } else {
@@ -234,7 +234,7 @@ export const supabaseStorage = {
         .select();
       if (error) {
         console.error('Error updating resident:', error.message);
-        return false;
+        return null;
       }
       savedId = resident.id;
     }
@@ -250,7 +250,7 @@ export const supabaseStorage = {
       await supabase.from('residents').update({ photo_url: null }).eq('id', savedId);
     }
     
-    return true;
+    return savedId;
   },
 
   async deleteResident(id: string): Promise<boolean> {
@@ -319,7 +319,7 @@ export const supabaseStorage = {
       
       if (error) {
         console.error('Error inserting mail:', error);
-        return false;
+        return null;
       }
     } else {
       const { error } = await supabase

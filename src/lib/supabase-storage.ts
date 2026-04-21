@@ -195,7 +195,7 @@ export const supabaseStorage = {
     if (duplicateMsg) {
       const { toast } = await import('sonner');
       toast.error(duplicateMsg);
-      return false;
+      return null;
     }
 
     const residentData: any = {
@@ -250,7 +250,7 @@ export const supabaseStorage = {
       await supabase.from('residents').update({ photo_url: null }).eq('id', savedId);
     }
     
-    return true;
+    return savedId;
   },
 
   async deleteResident(id: string): Promise<boolean> {
@@ -333,7 +333,7 @@ export const supabaseStorage = {
       }
     }
     
-    return savedId;
+    return true;
   },
 
   async deleteMail(id: string): Promise<boolean> {

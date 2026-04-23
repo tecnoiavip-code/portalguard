@@ -773,3 +773,115 @@ export async function reconcileFromDevices(
 
   return { photosAdded, tagsAdded, skipped, errors };
 }
+
+/**
+ * Push the monitor/webhook configuration to all devices that have a serial number.
+ * Uses the controlid-webhook/push-config edge function.
+ */
+export async function pushConfigToAllDevices(
+  devices: Device[],
+  onProgress?: (msg: string, current: number, total: number) => void
+): Promise<{ success: number; errors: number }> {
+  const targets = devices.filter((d) => d.serialNumber);
+  let success = 0;
+  let errors = 0;
+
+  for (let i = 0; i < targets.length; i++) {
+    const d = targets[i];
+    onProgress?.(`Configurando ${d.name}...`, i, targets.length);
+    try {
+      const { error } = await supabase.functions.invoke('controlid-webhook/push-config', {
+        method: 'POST',
+        body: { device_id: d.serialNumber },
+      });
+      if (error) throw error;
+      success++;
+    } catch (err) {
+      console.error(`pushConfig error on ${d.name}:`, err);
+      errors++;
+    }
+  }
+
+  return { success, errors };
+}
+
+/**
+ * Sync ALL residents (face + TAG) from the system to ALL devices.
+ * System is the source of truth: only residents with photo/tag in DB are pushed.
+ */
+export async function syncAllResidentsToDevices(
+  devices: Device[],
+  residents: Array<{ id: string; name: string; apartment: string; cpf?: string; vehicleTag?: string }>,
+  getResidentPhoto: (residentId: string) => Promise<string | null>,
+  onProgress?: (msg: string, current: number, total: number) => void
+): Promise<{ photosSynced: number; tagsSynced: number; skipped: number; errors: number }> {
+  const facialDevices = devices.filter((d) => d.type === 'facial_recognition');
+  const allTargets = devices.filter(
+    (d) => d.type === 'facial_recognition' || d.type === 'vehicle_tag'
+  );
+  if (allTargets.length === 0) {
+    return { photosSynced: 0, tagsSynced: 0, skipped: 0, errors: 0 };
+  }
+
+  let photosSynced = 0;
+  let tagsSynced = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  for (let i = 0; i < residents.length; i++) {
+    const r = residents[i];
+    onProgress?.(`Sincronizando ${r.name} (${i + 1}/${residents.length})...`, i, residents.length);
+
+    const personInfo: CapturePersonInfo = {
+      name: r.name,
+      apartment: r.apartment,
+      document: r.cpf,
+      identifier: r.id,
+      registration: r.cpf || undefined,
+    };
+
+    // Photo sync
+    if (facialDevices.length > 0) {
+      try {
+        const photoUrl = await getResidentPhoto(r.id);
+        if (photoUrl) {
+          let base64 = photoUrl;
+          if (!photoUrl.startsWith('data:')) {
+            const resp = await fetch(photoUrl);
+            const blob = await resp.blob();
+            base64 = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          }
+          const result = await syncBiometricToAllDevices(facialDevices, personInfo, base64);
+          photosSynced += result.synced;
+          errors += result.errors;
+        } else {
+          skipped++;
+        }
+      } catch (err) {
+        console.error(`Photo sync error for ${r.name}:`, err);
+        errors++;
+      }
+    }
+
+    // TAG sync
+    if (r.vehicleTag) {
+      try {
+        const result = await syncTagToAllDevices(allTargets, personInfo, r.vehicleTag);
+        tagsSynced += result.synced;
+        errors += result.errors;
+      } catch (err) {
+        console.error(`TAG sync error for ${r.name}:`, err);
+        errors++;
+      }
+    }
+  }
+
+  onProgress?.('Sincronização concluída!', residents.length, residents.length);
+  return { photosSynced, tagsSynced, skipped, errors };
+}
+

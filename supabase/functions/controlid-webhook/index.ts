@@ -44,11 +44,12 @@ const MAX_REQUESTS_PER_WINDOW = 200;
 
 // Throttle status writes to keep push responses fast and stable
 const lastDeviceStatusWriteMap = new Map<string, number>();
+const deviceTypeCache = new Map<string, string | null>();
 
 // Throttle config refresh checks (check DB at most every 5 min per device)
 const lastConfigRefreshCheckMap = new Map<string, number>();
 const CONFIG_REFRESH_CHECK_INTERVAL_MS = 300000; // 5 minutes
-const CONFIG_REFRESH_INTERVAL_MS = 3600000; // 60 minutes — re-send config before 90min dropout
+const CONFIG_REFRESH_INTERVAL_MS = 1800000; // 30 minutes — re-send config well before 90min dropout
 const DEVICE_STATUS_WRITE_INTERVAL_MS = 10000;
 
 const checkRateLimit = (deviceId: string): boolean => {
@@ -143,6 +144,20 @@ const detectEventType = (url: URL, payload: any): string => {
     return 'device_is_alive';
   }
 
+  // ** CRITICAL: Detect identification events sent directly to the base webhook URL
+  // (monitor/online mode). The device POSTs identification data to the monitor path.
+  // Must be checked BEFORE push_request fallback so the door-open response is returned.
+  if (payload && typeof payload === 'object') {
+    const hasEvent = payload.event !== undefined;
+    const hasUserId = payload.user_id !== undefined;
+    const hasUserName = payload.user_name !== undefined || payload.name !== undefined;
+    const hasPortal = payload.portal_id !== undefined;
+    // Identification payloads always have event + (user_id or user_name)
+    if (hasEvent && (hasUserId || hasUserName || hasPortal)) {
+      return 'identification_event';
+    }
+  }
+
   // Generic push polling route (supports /push, /push/push and base /controlid-webhook)
   if (path.endsWith('/push') || (path.includes('/push') && !path.includes('.fcgi'))) {
     return 'push_request';
@@ -185,29 +200,82 @@ const extractDeviceId = (url: URL, payload: any, req: Request): string => {
   return '';
 };
 
-const buildIdentificationResponse = (payload: any) => {
+const buildIdentificationActions = (payload: any, deviceType?: string | null) => {
+  const portalId = Number.parseInt(String(payload?.portal_id ?? '1'), 10);
+  const resolvedPortal = Number.isFinite(portalId) && portalId > 0 ? portalId : 1;
+
+  // V6 readers (iDFlex / iDAccess Pro / Nano / iDFace) typically expect sec_box.
+  // For the dedicated vehicle TAG reader we also send the explicit portal open action
+  // so the gate receives a direct open command in firmwares that don't trigger it from
+  // sec_box alone during online authorization.
+  if (deviceType === 'vehicle_tag') {
+    return [
+      { action: 'sec_box', parameters: 'id=65793, reason=1' },
+      { action: 'door', parameters: `door=${resolvedPortal}` },
+    ];
+  }
+
+  return [{ action: 'sec_box', parameters: 'id=65793, reason=1' }];
+};
+
+const buildIdentificationResponse = (payload: any, url: URL, deviceType?: string | null) => {
   const userId = Number.parseInt(String(payload?.user_id ?? '0'), 10);
   const portalId = Number.parseInt(String(payload?.portal_id ?? '1'), 10);
   const incomingEvent = Number.parseInt(String(payload?.event ?? '0'), 10);
   const userName = sanitizeString(payload?.user_name || payload?.name || '', 200);
 
   const isIdentified = (Number.isFinite(userId) && userId > 0) || userName.length > 0;
+  // Event 3/6 = device-side denial (unknown card, etc.). Don't grant.
   const isDeniedByDevice = incomingEvent === 3 || incomingEvent === 6;
   const granted = isIdentified && !isDeniedByDevice;
 
   const resolvedPortal = Number.isFinite(portalId) && portalId > 0 ? portalId : 1;
 
-  return {
-    result: {
-      event: granted ? 7 : 6,
-      user_id: Number.isFinite(userId) ? userId : 0,
-      user_name: userName || 'Desconhecido',
-      user_image: payload?.user_has_image === 1 || payload?.user_has_image === '1',
-      portal_id: resolvedPortal,
-      message: granted ? 'Acesso autorizado' : 'Acesso negado',
-      actions: granted ? [{ action: 'door', parameters: `door=${resolvedPortal}` }] : []
-    }
+  // MINIMAL Control iD response. Extra fields like message/user_image/duress can
+  // break the firmware JSON parser and trigger "server communication error".
+  const result: Record<string, unknown> = {
+    event: granted ? 7 : 6,
+    user_id: Number.isFinite(userId) ? userId : 0,
+    user_name: userName,
+    user_image: payload?.user_has_image === 1 || payload?.user_has_image === '1' || payload?.user_has_image === true || payload?.user_has_image === 'true',
+    portal_id: resolvedPortal,
   };
+
+  if (granted) {
+    result.actions = buildIdentificationActions(payload, deviceType);
+  }
+
+  // Control iD expects DIFFERENT response shapes depending on the callback path:
+  // - official .fcgi callbacks => { result: { ... } }
+  // - direct monitor/online posts to the base webhook URL => flat JSON { ... }
+  // Returning the wrapped payload to base monitor posts causes the device to
+  // recognize the user but still show "server communication error" and not open.
+  const path = url.pathname.toLowerCase();
+  const shouldWrapResult = path.includes('.fcgi');
+  return shouldWrapResult ? { result } : result;
+};
+
+const resolveDeviceType = async (supabaseClient: any, deviceId: string): Promise<string | null> => {
+  if (!deviceId) return null;
+  if (deviceTypeCache.has(deviceId)) {
+    return deviceTypeCache.get(deviceId) ?? null;
+  }
+
+  try {
+    const { data } = await supabaseClient
+      .from('devices')
+      .select('type')
+      .or(`serial_number.eq.${deviceId},ip_address.eq.${deviceId}`)
+      .limit(1)
+      .maybeSingle();
+
+    const resolvedType = typeof data?.type === 'string' ? data.type : null;
+    deviceTypeCache.set(deviceId, resolvedType);
+    return resolvedType;
+  } catch (error) {
+    console.error('Error resolving device type for identification response:', error);
+    return null;
+  }
 };
 
 const tryParseJsonString = (value: unknown) => {
@@ -799,6 +867,152 @@ Deno.serve(async (req) => {
       );
     }
 
+    // ===== IDENTIFICATION EVENT: Return door-open response IMMEDIATELY, then do DB work =====
+    // Critical: the device has a short timeout (~15s) and will NOT open the door if
+    // the response is delayed by database operations.
+    if (eventType === 'identification_event') {
+      const deviceType = await resolveDeviceType(supabaseClient, effectiveDeviceId);
+      const identResponse = buildIdentificationResponse(payload, url, deviceType);
+      console.log('Identification response (immediate):', {
+        device_id: effectiveDeviceId,
+        device_type: deviceType,
+        path: url.pathname,
+        portal_id: payload?.portal_id,
+        event_in: payload?.event,
+        response: identResponse,
+      });
+
+      // ALL database work runs in background AFTER response is sent
+      runBackground('identificationPostProcess', (async () => {
+        try {
+          // 1. Save photo if present in payload
+          let savedPhotoPath: string | null = null;
+          const photoBase64 = extractPhotoBase64(payload);
+          if (photoBase64) {
+            try {
+              savedPhotoPath = await saveAccessPhoto(supabaseClient, effectiveDeviceId, photoBase64);
+            } catch (e) {
+              console.error('Error saving access photo:', e);
+            }
+          }
+
+          const enrichedPayload = savedPhotoPath
+            ? { ...payload, saved_photo_path: savedPhotoPath }
+            : payload;
+
+          // 2. Save log entry
+          const { data: logData } = await supabaseClient
+            .from('controlid_logs')
+            .insert({
+              device_id: effectiveDeviceId,
+              event_type: eventType,
+              payload: enrichedPayload,
+              processed: false
+            })
+            .select('id')
+            .single();
+
+          const logEntryId = logData?.id || null;
+
+          // 3. Auto-sync vehicle tag
+          const cardValue = String(payload.card_value || '');
+          const identUserName = String(payload.user_name || '');
+          if (cardValue && identUserName) {
+            try {
+              const { data: deviceRow } = await supabaseClient
+                .from('devices')
+                .select('type')
+                .or(`serial_number.eq.${effectiveDeviceId},ip_address.eq.${effectiveDeviceId}`)
+                .limit(1)
+                .maybeSingle();
+
+              if (deviceRow?.type === 'vehicle_tag') {
+                const aptMatch = identUserName.match(/^(\d+\w?)\s*[-–]\s*(.+)$/i);
+                if (aptMatch) {
+                  const [, apt, extractedName] = aptMatch;
+                  const normalizedName = extractedName.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+                  const { data: residents } = await supabaseClient
+                    .from('residents')
+                    .select('id, name, vehicle_tag')
+                    .ilike('apartment', `%${apt.trim()}`);
+
+                  if (residents && residents.length > 0) {
+                    const matched = residents.find((resident: any) => {
+                      const residentName = resident.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+                      return residentName.includes(normalizedName) || normalizedName.includes(residentName);
+                    }) || (residents.length === 1 ? residents[0] : null);
+
+                    if (matched && matched.vehicle_tag !== cardValue) {
+                      await supabaseClient
+                        .from('residents')
+                        .update({ vehicle_tag: cardValue })
+                        .eq('id', matched.id);
+                      console.log(`Auto-synced vehicle_tag ${cardValue} to resident ${matched.name} (${apt})`);
+                    }
+                  }
+                }
+              }
+            } catch (e) {
+              console.error('Error auto-syncing vehicle_tag:', e);
+            }
+          }
+
+          // 4. Queue user_get_image if device reports user has image
+          const userId = Number.parseInt(String(payload?.user_id ?? '0'), 10);
+          const hasImage = payload?.user_has_image === 1 || payload?.user_has_image === '1'
+            || payload?.user_has_image === true || payload?.user_has_image === 'true';
+
+          if (hasImage && Number.isFinite(userId) && userId > 0 && !savedPhotoPath) {
+            const { data: queuedImageCommands } = await supabaseClient
+              .from('push_command_queue')
+              .select('id, command, status')
+              .eq('device_id', effectiveDeviceId)
+              .in('status', ['pending', 'executing'])
+              .order('created_at', { ascending: false })
+              .limit(10);
+
+            const alreadyQueued = queuedImageCommands?.some((row: any) => {
+              const command = row.command as any;
+              const endpoint = String(command?.endpoint || '').replace(/\.fcgi$/i, '');
+              const queuedUserId = Number.parseInt(String(command?.body?.user_id ?? '0'), 10);
+              return endpoint === 'user_get_image' && queuedUserId === userId;
+            }) ?? false;
+
+            if (!alreadyQueued) {
+              const { error: queueErr } = await supabaseClient
+                .from('push_command_queue')
+                .insert({
+                  device_id: effectiveDeviceId,
+                  command: {
+                    verb: 'POST',
+                    endpoint: 'user_get_image',
+                    body: { user_id: userId, technology: 'visible_light' },
+                    contentType: 'application/json',
+                    meta: { log_id: logEntryId, user_id: userId },
+                  },
+                  status: 'pending',
+                });
+              if (queueErr) {
+                console.error('Failed to queue user_get_image:', queueErr);
+              } else {
+                console.log(`Queued user_get_image for user ${userId} on device ${effectiveDeviceId}, log_id: ${logEntryId}`);
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Error in identification post-processing:', e);
+        }
+      })());
+
+      // Return door-open response IMMEDIATELY (< 50ms)
+      return new Response(
+        JSON.stringify(identResponse),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ===== NON-IDENTIFICATION EVENTS: Save logs and process =====
     // Extract and save photo if present in payload
     let savedPhotoPath: string | null = null;
     const photoBase64 = extractPhotoBase64(payload);
@@ -810,132 +1024,26 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Include photo path in the payload before saving log
     const enrichedPayload = savedPhotoPath
       ? { ...payload, saved_photo_path: savedPhotoPath }
       : payload;
 
-    // Save log and capture the ID for later photo linking
-    const { data: logData, error: logError } = await supabaseClient
+    const { error: logError } = await supabaseClient
       .from('controlid_logs')
       .insert({
         device_id: effectiveDeviceId,
         event_type: eventType,
         payload: enrichedPayload,
         processed: false
-      })
-      .select('id')
-      .single();
-
-    const logEntryId = logData?.id || null;
+      });
 
     if (logError) {
       console.error('Error saving Control iD log:', logError);
     }
 
-    // Process specific events (device_is_alive already handled above with early return)
+    // Process specific events
     if (eventType === 'dao' && payload.object_changes) {
       await processAccessLogs(supabaseClient, payload.object_changes, effectiveDeviceId);
-    }
-
-    // Online identification events expect a JSON return message
-    if (eventType === 'identification_event') {
-      const cardValue = String(payload.card_value || '');
-      const identUserName = String(payload.user_name || '');
-      if (cardValue && identUserName) {
-        runBackground('autoSyncVehicleTag', (async () => {
-          try {
-            const { data: deviceRow } = await supabaseClient
-              .from('devices')
-              .select('type')
-              .or(`serial_number.eq.${effectiveDeviceId},ip_address.eq.${effectiveDeviceId}`)
-              .limit(1)
-              .maybeSingle();
-
-            if (deviceRow?.type === 'vehicle_tag') {
-              const aptMatch = identUserName.match(/^(\d+\w?)\s*[-–]\s*(.+)$/i);
-              if (aptMatch) {
-                const [, apt, extractedName] = aptMatch;
-                const normalizedName = extractedName.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
-                const { data: residents } = await supabaseClient
-                  .from('residents')
-                  .select('id, name, vehicle_tag')
-                  .ilike('apartment', `%${apt.trim()}`);
-
-                if (residents && residents.length > 0) {
-                  const matched = residents.find((resident) => {
-                    const residentName = resident.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-                    return residentName.includes(normalizedName) || normalizedName.includes(residentName);
-                  }) || (residents.length === 1 ? residents[0] : null);
-
-                  if (matched && matched.vehicle_tag !== cardValue) {
-                    await supabaseClient
-                      .from('residents')
-                      .update({ vehicle_tag: cardValue })
-                      .eq('id', matched.id);
-                    console.log(`Auto-synced vehicle_tag ${cardValue} to resident ${matched.name} (${apt})`);
-                  }
-                }
-              }
-            }
-          } catch (e) {
-            console.error('Error auto-syncing vehicle_tag:', e);
-          }
-        })());
-      }
-
-      const userId = Number.parseInt(String(payload?.user_id ?? '0'), 10);
-      const hasImage = payload?.user_has_image === 1 || payload?.user_has_image === '1'
-        || payload?.user_has_image === true || payload?.user_has_image === 'true';
-      if (hasImage && Number.isFinite(userId) && userId > 0 && !savedPhotoPath) {
-        const { data: queuedImageCommands, error: queuedImageCommandsError } = await supabaseClient
-          .from('push_command_queue')
-          .select('id, command, status')
-          .eq('device_id', effectiveDeviceId)
-          .in('status', ['pending', 'executing'])
-          .order('created_at', { ascending: false })
-          .limit(10);
-
-        if (queuedImageCommandsError) {
-          console.error('Failed to inspect existing user_get_image commands:', queuedImageCommandsError);
-        }
-
-        const alreadyQueued = queuedImageCommands?.some((row) => {
-          const command = row.command as any;
-          const endpoint = String(command?.endpoint || '').replace(/\.fcgi$/i, '');
-          const queuedUserId = Number.parseInt(String(command?.body?.user_id ?? '0'), 10);
-          return endpoint === 'user_get_image' && queuedUserId === userId;
-        }) ?? false;
-
-        if (!alreadyQueued) {
-          const { error: queueErr } = await supabaseClient
-            .from('push_command_queue')
-            .insert({
-              device_id: effectiveDeviceId,
-              command: {
-                verb: 'POST',
-                endpoint: 'user_get_image',
-                body: { user_id: userId },
-                contentType: 'application/json',
-                meta: { log_id: logEntryId, user_id: userId },
-              },
-              status: 'pending',
-            });
-          if (queueErr) {
-            console.error('Failed to queue user_get_image:', queueErr);
-          } else {
-            console.log(`Queued user_get_image for user ${userId} on device ${effectiveDeviceId}, log_id: ${logEntryId}`);
-          }
-        } else {
-          console.log(`Skipped duplicate user_get_image for user ${userId} on device ${effectiveDeviceId}`);
-        }
-      }
-
-      return new Response(
-        JSON.stringify(buildIdentificationResponse(payload)),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
     }
 
     // Other Control iD .fcgi callbacks expect empty 200 acknowledgements

@@ -141,7 +141,122 @@ export const Devices = () => {
     })();
   };
 
-      {showForm && (
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const deviceData: Device = {
+      id: editingId || `dev_${Date.now()}`,
+      ...formData,
+      lastSync: new Date().toISOString(),
+    };
+    const success = await saveDevice(deviceData);
+    if (success) resetForm();
+  };
+
+  const handleEdit = (device: Device) => {
+    setEditingId(device.id);
+    setFormData({
+      name: device.name,
+      type: device.type,
+      location: device.location,
+      status: device.status,
+      ipAddress: device.ipAddress || '',
+      serialNumber: device.serialNumber || '',
+    });
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Deseja realmente excluir este dispositivo?')) return;
+    await deleteDevice(id);
+  };
+
+  const toggleStatus = async (id: string) => {
+    const device = devices.find(d => d.id === id);
+    if (!device) return;
+    await saveDevice({
+      ...device,
+      status: device.status === 'online' ? 'offline' : 'online',
+      lastSync: new Date().toISOString(),
+    });
+  };
+
+  const resetForm = () => {
+    setEditingId('');
+    setFormData({
+      name: '', type: 'facial_recognition', location: '', status: 'online',
+      ipAddress: '', serialNumber: '',
+    });
+    setShowForm(false);
+  };
+
+  const getDeviceIcon = (type: Device['type']) => {
+    switch (type) {
+      case 'facial_recognition': return <Camera className="h-5 w-5" />;
+      case 'vehicle_tag': return <Tag className="h-5 w-5" />;
+      case 'card_reader': return <CreditCard className="h-5 w-5" />;
+    }
+  };
+
+  const getDeviceTypeName = (type: Device['type']) => {
+    switch (type) {
+      case 'facial_recognition': return 'Reconhecimento Facial';
+      case 'vehicle_tag': return 'TAG Veicular';
+      case 'card_reader': return 'Leitor de Cartão';
+    }
+  };
+
+  const progressPct = job.total > 0 ? Math.min(100, Math.round((job.current / job.total) * 100)) : 0;
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-3xl font-bold text-foreground mb-2">Dispositivos</h2>
+          <p className="text-muted-foreground">Gerencie os dispositivos de controle de acesso</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleSyncAll} disabled={syncing}>
+            {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+            Sincronizar Tudo
+          </Button>
+          <Button onClick={() => setShowForm(!showForm)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Novo Dispositivo
+          </Button>
+        </div>
+      </div>
+
+      {(syncing || job.status === 'done' || job.status === 'error') && job.message && (
+        <Card>
+          <CardContent className="py-3 space-y-2">
+            <div className="flex items-center gap-3">
+              {syncing && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+              {job.status === 'done' && <CheckCircle2 className="h-4 w-4 text-green-500" />}
+              {job.status === 'error' && <AlertCircle className="h-4 w-4 text-destructive" />}
+              <span className="text-sm text-muted-foreground flex-1">{job.message}</span>
+              {job.total > 0 && (
+                <span className="text-xs text-muted-foreground">{job.current}/{job.total}</span>
+              )}
+              {(job.status === 'done' || job.status === 'error') && (
+                <Button size="sm" variant="ghost" onClick={resetSyncJob}>Fechar</Button>
+              )}
+            </div>
+            {syncing && job.total > 0 && (
+              <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                <div className="h-full bg-primary transition-all" style={{ width: `${progressPct}%` }} />
+              </div>
+            )}
+            {(job.photosSynced > 0 || job.tagsSynced > 0 || job.errors > 0) && (
+              <div className="flex gap-3 text-xs text-muted-foreground">
+                <span>📷 {job.photosSynced} fotos</span>
+                <span>🏷️ {job.tagsSynced} TAGs</span>
+                {job.errors > 0 && <span className="text-destructive">⚠️ {job.errors} erros</span>}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
         <Card>
           <CardHeader>
             <CardTitle>{editingId ? 'Editar Dispositivo' : 'Novo Dispositivo'}</CardTitle>

@@ -256,7 +256,7 @@ export const Devices = () => {
           </CardContent>
         </Card>
       )}
-
+      {showForm && (
         <Card>
           <CardHeader>
             <CardTitle>{editingId ? 'Editar Dispositivo' : 'Novo Dispositivo'}</CardTitle>
@@ -368,8 +368,15 @@ export const Devices = () => {
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex items-center space-x-2">
-                    <div className={`p-2 rounded-lg ${device.status === 'online' ? 'bg-success/20' : 'bg-destructive/20'}`}>
-                      {getDeviceIcon(device.type)}
+                    <div className="relative">
+                      <div className={`p-2 rounded-lg ${device.status === 'online' ? 'bg-success/20' : 'bg-destructive/20'}`}>
+                        {getDeviceIcon(device.type)}
+                      </div>
+                      <span
+                        className={`absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-card ${getDeviceHealth(device).color}`}
+                        title={getDeviceHealth(device).label}
+                        aria-label={getDeviceHealth(device).label}
+                      />
                     </div>
                     <div>
                       <CardTitle className="text-lg">{device.name}</CardTitle>

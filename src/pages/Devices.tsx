@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Wifi, WifiOff, Camera, Tag, CreditCard, Pencil, Trash2, Plus, Loader2, RefreshCw } from 'lucide-react';
+import { Wifi, WifiOff, Camera, Tag, CreditCard, Pencil, Trash2, Plus, Loader2, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Device } from '@/types';
 import { useDevices } from '@/hooks/useDevices';
 import { useResidents } from '@/hooks/useResidents';
@@ -22,14 +22,39 @@ import {
 } from '@/lib/device-capture';
 import { supabaseStorage } from '@/lib/supabase-storage';
 import { toast } from 'sonner';
+import {
+  getSyncJobState,
+  setSyncJobState,
+  resetSyncJob,
+  subscribeSyncJob,
+  isSyncRunning,
+  markSyncRunning,
+  type SyncJobState,
+} from '@/lib/sync-job-store';
+
+// Health indicator color: green = ok, yellow = attention, red = offline
+const getDeviceHealth = (device: Device): { color: string; label: string } => {
+  if (device.status !== 'online') return { color: 'bg-destructive', label: 'Desconectado' };
+  const last = device.lastSync ? new Date(device.lastSync).getTime() : 0;
+  const ageMin = (Date.now() - last) / 60000;
+  if (!last || ageMin > 10) return { color: 'bg-yellow-500', label: 'Atenção: sem sync recente' };
+  return { color: 'bg-green-500', label: 'Sincronizado e online' };
+};
 
 export const Devices = () => {
   const { devices, loading, saveDevice, deleteDevice } = useDevices();
   const { residents, refresh: refreshResidents } = useResidents();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string>('');
-  const [syncing, setSyncing] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<string>('');
+  const [job, setJob] = useState<SyncJobState>(() => getSyncJobState());
+
+  useEffect(() => {
+    const unsub = subscribeSyncJob(setJob);
+    setJob(getSyncJobState());
+    return unsub;
+  }, []);
+
+  const syncing = job.status === 'running';
   const [formData, setFormData] = useState({
     name: '',
     type: 'facial_recognition' as Device['type'],

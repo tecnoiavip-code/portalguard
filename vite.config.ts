@@ -9,6 +9,25 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    middlewareMode: false,
+    proxy: {
+      '/auth/v1': {
+        target: 'https://kxdqffkkufgsizszchvw.supabase.co',
+        changeOrigin: true,
+        rewrite: (path) => path,
+      },
+      '/rest/v1': {
+        target: 'https://kxdqffkkufgsizszchvw.supabase.co',
+        changeOrigin: true,
+        rewrite: (path) => path,
+      },
+      '/realtime/v1': {
+        target: 'https://kxdqffkkufgsizszchvw.supabase.co',
+        changeOrigin: true,
+        rewrite: (path) => path,
+        ws: true,
+      },
+    },
   },
   plugins: [
     react(),

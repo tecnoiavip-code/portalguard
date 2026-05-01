@@ -69,166 +69,77 @@ export const Devices = () => {
       toast.error('Nenhum dispositivo cadastrado');
       return;
     }
-    if (!confirm('Sincronizar tudo: enviará configuração do webhook, reconciliará faces/TAGs do hardware e replicará todos os moradores (faces e TAGs) em todos os dispositivos. Continuar?')) {
+    if (isSyncRunning()) {
+      toast.info('Já existe uma sincronização em andamento.');
+      return;
+    }
+    if (!confirm('Sincronizar tudo: enviará configuração do webhook, reconciliará faces/TAGs do hardware e replicará todos os moradores (faces e TAGs) em todos os dispositivos. Esta operação continua mesmo se você sair desta página. Continuar?')) {
       return;
     }
 
-    setSyncing(true);
-    try {
-      // 1) Push monitor/webhook config to all devices with serial
-      setSyncStatus('Enviando configuração do webhook...');
-      const cfg = await pushConfigToAllDevices(devices);
-      toast.info(`Configuração: ${cfg.success} OK, ${cfg.errors} erro(s)`);
-
-      // 2) Reconcile faces/TAGs from hardware into the system (only existing residents)
-      setSyncStatus('Reconciliando dados do hardware...');
-      const rec = await reconcileFromDevices(devices, residents as any, (msg) => {
-        console.log('[Reconcile]', msg);
-      });
-      toast.info(`Reconciliação: ${rec.photosAdded} foto(s), ${rec.tagsAdded} TAG(s)`);
-
-      // 3) Refresh residents so we use the latest data
-      await refreshResidents();
-
-      // 4) Push system → devices for ALL residents (face + TAG)
-      setSyncStatus('Replicando moradores nos dispositivos...');
-      const result = await syncAllResidentsToDevices(
-        devices,
-        residents as any,
-        (id) => supabaseStorage.getResidentPhoto(id),
-        (msg) => setSyncStatus(msg),
-      );
-
-      toast.success('Sincronização concluída', {
-        description: `${result.photosSynced} face(s) sincronizada(s), ${result.tagsSynced} TAG(s) sincronizada(s)${result.errors > 0 ? `, ${result.errors} erro(s)` : ''}`,
-        duration: 8000,
-      });
-    } catch (err: any) {
-      console.error('Sync error:', err);
-      toast.error('Erro na sincronização', { description: err?.message || 'Tente novamente' });
-    } finally {
-      setSyncing(false);
-      setSyncStatus('');
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const deviceData: Device = {
-      id: editingId || `dev_${Date.now()}`,
-      ...formData,
-      lastSync: new Date().toISOString(),
-    };
-
-    const success = await saveDevice(deviceData);
-    if (success) {
-      resetForm();
-    }
-  };
-
-  const handleEdit = (device: Device) => {
-    setEditingId(device.id);
-    setFormData({
-      name: device.name,
-      type: device.type,
-      location: device.location,
-      status: device.status,
-      ipAddress: device.ipAddress || '',
-      serialNumber: device.serialNumber || '',
+    markSyncRunning(true);
+    resetSyncJob();
+    setSyncJobState({
+      status: 'running',
+      message: 'Iniciando...',
+      total: residents.length,
+      current: 0,
+      photosSynced: 0,
+      tagsSynced: 0,
+      errors: 0,
+      startedAt: Date.now(),
     });
-    setShowForm(true);
+
+    // Run in detached promise so it survives unmount
+    (async () => {
+      try {
+        setSyncJobState({ message: 'Enviando configuração do webhook...' });
+        const cfg = await pushConfigToAllDevices(devices);
+
+        setSyncJobState({ message: `Reconciliando dados do hardware... (${cfg.success} configs OK)` });
+        const rec = await reconcileFromDevices(devices, residents as any, () => { /* progress */ });
+
+        await refreshResidents();
+
+        setSyncJobState({
+          message: `Replicando moradores nos dispositivos...`,
+          photosSynced: rec.photosAdded,
+          tagsSynced: rec.tagsAdded,
+        });
+
+        const result = await syncAllResidentsToDevices(
+          devices,
+          residents as any,
+          (id) => supabaseStorage.getResidentPhoto(id),
+          (msg, current, total) => setSyncJobState({ message: msg, current, total }),
+        );
+
+        const finalState = getSyncJobState();
+        setSyncJobState({
+          status: 'done',
+          message: 'Sincronização concluída!',
+          photosSynced: finalState.photosSynced + result.photosSynced,
+          tagsSynced: finalState.tagsSynced + result.tagsSynced,
+          errors: finalState.errors + result.errors,
+          finishedAt: Date.now(),
+        });
+        toast.success('Sincronização concluída', {
+          description: `${result.photosSynced} face(s), ${result.tagsSynced} TAG(s)${result.errors > 0 ? `, ${result.errors} erro(s)` : ''}`,
+          duration: 8000,
+        });
+      } catch (err: any) {
+        console.error('Sync error:', err);
+        setSyncJobState({
+          status: 'error',
+          message: err?.message || 'Erro na sincronização',
+          finishedAt: Date.now(),
+        });
+        toast.error('Erro na sincronização', { description: err?.message || 'Tente novamente' });
+      } finally {
+        markSyncRunning(false);
+      }
+    })();
   };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Deseja realmente excluir este dispositivo?')) return;
-    await deleteDevice(id);
-  };
-
-  const toggleStatus = async (id: string) => {
-    const device = devices.find(d => d.id === id);
-    if (!device) return;
-
-    const updatedDevice: Device = {
-      ...device,
-      status: device.status === 'online' ? 'offline' : 'online',
-      lastSync: new Date().toISOString(),
-    };
-
-    await saveDevice(updatedDevice);
-  };
-
-  const resetForm = () => {
-    setEditingId('');
-    setFormData({
-      name: '',
-      type: 'facial_recognition',
-      location: '',
-      status: 'online',
-      ipAddress: '',
-      serialNumber: '',
-    });
-    setShowForm(false);
-  };
-
-  const getDeviceIcon = (type: Device['type']) => {
-    switch (type) {
-      case 'facial_recognition':
-        return <Camera className="h-5 w-5" />;
-      case 'vehicle_tag':
-        return <Tag className="h-5 w-5" />;
-      case 'card_reader':
-        return <CreditCard className="h-5 w-5" />;
-    }
-  };
-
-  const getDeviceTypeName = (type: Device['type']) => {
-    switch (type) {
-      case 'facial_recognition':
-        return 'Reconhecimento Facial';
-      case 'vehicle_tag':
-        return 'TAG Veicular';
-      case 'card_reader':
-        return 'Leitor de Cartão';
-    }
-  };
-
-  return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-3xl font-bold text-foreground mb-2">Dispositivos</h2>
-          <p className="text-muted-foreground">Gerencie os dispositivos de controle de acesso</p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={handleSyncAll}
-            disabled={syncing}
-            title="Configura webhook, reconcilia faces/TAGs do hardware e replica todos os moradores nos dispositivos"
-          >
-            {syncing ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4 mr-2" />
-            )}
-            Sincronizar Tudo
-          </Button>
-          <Button onClick={() => setShowForm(!showForm)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Novo Dispositivo
-          </Button>
-        </div>
-      </div>
-
-      {syncing && syncStatus && (
-        <Card>
-          <CardContent className="py-3 flex items-center gap-3">
-            <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            <span className="text-sm text-muted-foreground">{syncStatus}</span>
-          </CardContent>
-        </Card>
-      )}
 
       {showForm && (
         <Card>

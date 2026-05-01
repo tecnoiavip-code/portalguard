@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Wifi, WifiOff, Camera, Tag, CreditCard, Pencil, Trash2, Plus, Loader2, RefreshCw } from 'lucide-react';
+import { Wifi, WifiOff, Camera, Tag, CreditCard, Pencil, Trash2, Plus, Loader2, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Device } from '@/types';
 import { useDevices } from '@/hooks/useDevices';
 import { useResidents } from '@/hooks/useResidents';
@@ -22,14 +22,39 @@ import {
 } from '@/lib/device-capture';
 import { supabaseStorage } from '@/lib/supabase-storage';
 import { toast } from 'sonner';
+import {
+  getSyncJobState,
+  setSyncJobState,
+  resetSyncJob,
+  subscribeSyncJob,
+  isSyncRunning,
+  markSyncRunning,
+  type SyncJobState,
+} from '@/lib/sync-job-store';
+
+// Health indicator color: green = ok, yellow = attention, red = offline
+const getDeviceHealth = (device: Device): { color: string; label: string } => {
+  if (device.status !== 'online') return { color: 'bg-destructive', label: 'Desconectado' };
+  const last = device.lastSync ? new Date(device.lastSync).getTime() : 0;
+  const ageMin = (Date.now() - last) / 60000;
+  if (!last || ageMin > 10) return { color: 'bg-yellow-500', label: 'Atenção: sem sync recente' };
+  return { color: 'bg-green-500', label: 'Sincronizado e online' };
+};
 
 export const Devices = () => {
   const { devices, loading, saveDevice, deleteDevice } = useDevices();
   const { residents, refresh: refreshResidents } = useResidents();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string>('');
-  const [syncing, setSyncing] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<string>('');
+  const [job, setJob] = useState<SyncJobState>(() => getSyncJobState());
+
+  useEffect(() => {
+    const unsub = subscribeSyncJob(setJob);
+    setJob(getSyncJobState());
+    return unsub;
+  }, []);
+
+  const syncing = job.status === 'running';
   const [formData, setFormData] = useState({
     name: '',
     type: 'facial_recognition' as Device['type'],
@@ -44,62 +69,87 @@ export const Devices = () => {
       toast.error('Nenhum dispositivo cadastrado');
       return;
     }
-    if (!confirm('Sincronizar tudo: enviará configuração do webhook, reconciliará faces/TAGs do hardware e replicará todos os moradores (faces e TAGs) em todos os dispositivos. Continuar?')) {
+    if (isSyncRunning()) {
+      toast.info('Já existe uma sincronização em andamento.');
+      return;
+    }
+    if (!confirm('Sincronizar tudo: enviará configuração do webhook, reconciliará faces/TAGs do hardware e replicará todos os moradores (faces e TAGs) em todos os dispositivos. Esta operação continua mesmo se você sair desta página. Continuar?')) {
       return;
     }
 
-    setSyncing(true);
-    try {
-      // 1) Push monitor/webhook config to all devices with serial
-      setSyncStatus('Enviando configuração do webhook...');
-      const cfg = await pushConfigToAllDevices(devices);
-      toast.info(`Configuração: ${cfg.success} OK, ${cfg.errors} erro(s)`);
+    markSyncRunning(true);
+    resetSyncJob();
+    setSyncJobState({
+      status: 'running',
+      message: 'Iniciando...',
+      total: residents.length,
+      current: 0,
+      photosSynced: 0,
+      tagsSynced: 0,
+      errors: 0,
+      startedAt: Date.now(),
+    });
 
-      // 2) Reconcile faces/TAGs from hardware into the system (only existing residents)
-      setSyncStatus('Reconciliando dados do hardware...');
-      const rec = await reconcileFromDevices(devices, residents as any, (msg) => {
-        console.log('[Reconcile]', msg);
-      });
-      toast.info(`Reconciliação: ${rec.photosAdded} foto(s), ${rec.tagsAdded} TAG(s)`);
+    // Run in detached promise so it survives unmount
+    (async () => {
+      try {
+        setSyncJobState({ message: 'Enviando configuração do webhook...' });
+        const cfg = await pushConfigToAllDevices(devices);
 
-      // 3) Refresh residents so we use the latest data
-      await refreshResidents();
+        setSyncJobState({ message: `Reconciliando dados do hardware... (${cfg.success} configs OK)` });
+        const rec = await reconcileFromDevices(devices, residents as any, () => { /* progress */ });
 
-      // 4) Push system → devices for ALL residents (face + TAG)
-      setSyncStatus('Replicando moradores nos dispositivos...');
-      const result = await syncAllResidentsToDevices(
-        devices,
-        residents as any,
-        (id) => supabaseStorage.getResidentPhoto(id),
-        (msg) => setSyncStatus(msg),
-      );
+        await refreshResidents();
 
-      toast.success('Sincronização concluída', {
-        description: `${result.photosSynced} face(s) sincronizada(s), ${result.tagsSynced} TAG(s) sincronizada(s)${result.errors > 0 ? `, ${result.errors} erro(s)` : ''}`,
-        duration: 8000,
-      });
-    } catch (err: any) {
-      console.error('Sync error:', err);
-      toast.error('Erro na sincronização', { description: err?.message || 'Tente novamente' });
-    } finally {
-      setSyncing(false);
-      setSyncStatus('');
-    }
+        setSyncJobState({
+          message: `Replicando moradores nos dispositivos...`,
+          photosSynced: rec.photosAdded,
+          tagsSynced: rec.tagsAdded,
+        });
+
+        const result = await syncAllResidentsToDevices(
+          devices,
+          residents as any,
+          (id) => supabaseStorage.getResidentPhoto(id),
+          (msg, current, total) => setSyncJobState({ message: msg, current, total }),
+        );
+
+        const finalState = getSyncJobState();
+        setSyncJobState({
+          status: 'done',
+          message: 'Sincronização concluída!',
+          photosSynced: finalState.photosSynced + result.photosSynced,
+          tagsSynced: finalState.tagsSynced + result.tagsSynced,
+          errors: finalState.errors + result.errors,
+          finishedAt: Date.now(),
+        });
+        toast.success('Sincronização concluída', {
+          description: `${result.photosSynced} face(s), ${result.tagsSynced} TAG(s)${result.errors > 0 ? `, ${result.errors} erro(s)` : ''}`,
+          duration: 8000,
+        });
+      } catch (err: any) {
+        console.error('Sync error:', err);
+        setSyncJobState({
+          status: 'error',
+          message: err?.message || 'Erro na sincronização',
+          finishedAt: Date.now(),
+        });
+        toast.error('Erro na sincronização', { description: err?.message || 'Tente novamente' });
+      } finally {
+        markSyncRunning(false);
+      }
+    })();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     const deviceData: Device = {
       id: editingId || `dev_${Date.now()}`,
       ...formData,
       lastSync: new Date().toISOString(),
     };
-
     const success = await saveDevice(deviceData);
-    if (success) {
-      resetForm();
-    }
+    if (success) resetForm();
   };
 
   const handleEdit = (device: Device) => {
@@ -123,50 +173,39 @@ export const Devices = () => {
   const toggleStatus = async (id: string) => {
     const device = devices.find(d => d.id === id);
     if (!device) return;
-
-    const updatedDevice: Device = {
+    await saveDevice({
       ...device,
       status: device.status === 'online' ? 'offline' : 'online',
       lastSync: new Date().toISOString(),
-    };
-
-    await saveDevice(updatedDevice);
+    });
   };
 
   const resetForm = () => {
     setEditingId('');
     setFormData({
-      name: '',
-      type: 'facial_recognition',
-      location: '',
-      status: 'online',
-      ipAddress: '',
-      serialNumber: '',
+      name: '', type: 'facial_recognition', location: '', status: 'online',
+      ipAddress: '', serialNumber: '',
     });
     setShowForm(false);
   };
 
   const getDeviceIcon = (type: Device['type']) => {
     switch (type) {
-      case 'facial_recognition':
-        return <Camera className="h-5 w-5" />;
-      case 'vehicle_tag':
-        return <Tag className="h-5 w-5" />;
-      case 'card_reader':
-        return <CreditCard className="h-5 w-5" />;
+      case 'facial_recognition': return <Camera className="h-5 w-5" />;
+      case 'vehicle_tag': return <Tag className="h-5 w-5" />;
+      case 'card_reader': return <CreditCard className="h-5 w-5" />;
     }
   };
 
   const getDeviceTypeName = (type: Device['type']) => {
     switch (type) {
-      case 'facial_recognition':
-        return 'Reconhecimento Facial';
-      case 'vehicle_tag':
-        return 'TAG Veicular';
-      case 'card_reader':
-        return 'Leitor de Cartão';
+      case 'facial_recognition': return 'Reconhecimento Facial';
+      case 'vehicle_tag': return 'TAG Veicular';
+      case 'card_reader': return 'Leitor de Cartão';
     }
   };
+
+  const progressPct = job.total > 0 ? Math.min(100, Math.round((job.current / job.total) * 100)) : 0;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -176,17 +215,8 @@ export const Devices = () => {
           <p className="text-muted-foreground">Gerencie os dispositivos de controle de acesso</p>
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={handleSyncAll}
-            disabled={syncing}
-            title="Configura webhook, reconcilia faces/TAGs do hardware e replica todos os moradores nos dispositivos"
-          >
-            {syncing ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4 mr-2" />
-            )}
+          <Button variant="outline" onClick={handleSyncAll} disabled={syncing}>
+            {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
             Sincronizar Tudo
           </Button>
           <Button onClick={() => setShowForm(!showForm)}>
@@ -196,15 +226,36 @@ export const Devices = () => {
         </div>
       </div>
 
-      {syncing && syncStatus && (
+      {(syncing || job.status === 'done' || job.status === 'error') && job.message && (
         <Card>
-          <CardContent className="py-3 flex items-center gap-3">
-            <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            <span className="text-sm text-muted-foreground">{syncStatus}</span>
+          <CardContent className="py-3 space-y-2">
+            <div className="flex items-center gap-3">
+              {syncing && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+              {job.status === 'done' && <CheckCircle2 className="h-4 w-4 text-green-500" />}
+              {job.status === 'error' && <AlertCircle className="h-4 w-4 text-destructive" />}
+              <span className="text-sm text-muted-foreground flex-1">{job.message}</span>
+              {job.total > 0 && (
+                <span className="text-xs text-muted-foreground">{job.current}/{job.total}</span>
+              )}
+              {(job.status === 'done' || job.status === 'error') && (
+                <Button size="sm" variant="ghost" onClick={resetSyncJob}>Fechar</Button>
+              )}
+            </div>
+            {syncing && job.total > 0 && (
+              <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                <div className="h-full bg-primary transition-all" style={{ width: `${progressPct}%` }} />
+              </div>
+            )}
+            {(job.photosSynced > 0 || job.tagsSynced > 0 || job.errors > 0) && (
+              <div className="flex gap-3 text-xs text-muted-foreground">
+                <span>📷 {job.photosSynced} fotos</span>
+                <span>🏷️ {job.tagsSynced} TAGs</span>
+                {job.errors > 0 && <span className="text-destructive">⚠️ {job.errors} erros</span>}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
-
       {showForm && (
         <Card>
           <CardHeader>
@@ -317,8 +368,15 @@ export const Devices = () => {
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex items-center space-x-2">
-                    <div className={`p-2 rounded-lg ${device.status === 'online' ? 'bg-success/20' : 'bg-destructive/20'}`}>
-                      {getDeviceIcon(device.type)}
+                    <div className="relative">
+                      <div className={`p-2 rounded-lg ${device.status === 'online' ? 'bg-success/20' : 'bg-destructive/20'}`}>
+                        {getDeviceIcon(device.type)}
+                      </div>
+                      <span
+                        className={`absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-card ${getDeviceHealth(device).color}`}
+                        title={getDeviceHealth(device).label}
+                        aria-label={getDeviceHealth(device).label}
+                      />
                     </div>
                     <div>
                       <CardTitle className="text-lg">{device.name}</CardTitle>

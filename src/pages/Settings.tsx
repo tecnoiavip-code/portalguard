@@ -410,7 +410,7 @@ export const Settings = () => {
           // Auto-detect data type
           const dataType = detectTextType(text);
           
-          if (dataType === 'access_entries') {
+          if (dataType === 'access') {
             // Parse as access entries
             const parsed = parseAccessEntriesFromText(text);
             if (parsed.length === 0) {

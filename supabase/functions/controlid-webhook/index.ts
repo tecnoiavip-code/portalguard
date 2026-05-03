@@ -481,12 +481,6 @@ Deno.serve(async (req) => {
                   result: payload,
                 })
                 .eq('id', executingCmd.id),
-              supabaseClient.from('controlid_logs').insert({
-                device_id: deviceId || 'unknown',
-                event_type: 'push_result',
-                payload: { ...payload, command_id: executingCmd.id },
-                processed: true,
-              }),
               photoUpdatePromise,
             ]));
           }
@@ -663,12 +657,6 @@ Deno.serve(async (req) => {
               result: payload,
             })
             .eq('id', executingCmd.id),
-          supabaseClient.from('controlid_logs').insert({
-            device_id: deviceId || 'unknown',
-            event_type: 'push_result',
-            payload: { ...payload, command_id: executingCmd?.id || null },
-            processed: true,
-          }),
           photoUpdatePromise,
         ]));
       }
@@ -749,13 +737,6 @@ Deno.serve(async (req) => {
           console.log('Could not verify config:', e);
         }
 
-        await supabaseClient.from('controlid_logs').insert({
-          device_id: targetSerial || targetIp,
-          event_type: 'config_push',
-          payload: { sent_config: fullConfig, verify_result: verifyData, config_response: configResult, target_ip: targetIp },
-          processed: true,
-        });
-
         return new Response(
           JSON.stringify({ 
             success: configResp.ok, 
@@ -820,13 +801,6 @@ Deno.serve(async (req) => {
       }
 
       console.log('Queued push config for device (DB-backed):', targetDeviceId);
-
-      await supabaseClient.from('controlid_logs').insert({
-        device_id: targetDeviceId,
-        event_type: 'config_push_queued',
-        payload: { queued_config: fullConfig },
-        processed: false,
-      });
 
       return new Response(
         JSON.stringify({ 
@@ -900,19 +874,7 @@ Deno.serve(async (req) => {
             ? { ...payload, saved_photo_path: savedPhotoPath }
             : payload;
 
-          // 2. Save log entry
-          const { data: logData } = await supabaseClient
-            .from('controlid_logs')
-            .insert({
-              device_id: effectiveDeviceId,
-              event_type: eventType,
-              payload: enrichedPayload,
-              processed: false
-            })
-            .select('id')
-            .single();
-
-          const logEntryId = logData?.id || null;
+          const logEntryId = null;
 
           // 3. Auto-sync vehicle tag
           const cardValue = String(payload.card_value || '');
@@ -1028,19 +990,6 @@ Deno.serve(async (req) => {
       ? { ...payload, saved_photo_path: savedPhotoPath }
       : payload;
 
-    const { error: logError } = await supabaseClient
-      .from('controlid_logs')
-      .insert({
-        device_id: effectiveDeviceId,
-        event_type: eventType,
-        payload: enrichedPayload,
-        processed: false
-      });
-
-    if (logError) {
-      console.error('Error saving Control iD log:', logError);
-    }
-
     // Process specific events
     if (eventType === 'dao' && payload.object_changes) {
       await processAccessLogs(supabaseClient, payload.object_changes, effectiveDeviceId);
@@ -1135,18 +1084,7 @@ async function processAccessLogs(supabaseClient: any, objectChanges: any[], devi
       const displayName = userName || userId || cardValue || 'Desconhecido';
       const resident = await matchResident(supabaseClient, displayName);
 
-      await supabaseClient.from('realtime_events').insert({
-        type: 'entry',
-        description: sanitizeString(
-          resident
-            ? `Acesso reconhecido: ${resident.name} - Apto ${resident.apartment}`
-            : `Acesso dispositivo: ${displayName} - Device ${deviceId}`,
-          200
-        ),
-        priority: resident ? 'low' : 'medium'
-      });
-
-      console.log('Realtime event created from Control iD', resident ? `(matched: ${resident.name})` : '(no match)');
+      console.log('Control iD visual access event received', resident ? `(matched: ${resident.name})` : `(display: ${displayName})`);
     }
 
     if (change.object === 'users' && (change.type === 'inserted' || change.type === 'updated')) {

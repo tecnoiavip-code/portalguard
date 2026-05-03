@@ -33,6 +33,37 @@ function normalizePushResult(result: any): any {
   };
 }
 
+function extractImageBase64(result: any): string | null {
+  const candidates = [
+    result?.user_image,
+    result?.user_image_hash,
+    result?.user_image_data,
+    result?.face_image,
+    result?.image,
+    result?.photo,
+    result?.result?.user_image,
+    result?.result?.user_image_hash,
+    result?.result?.user_image_data,
+    result?.result?.image,
+    result?.result?.photo,
+  ];
+
+  for (const value of candidates) {
+    if (typeof value !== 'string') continue;
+    const clean = value.replace(/^data:image\/[^;]+;base64,/i, '').replace(/\s+/g, '');
+    if (clean.length > 100) return clean.replace(/-/g, '+').replace(/_/g, '/');
+  }
+  return null;
+}
+
+function deviceUserHasPhoto(user: any): boolean {
+  return Number(user?.image_timestamp || 0) > 0
+    || user?.user_has_image === true
+    || user?.user_has_image === 1
+    || user?.has_image === true
+    || user?.has_image === 1;
+}
+
 /**
  * Queue a command to a device via push_command_queue and poll for result.
  */
@@ -242,7 +273,8 @@ export async function capturePhotoFromDevice(
     onStatus('Buscando foto capturada...', 'fetching', 70);
     const photoResult = await queueCommandAndWait(serial, 'user_get_image', {
       user_id: deviceUserId,
-    }, 30000, signal);
+      technology: 'visible_light',
+    }, 90000, signal);
 
     // Only clean up if NOT persisting on device
     if (!persistOnDevice) {
@@ -257,16 +289,15 @@ export async function capturePhotoFromDevice(
       onStatus('Biometria salva no dispositivo!', 'cleaning', 90);
     }
 
-    const base64 = photoResult?.user_image || photoResult?.image || photoResult?.photo;
+    const base64 = extractImageBase64(photoResult);
     if (base64) {
-      const clean = String(base64).replace(/^data:image\/[a-z]+;base64,/, '');
       onStatus(
         persistOnDevice
           ? 'Foto capturada e biometria registrada no dispositivo!'
           : 'Foto capturada com sucesso!',
         'done', 100
       );
-      return `data:image/jpeg;base64,${clean}`;
+      return `data:image/jpeg;base64,${base64}`;
     }
 
     onStatus('Dispositivo não retornou imagem. Tente novamente.', 'error', 0);
@@ -413,12 +444,12 @@ export async function syncPhotosFromDevices(
       try {
         const photoResult = await queueCommandAndWait(serial, 'user_get_image', {
           user_id: deviceUser.id,
-        }, 30000);
+          technology: 'visible_light',
+        }, 90000);
 
-        const base64 = photoResult?.user_image || photoResult?.image || photoResult?.photo;
+        const base64 = extractImageBase64(photoResult);
         if (base64) {
-          const clean = String(base64).replace(/^data:image\/[a-z]+;base64,/, '');
-          const dataUrl = `data:image/jpeg;base64,${clean}`;
+          const dataUrl = `data:image/jpeg;base64,${base64}`;
 
           // Upload to storage
           const res = await fetch(dataUrl);
@@ -724,17 +755,16 @@ export async function reconcileFromDevices(
       const resident = byHashId.get(u.id) || matchByName(u.name || '');
       if (!resident) { skipped++; continue; }
 
-      // Skip if resident already has photo OR device has no photo
+      // Skip if resident already has photo OR device clearly reports no photo
       if ((resident as any).photo) { skipped++; continue; }
-      if (!u.image_timestamp || u.image_timestamp <= 0) { skipped++; continue; }
+      if (!deviceUserHasPhoto(u) && 'image_timestamp' in u) { skipped++; continue; }
 
       try {
-        const photoResult = await queueCommandAndWait(serial, 'user_get_image', { user_id: u.id }, 30000);
-        const base64 = photoResult?.user_image || photoResult?.image || photoResult?.photo;
+        const photoResult = await queueCommandAndWait(serial, 'user_get_image', { user_id: u.id, technology: 'visible_light' }, 90000);
+        const base64 = extractImageBase64(photoResult);
         if (!base64) { skipped++; continue; }
 
-        const clean = String(base64).replace(/^data:image\/[a-z]+;base64,/, '');
-        const dataUrl = `data:image/jpeg;base64,${clean}`;
+        const dataUrl = `data:image/jpeg;base64,${base64}`;
         const res = await fetch(dataUrl);
         const blob = await res.blob();
         const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' });

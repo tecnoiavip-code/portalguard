@@ -1,37 +1,16 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
-import { componentTagger } from "lovable-tagger";
 import { VitePWA } from "vite-plugin-pwa";
 
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }) => ({
+export default defineConfig(() => ({
   server: {
     host: "::",
-    port: 8080,
-    middlewareMode: false,
-    proxy: {
-      '/auth/v1': {
-        target: 'https://kxdqffkkufgsizszchvw.supabase.co',
-        changeOrigin: true,
-        rewrite: (path) => path,
-      },
-      '/rest/v1': {
-        target: 'https://kxdqffkkufgsizszchvw.supabase.co',
-        changeOrigin: true,
-        rewrite: (path) => path,
-      },
-      '/realtime/v1': {
-        target: 'https://kxdqffkkufgsizszchvw.supabase.co',
-        changeOrigin: true,
-        rewrite: (path) => path,
-        ws: true,
-      },
-    },
+    port: 5173,
   },
   plugins: [
     react(),
-    mode === "development" && componentTagger(),
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["favicon.ico", "pwa-icon-192.png", "pwa-icon-512.png"],
@@ -89,9 +68,9 @@ export default defineConfig(({ mode }) => ({
     },
   },
   optimizeDeps: {
-    include: ['pdfjs-dist'],
+    include: ["pdfjs-dist"],
   },
   build: {
-    target: 'es2022',
+    target: "es2022",
   },
 }));

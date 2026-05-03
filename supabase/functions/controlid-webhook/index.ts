@@ -481,12 +481,6 @@ Deno.serve(async (req) => {
                   result: payload,
                 })
                 .eq('id', executingCmd.id),
-              supabaseClient.from('controlid_logs').insert({
-                device_id: deviceId || 'unknown',
-                event_type: 'push_result',
-                payload: { ...payload, command_id: executingCmd.id },
-                processed: true,
-              }),
               photoUpdatePromise,
             ]));
           }
@@ -663,12 +657,6 @@ Deno.serve(async (req) => {
               result: payload,
             })
             .eq('id', executingCmd.id),
-          supabaseClient.from('controlid_logs').insert({
-            device_id: deviceId || 'unknown',
-            event_type: 'push_result',
-            payload: { ...payload, command_id: executingCmd?.id || null },
-            processed: true,
-          }),
           photoUpdatePromise,
         ]));
       }

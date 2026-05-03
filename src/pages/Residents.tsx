@@ -28,6 +28,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { parseCSV, parsePDF, findBestMatch, ImportResult } from '@/lib/import-data';
 
 export const Residents = () => {
   const { residents, loading, saveResident, deleteResident, refresh } = useResidents();
@@ -75,6 +76,12 @@ export const Residents = () => {
   // Photo sync states
   const [photoSyncLoading, setPhotoSyncLoading] = useState(false);
   const [photoSyncStatus, setPhotoSyncStatus] = useState('');
+
+  // Import states
+  const [importLoading, setImportLoading] = useState(false);
+  const [importData, setImportData] = useState<ImportResult | null>(null);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
 
   const facialDevices = devices.filter(d => d.type === 'facial_recognition');
   const tagDevices = devices.filter(d => d.type === 'vehicle_tag' || d.type === 'card_reader');
@@ -383,6 +390,99 @@ export const Residents = () => {
     }
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImportLoading(true);
+    try {
+      let result: ImportResult;
+      if (file.name.endsWith('.pdf')) {
+        result = await parsePDF(file);
+      } else {
+        const text = await file.text();
+        result = parseCSV(text);
+      }
+
+      if (result.rows.length === 0) {
+        toast.error('Nenhum dado encontrado no arquivo.');
+        return;
+      }
+
+      // Initialize mapping with best matches
+      const fields = ['name', 'apartment', 'cpf', 'phone', 'email', 'vehicleTag', 'vehiclePlate'];
+      const initialMapping: Record<string, string> = {};
+      fields.forEach(field => {
+        initialMapping[field] = findBestMatch(result.headers, field);
+      });
+
+      setImportData(result);
+      setColumnMapping(initialMapping);
+      setShowImportDialog(true);
+    } catch (err: any) {
+      toast.error(`Erro ao ler arquivo: ${err.message}`);
+    } finally {
+      setImportLoading(false);
+      e.target.value = ''; // Reset input
+    }
+  };
+
+  const processImport = async () => {
+    if (!importData) return;
+
+    const confirmed = confirm(`Deseja importar ${importData.rows.length} registros?`);
+    if (!confirmed) return;
+
+    setImportLoading(true);
+    let success = 0;
+    let errors = 0;
+
+    try {
+      for (const row of importData.rows) {
+        const getVal = (field: string) => {
+          const colName = columnMapping[field];
+          if (!colName) return '';
+          const idx = importData.headers.indexOf(colName);
+          return idx !== -1 ? (row[idx] || '').trim() : '';
+        };
+
+        const name = getVal('name');
+        const apartment = getVal('apartment');
+
+        if (!name || !apartment) {
+          errors++;
+          continue;
+        }
+
+        const residentData: Resident = {
+          id: `res_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+          name,
+          apartment,
+          cpf: getVal('cpf'),
+          phone: getVal('phone'),
+          email: getVal('email'),
+          vehicleTag: getVal('vehicleTag'),
+          vehiclePlate: getVal('vehiclePlate'),
+          createdAt: new Date().toISOString(),
+        };
+
+        const ok = await saveResident(residentData);
+        if (ok) success++;
+        else errors++;
+      }
+
+      toast.success('Importação concluída!', {
+        description: `${success} moradores importados, ${errors} falhas.`
+      });
+      setShowImportDialog(false);
+      refresh();
+    } catch (err: any) {
+      toast.error(`Erro na importação: ${err.message}`);
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
@@ -392,13 +492,29 @@ export const Residents = () => {
         </div>
         <div className="flex gap-2">
           <Button
+            onClick={() => document.getElementById('fileImport')?.click()}
+            variant="outline"
+            disabled={importLoading}
+            className="gap-2"
+          >
+            {importLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            Importar Dados
+          </Button>
+          <input
+            id="fileImport"
+            type="file"
+            accept=".csv,.pdf"
+            className="hidden"
+            onChange={handleFileUpload}
+          />
+          <Button
             onClick={handleSyncPhotos}
             variant="outline"
             disabled={photoSyncLoading || facialDevices.length === 0}
             className="gap-2"
           >
             {photoSyncLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageDown className="h-4 w-4" />}
-            {photoSyncLoading ? 'Sincronizando...' : 'Importar Fotos'}
+            Importar Fotos
           </Button>
           <Button onClick={() => setIsDialogOpen(true)} size="lg" className="gap-2">
             <Plus className="h-5 w-5" />
@@ -898,6 +1014,69 @@ export const Residents = () => {
                   </button>
                 ))}
               </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Mapping Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Mapeamento de Colunas</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Relacione as colunas do seu arquivo {importData?.headers.length ? `(${importData.headers.length} colunas encontradas)` : ''} com os campos do sistema.
+            </p>
+            
+            <div className="grid grid-cols-2 gap-4">
+              {[
+                { label: 'Nome Completo *', key: 'name' },
+                { label: 'Apartamento/Unidade *', key: 'apartment' },
+                { label: 'CPF', key: 'cpf' },
+                { label: 'Telefone', key: 'phone' },
+                { label: 'E-mail', key: 'email' },
+                { label: 'TAG de Acesso', key: 'vehicleTag' },
+                { label: 'Placa do Veículo', key: 'vehiclePlate' },
+              ].map((field) => (
+                <div key={field.key} className="space-y-1">
+                  <Label className="text-xs">{field.label}</Label>
+                  <Select
+                    value={columnMapping[field.key] || 'skip'}
+                    onValueChange={(val) => setColumnMapping(prev => ({ ...prev, [field.key]: val === 'skip' ? '' : val }))}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Ignorar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="skip">-- Ignorar --</SelectItem>
+                      {importData?.headers.map(h => (
+                        <SelectItem key={h} value={h}>{h}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 flex gap-2">
+              <Button
+                onClick={processImport}
+                disabled={importLoading || !columnMapping.name || !columnMapping.apartment}
+                className="flex-1"
+              >
+                {importLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                Iniciar Importação ({importData?.rows.length} registros)
+              </Button>
+              <Button variant="outline" onClick={() => setShowImportDialog(false)}>
+                Cancelar
+              </Button>
+            </div>
+            {(!columnMapping.name || !columnMapping.apartment) && (
+              <p className="text-xs text-destructive text-center">
+                * Nome e Apartamento são campos obrigatórios para a importação.
+              </p>
             )}
           </div>
         </DialogContent>

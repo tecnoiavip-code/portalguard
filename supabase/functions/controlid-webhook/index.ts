@@ -82,7 +82,7 @@ const getMonitorConfig = () => {
   try {
     hostname = new URL(supabaseUrl).hostname;
   } catch {
-    hostname = 'kxdqffkkufgsizszchvw.supabase.co';
+    hostname = 'qasudwuoagblzfkvmyxx.supabase.co';
   }
 
   return {
@@ -90,7 +90,8 @@ const getMonitorConfig = () => {
       request_timeout: "15000",
       hostname: `${hostname}`,
       port: "443",
-      path: "/functions/v1/controlid-webhook"
+      path: "/functions/v1/controlid-webhook",
+      secure: "1"
     }
   };
 };
@@ -111,7 +112,7 @@ const getPushServerConfig = () => {
   try {
     hostname = new URL(supabaseUrl).hostname;
   } catch {
-    hostname = 'kxdqffkkufgsizszchvw.supabase.co';
+    hostname = 'qasudwuoagblzfkvmyxx.supabase.co';
   }
 
   return {
@@ -233,11 +234,12 @@ const buildIdentificationResponse = (payload: any, url: URL, deviceType?: string
 
   // MINIMAL Control iD response. Extra fields like message/user_image/duress can
   // break the firmware JSON parser and trigger "server communication error".
+  // Use integers (0/1) instead of booleans for maximum compatibility.
   const result: Record<string, unknown> = {
     event: granted ? 7 : 6,
     user_id: Number.isFinite(userId) ? userId : 0,
     user_name: userName,
-    user_image: payload?.user_has_image === 1 || payload?.user_has_image === '1' || payload?.user_has_image === true || payload?.user_has_image === 'true',
+    user_image: (payload?.user_has_image === 1 || payload?.user_has_image === '1' || payload?.user_has_image === true || payload?.user_has_image === 'true') ? 1 : 0,
     portal_id: resolvedPortal,
   };
 
@@ -965,6 +967,18 @@ Deno.serve(async (req) => {
         } catch (e) {
           console.error('Error in identification post-processing:', e);
         }
+
+        // 5. Send event to frontend by saving to controlid_logs
+        try {
+          await supabaseClient.from('controlid_logs').insert({
+            device_id: effectiveDeviceId,
+            event_type: 'identification_event',
+            payload: enrichedPayload,
+            processed: true
+          });
+        } catch (e) {
+          console.error('Error inserting identification log:', e);
+        }
       })());
 
       // Return door-open response IMMEDIATELY (< 50ms)
@@ -993,6 +1007,20 @@ Deno.serve(async (req) => {
     // Process specific events
     if (eventType === 'dao' && payload.object_changes) {
       await processAccessLogs(supabaseClient, payload.object_changes, effectiveDeviceId);
+    }
+
+    // Ensure non-identification events also reach the frontend
+    if (['dao', 'access_photo', 'catra_event'].includes(eventType)) {
+      try {
+        await supabaseClient.from('controlid_logs').insert({
+          device_id: effectiveDeviceId,
+          event_type: eventType,
+          payload: enrichedPayload,
+          processed: true
+        });
+      } catch (e) {
+        console.error('Error inserting event log:', e);
+      }
     }
 
     // Other Control iD .fcgi callbacks expect empty 200 acknowledgements
@@ -1099,7 +1127,16 @@ async function processAccessLogs(supabaseClient: any, objectChanges: any[], devi
 async function saveAccessPhoto(supabaseClient: any, deviceId: string, base64Data: string): Promise<string | null> {
   try {
     // Remove data URI prefix if present and normalize to standard base64
-    const cleanBase64 = base64Data.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '').replace(/\s+/g, '');
+    // Using string methods instead of regex with backslashes to avoid parsing issues in some environments
+    let cleanBase64 = base64Data;
+    if (cleanBase64.startsWith('data:image')) {
+      const commaIndex = cleanBase64.indexOf(',');
+      if (commaIndex !== -1) {
+        cleanBase64 = cleanBase64.substring(commaIndex + 1);
+      }
+    }
+    // Remove spaces and newlines
+    cleanBase64 = cleanBase64.split(' ').join('').split('\n').join('').split('\r').join('');
     const normalizedBase64 = cleanBase64.replace(/-/g, '+').replace(/_/g, '/');
     const missingPadding = normalizedBase64.length % 4;
     const paddedBase64 = missingPadding === 0

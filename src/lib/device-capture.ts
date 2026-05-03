@@ -444,12 +444,12 @@ export async function syncPhotosFromDevices(
       try {
         const photoResult = await queueCommandAndWait(serial, 'user_get_image', {
           user_id: deviceUser.id,
-        }, 30000);
+          technology: 'visible_light',
+        }, 90000);
 
-        const base64 = photoResult?.user_image || photoResult?.image || photoResult?.photo;
+        const base64 = extractImageBase64(photoResult);
         if (base64) {
-          const clean = String(base64).replace(/^data:image\/[a-z]+;base64,/, '');
-          const dataUrl = `data:image/jpeg;base64,${clean}`;
+          const dataUrl = `data:image/jpeg;base64,${base64}`;
 
           // Upload to storage
           const res = await fetch(dataUrl);
@@ -755,17 +755,16 @@ export async function reconcileFromDevices(
       const resident = byHashId.get(u.id) || matchByName(u.name || '');
       if (!resident) { skipped++; continue; }
 
-      // Skip if resident already has photo OR device has no photo
+      // Skip if resident already has photo OR device clearly reports no photo
       if ((resident as any).photo) { skipped++; continue; }
-      if (!u.image_timestamp || u.image_timestamp <= 0) { skipped++; continue; }
+      if (!deviceUserHasPhoto(u) && 'image_timestamp' in u) { skipped++; continue; }
 
       try {
-        const photoResult = await queueCommandAndWait(serial, 'user_get_image', { user_id: u.id }, 30000);
-        const base64 = photoResult?.user_image || photoResult?.image || photoResult?.photo;
+        const photoResult = await queueCommandAndWait(serial, 'user_get_image', { user_id: u.id, technology: 'visible_light' }, 90000);
+        const base64 = extractImageBase64(photoResult);
         if (!base64) { skipped++; continue; }
 
-        const clean = String(base64).replace(/^data:image\/[a-z]+;base64,/, '');
-        const dataUrl = `data:image/jpeg;base64,${clean}`;
+        const dataUrl = `data:image/jpeg;base64,${base64}`;
         const res = await fetch(dataUrl);
         const blob = await res.blob();
         const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' });

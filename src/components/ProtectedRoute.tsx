@@ -16,24 +16,36 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
 
   useEffect(() => {
     if (!isLoading && !user) {
+      setRoleChecked(false);
+      setIsResident(false);
       navigate('/auth');
       return;
     }
 
     if (!isLoading && user) {
-      supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user.id)
-        .eq('role', 'resident')
-        .maybeSingle()
-        .then(({ data }) => {
-          if (data) {
-            setIsResident(true);
-            navigate('/morador');
-          }
-          setRoleChecked(true);
-        });
+      let active = true;
+      setRoleChecked(false);
+
+      Promise.race([
+        supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', user.id)
+          .eq('role', 'resident')
+          .maybeSingle(),
+        new Promise<{ data: null }>((resolve) => setTimeout(() => resolve({ data: null }), 4000)),
+      ]).then(({ data }) => {
+        if (!active) return;
+        if (data) {
+          setIsResident(true);
+          navigate('/morador');
+        } else {
+          setIsResident(false);
+        }
+        setRoleChecked(true);
+      });
+
+      return () => { active = false; };
     }
   }, [user, isLoading, navigate]);
 

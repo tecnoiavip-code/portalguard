@@ -737,13 +737,6 @@ Deno.serve(async (req) => {
           console.log('Could not verify config:', e);
         }
 
-        await supabaseClient.from('controlid_logs').insert({
-          device_id: targetSerial || targetIp,
-          event_type: 'config_push',
-          payload: { sent_config: fullConfig, verify_result: verifyData, config_response: configResult, target_ip: targetIp },
-          processed: true,
-        });
-
         return new Response(
           JSON.stringify({ 
             success: configResp.ok, 
@@ -1091,18 +1084,7 @@ async function processAccessLogs(supabaseClient: any, objectChanges: any[], devi
       const displayName = userName || userId || cardValue || 'Desconhecido';
       const resident = await matchResident(supabaseClient, displayName);
 
-      await supabaseClient.from('realtime_events').insert({
-        type: 'entry',
-        description: sanitizeString(
-          resident
-            ? `Acesso reconhecido: ${resident.name} - Apto ${resident.apartment}`
-            : `Acesso dispositivo: ${displayName} - Device ${deviceId}`,
-          200
-        ),
-        priority: resident ? 'low' : 'medium'
-      });
-
-      console.log('Realtime event created from Control iD', resident ? `(matched: ${resident.name})` : '(no match)');
+      console.log('Control iD visual access event received', resident ? `(matched: ${resident.name})` : `(display: ${displayName})`);
     }
 
     if (change.object === 'users' && (change.type === 'inserted' || change.type === 'updated')) {

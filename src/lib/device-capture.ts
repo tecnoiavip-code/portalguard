@@ -69,6 +69,21 @@ function deviceUserHasPhoto(user: any): boolean {
     || user?.has_image === 1;
 }
 
+function normalizeText(value: string): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function buildCardObjectId(userId: number, cardValue: number): number {
+  const raw = Math.abs(hashCode(`${userId}:${cardValue}`));
+  if (raw > 0) return raw;
+  const fallback = Math.abs(userId) + 1;
+  return fallback > 0 ? fallback : 1;
+}
+
 /**
  * Queue a command to a device via push_command_queue and poll for result.
  */
@@ -475,7 +490,7 @@ export async function syncPhotosFromDevices(
       const userName = deviceUser.name;
 
       // Parse "APT - NAME" format
-      const aptMatch = userName.match(/^(\d+\w?)\s*[-–]\s*(.+)$/i);
+      const aptMatch = userName.match(/^(\d+\w?)\s*[-\u2013]\s*(.+)$/i);
       let matchedResident: Resident | undefined;
 
       if (aptMatch) {
@@ -575,7 +590,7 @@ export async function syncBiometricToAllDevices(
     const device = facialDevices[i];
     const serial = getDeviceSerial(device);
     if (!serial) {
-      details.push(`${device.name}: sem número de série`);
+      details.push(`${device.name}: sem numero de serie`);
       errors++;
       continue;
     }
@@ -583,19 +598,48 @@ export async function syncBiometricToAllDevices(
     onProgress?.(`Sincronizando ${device.name} (${i + 1}/${facialDevices.length})...`, i, facialDevices.length);
 
     try {
-      // Remove existing user if present (to update)
-      try {
-        await queueCommandAndWait(serial, 'destroy_objects', {
-          object: 'users',
-          where: { users: { id: deviceUserId } },
-        }, 15000);
-      } catch { /* user may not exist */ }
+      // Remove stale duplicates for this resident on this device.
+      // Priority: registration match; fallback: exact normalized label match.
+      const registrationKey = normalizeText(deviceRegistration);
+      const nameKey = normalizeText(deviceUserName);
+      let removedDuplicates = 0;
 
-      // Create user on device
-      await queueCommandAndWait(serial, 'create_objects', {
+      try {
+        const usersResult = await queueCommandAndWait(serial, 'load_objects', {
+          object: 'users',
+        }, 30000);
+
+        const users = Array.isArray(usersResult?.users) ? usersResult.users : [];
+        for (const existingUser of users) {
+          const existingId = Number(existingUser?.id || 0);
+          if (!Number.isFinite(existingId) || existingId <= 0 || existingId === deviceUserId) continue;
+
+          const existingRegistration = normalizeText(String(existingUser?.registration || ''));
+          const existingName = normalizeText(String(existingUser?.name || ''));
+          const byRegistration = !!registrationKey && existingRegistration === registrationKey;
+          const byName = !registrationKey && !!nameKey && existingName === nameKey;
+
+          if (!byRegistration && !byName) continue;
+
+          try {
+            await queueCommandAndWait(serial, 'destroy_objects', {
+              object: 'users',
+              where: { users: { id: existingId } },
+            }, 15000);
+            removedDuplicates++;
+          } catch {
+            // ignore per-user cleanup failure and continue
+          }
+        }
+      } catch {
+        // if we fail to list users, continue with upsert flow
+      }
+
+      // Upsert user on device (idempotent, avoids duplicates by id).
+      await queueCommandAndWait(serial, 'create_or_modify_objects', {
         object: 'users',
         values: [{ id: deviceUserId, name: deviceUserName, registration: deviceRegistration }],
-      }, 15000);
+      }, 20000);
 
       // Set the facial image on the device
       await queueBinaryCommandAndWait(serial, 'user_set_image', cleanBase64, {
@@ -604,15 +648,19 @@ export async function syncBiometricToAllDevices(
       }, 30000);
 
       synced++;
-      details.push(`${device.name}: ✓ sincronizado`);
+      details.push(
+        removedDuplicates > 0
+          ? `${device.name}: sincronizado (${removedDuplicates} duplicado(s) removido(s))`
+          : `${device.name}: sincronizado`
+      );
     } catch (err: any) {
       errors++;
-      details.push(`${device.name}: ✗ ${err.message}`);
+      details.push(`${device.name}: erro - ${err.message}`);
       console.error(`Biometric sync error on ${device.name}:`, err);
     }
   }
 
-  onProgress?.('Sincronização concluída!', facialDevices.length, facialDevices.length);
+  onProgress?.('Sincronizacao concluida!', facialDevices.length, facialDevices.length);
   return { synced, errors, details };
 }
 
@@ -639,6 +687,9 @@ export async function syncTagToAllDevices(
     : personInfo.name;
   const deviceRegistration = personInfo.registration || personInfo.document || personInfo.identifier;
   const cardValue = Number(String(tagValue).replace(/\D/g, '')) || 0;
+  if (!Number.isFinite(cardValue) || cardValue <= 0) {
+    return { synced: 0, errors: 1, details: ['TAG invalida para sincronizacao.'] };
+  }
 
   let synced = 0;
   let errors = 0;
@@ -647,38 +698,53 @@ export async function syncTagToAllDevices(
   for (let i = 0; i < targetDevices.length; i++) {
     const device = targetDevices[i];
     const serial = getDeviceSerial(device);
-    if (!serial) { errors++; continue; }
+    if (!serial) {
+      errors++;
+      details.push(`${device.name}: sem numero de serie`);
+      continue;
+    }
 
     onProgress?.(`Sincronizando TAG em ${device.name}...`, i, targetDevices.length);
 
     try {
-      // Ensure user exists (idempotent: try create, ignore if exists)
-      try {
-        await queueCommandAndWait(serial, 'create_objects', {
-          object: 'users',
-          values: [{ id: deviceUserId, name: deviceUserName, registration: deviceRegistration }],
-        }, 15000);
-      } catch { /* may already exist */ }
+      // Upsert user before binding cards.
+      await queueCommandAndWait(serial, 'create_or_modify_objects', {
+        object: 'users',
+        values: [{ id: deviceUserId, name: deviceUserName, registration: deviceRegistration }],
+      }, 20000);
 
-      // Remove existing cards for this user before re-adding (avoid duplicates)
+      // Remove stale cards attached to this user (keep only one current tag).
       try {
         await queueCommandAndWait(serial, 'destroy_objects', {
           object: 'cards',
           where: { cards: { user_id: deviceUserId } },
         }, 15000);
-      } catch { /* ignore */ }
+      } catch {
+        // ignore cleanup failure
+      }
 
-      // Create the card
-      await queueCommandAndWait(serial, 'create_objects', {
+      // Remove this tag value from any other user (value is unique in Control iD).
+      try {
+        await queueCommandAndWait(serial, 'destroy_objects', {
+          object: 'cards',
+          where: { cards: { value: cardValue } },
+        }, 15000);
+      } catch {
+        // ignore if value does not exist yet
+      }
+
+      // Upsert card with deterministic id to avoid duplicate rows.
+      await queueCommandAndWait(serial, 'create_or_modify_objects', {
         object: 'cards',
-        values: [{ value: cardValue, user_id: deviceUserId }],
-      }, 15000);
+        values: [{ id: buildCardObjectId(deviceUserId, cardValue), value: cardValue, user_id: deviceUserId }],
+      }, 20000);
 
       synced++;
-      details.push(`${device.name}: ✓ TAG sincronizada`);
+      details.push(`${device.name}: TAG sincronizada`);
     } catch (err: any) {
       errors++;
-      details.push(`${device.name}: ✗ ${err.message}`);
+      details.push(`${device.name}: erro - ${err.message}`);
+      console.error(`Tag sync error on ${device.name}:`, err);
     }
   }
 
@@ -771,7 +837,7 @@ export async function reconcileFromDevices(
   }
 
   const matchByName = (deviceUserName: string): Resident | undefined => {
-    const aptMatch = deviceUserName.match(/^(\d+\w?)\s*[-–]\s*(.+)$/i);
+    const aptMatch = deviceUserName.match(/^(\d+\w?)\s*[-\u2013]\s*(.+)$/i);
     if (aptMatch) {
       const [, apt, extracted] = aptMatch;
       const n = normalizeStr(extracted);

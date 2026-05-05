@@ -28,7 +28,8 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { parseCSV, parsePDF, findBestMatch, ImportResult } from '@/lib/import-data';
+import { parseCSV, parsePDF, parsePDFWithOCR, findBestMatch, ImportResult } from '@/lib/import-data';
+import { supabase } from '@/integrations/supabase/client';
 
 export const Residents = () => {
   const { residents, loading, saveResident, deleteResident, refresh } = useResidents();
@@ -82,6 +83,7 @@ export const Residents = () => {
   const [importData, setImportData] = useState<ImportResult | null>(null);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
+  const [currentFile, setCurrentFile] = useState<File | null>(null);
 
   const facialDevices = devices.filter(d => d.type === 'facial_recognition');
   const tagDevices = devices.filter(d => d.type === 'vehicle_tag' || d.type === 'card_reader');
@@ -405,9 +407,20 @@ export const Residents = () => {
       }
 
       if (result.rows.length === 0) {
+        // If PDF is empty, suggest OCR automatically
+        if (file.name.endsWith('.pdf')) {
+          const tryOCR = confirm('O PDF parece não conter texto extraível (pode ser uma imagem). Deseja tentar a extração via IA (OCR)?');
+          if (tryOCR) {
+            setCurrentFile(file);
+            handleOCRImport(file);
+            return;
+          }
+        }
         toast.error('Nenhum dado encontrado no arquivo.');
         return;
       }
+
+      setCurrentFile(file);
 
       // Initialize mapping with best matches
       const fields = ['name', 'apartment', 'cpf', 'phone', 'email', 'vehicleTag', 'vehiclePlate'];
@@ -423,7 +436,40 @@ export const Residents = () => {
       toast.error(`Erro ao ler arquivo: ${err.message}`);
     } finally {
       setImportLoading(false);
-      e.target.value = ''; // Reset input
+      if (e.target.value) e.target.value = ''; // Reset input
+    }
+  };
+
+  const handleOCRImport = async (fileToProcess?: File) => {
+    const file = fileToProcess || currentFile;
+    if (!file) return;
+
+    setImportLoading(true);
+    setImportData(null);
+    try {
+      toast.info('Iniciando extração via IA... Isso pode levar alguns segundos.', { duration: 5000 });
+      const result = await parsePDFWithOCR(file, supabase);
+      
+      if (result.rows.length === 0) {
+        toast.error('A IA não conseguiu identificar dados de moradores neste documento.');
+        return;
+      }
+
+      // Initialize mapping
+      const fields = ['name', 'apartment', 'cpf', 'phone', 'email', 'vehicleTag', 'vehiclePlate'];
+      const initialMapping: Record<string, string> = {};
+      fields.forEach(field => {
+        initialMapping[field] = findBestMatch(result.headers, field);
+      });
+
+      setImportData(result);
+      setColumnMapping(initialMapping);
+      setShowImportDialog(true);
+      toast.success('Extração via IA concluída!');
+    } catch (err: any) {
+      toast.error(`Erro no OCR: ${err.message}`);
+    } finally {
+      setImportLoading(false);
     }
   };
 
@@ -436,9 +482,14 @@ export const Residents = () => {
     setImportLoading(true);
     let success = 0;
     let errors = 0;
+    let errorDetails: string[] = [];
 
     try {
-      for (const row of importData.rows) {
+      console.log('Starting import of', importData.rows.length, 'rows');
+      
+      for (let i = 0; i < importData.rows.length; i++) {
+        const row = importData.rows[i];
+        
         const getVal = (field: string) => {
           const colName = columnMapping[field];
           if (!colName) return '';
@@ -451,6 +502,7 @@ export const Residents = () => {
 
         if (!name || !apartment) {
           errors++;
+          errorDetails.push(`Linha ${i + 1}: Nome ou Apartamento ausentes`);
           continue;
         }
 
@@ -466,18 +518,42 @@ export const Residents = () => {
           createdAt: new Date().toISOString(),
         };
 
-        const ok = await saveResident(residentData);
-        if (ok) success++;
-        else errors++;
+        try {
+          const result = await saveResident(residentData);
+          if (result) {
+            success++;
+          } else {
+            errors++;
+            errorDetails.push(`Linha ${i + 1} (${name}): Erro ao salvar (provável duplicata)`);
+          }
+        } catch (err: any) {
+          errors++;
+          errorDetails.push(`Linha ${i + 1} (${name}): ${err.message}`);
+          console.error(`Error saving row ${i}:`, err);
+        }
       }
 
-      toast.success('Importação concluída!', {
-        description: `${success} moradores importados, ${errors} falhas.`
-      });
+      if (errors === 0) {
+        toast.success('Importação concluída com sucesso!', {
+          description: `${success} moradores importados.`
+        });
+      } else if (success > 0) {
+        toast.warning('Importação concluída com ressalvas', {
+          description: `${success} importados, ${errors} falhas. Verifique o console para detalhes.`
+        });
+        console.table(errorDetails);
+      } else {
+        toast.error('A importação falhou completamente', {
+          description: `Nenhum registro foi salvo. Verifique o console.`
+        });
+        console.table(errorDetails);
+      }
+      
       setShowImportDialog(false);
       refresh();
     } catch (err: any) {
-      toast.error(`Erro na importação: ${err.message}`);
+      toast.error(`Erro crítico na importação: ${err.message}`);
+      console.error('Critical import error:', err);
     } finally {
       setImportLoading(false);
     }
@@ -1028,7 +1104,24 @@ export const Residents = () => {
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Relacione as colunas do seu arquivo {importData?.headers.length ? `(${importData.headers.length} colunas encontradas)` : ''} com os campos do sistema.
+              {importData?.headers.length === 0 && (
+                <span className="block text-destructive font-medium mt-1">Aviso: Nenhuma coluna identificada. Tente usar o OCR abaixo.</span>
+              )}
             </p>
+            
+            <div className="flex justify-end">
+              <Button 
+                type="button" 
+                variant="outline" 
+                size="sm" 
+                onClick={() => handleOCRImport()}
+                disabled={importLoading}
+                className="text-xs gap-2"
+              >
+                {importLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ScanFace className="h-3 w-3" />}
+                Tentar extração via IA (OCR)
+              </Button>
+            </div>
             
             <div className="grid grid-cols-2 gap-4">
               {[

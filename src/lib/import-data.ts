@@ -96,6 +96,36 @@ export async function parsePDF(file: File): Promise<ImportResult> {
 }
 
 /**
+ * Extracts text content from a PDF using OCR (Gemini).
+ * This is used for scanned documents where getPage().getTextContent() fails.
+ */
+export async function parsePDFWithOCR(file: File, supabaseClient: any): Promise<ImportResult> {
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.split(',')[1]); // Remove data:application/pdf;base64,
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  const { data, error } = await supabaseClient.functions.invoke("pdf-ocr", {
+    body: { pdfBase64: base64, fileName: file.name }
+  });
+
+  if (error) throw error;
+  if (!data.text) throw new Error("Nenhum texto extraído pelo OCR");
+
+  const lines = data.text.split("\n").filter((l: string) => l.trim().length > 0 && l.includes(";"));
+  
+  const headers = ["Nome", "Apartamento", "CPF", "Telefone", "Email"];
+  const rows = lines.map((line: string) => line.split(";").map((s: string) => s.trim()));
+
+  return { headers, rows };
+}
+
+/**
  * Heuristics to find the best matching column for a field.
  */
 export function findBestMatch(headers: string[], field: string): string {
@@ -117,8 +147,8 @@ export function findBestMatch(headers: string[], field: string): string {
     cpf: ['cpf', 'documento', 'doc', 'identidade'],
     phone: ['tel', 'telefone', 'celular', 'contato', 'fone'],
     email: ['email', 'e-mail', 'correio'],
-    vehicle_tag: ['tag', 'adesivo', 'uhf', 'cartao', 'acesso'],
-    vehicle_plate: ['placa', 'veiculo', 'carro', 'moto'],
+    vehicleTag: ['tag', 'adesivo', 'uhf', 'cartao', 'acesso'],
+    vehiclePlate: ['placa', 'veiculo', 'carro', 'moto'],
   };
 
   const keys = synonyms[field] || [];

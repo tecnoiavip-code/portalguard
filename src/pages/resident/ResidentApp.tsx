@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import ResidentLayout, { type Counts } from './ResidentLayout';
 import ResidentDashboard from './ResidentDashboard';
 import ResidentMails from './ResidentMails';
@@ -7,13 +7,31 @@ import ResidentAuthorizations from './ResidentAuthorizations';
 import ResidentChat from './ResidentChat';
 import ResidentAnnouncements from './ResidentAnnouncements';
 
+const RESIDENT_ACTIVE_TAB_KEY = 'resident-active-tab-v1';
+const RESIDENT_TABS = new Set(['home', 'mails', 'announcements', 'visitors', 'authorizations', 'chat']);
+
 const ResidentApp = () => {
-  const [activeTab, setActiveTab] = useState('home');
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const saved = localStorage.getItem(RESIDENT_ACTIVE_TAB_KEY);
+      return saved && RESIDENT_TABS.has(saved) ? saved : 'home';
+    } catch {
+      return 'home';
+    }
+  });
   const [counts, setCounts] = useState<Counts>({ chat: 0, notif: 0, mails: 0, announcements: 0 });
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
   };
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RESIDENT_ACTIVE_TAB_KEY, activeTab);
+    } catch {
+      // ignore storage errors
+    }
+  }, [activeTab]);
 
   const renderTab = () => {
     switch (activeTab) {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Layout } from '@/components/Layout';
 import { Sidebar } from '@/components/Sidebar';
 import { Dashboard } from './Dashboard';
@@ -15,9 +15,40 @@ import StaffAuthorizations from './StaffAuthorizations';
 import StaffAnnouncements from './StaffAnnouncements';
 
 
+const STAFF_ACTIVE_SECTION_KEY = 'staff-active-section-v1';
+const STAFF_SECTIONS = new Set([
+  'dashboard',
+  'residents',
+  'new-registry',
+  'mail',
+  'mail-logs',
+  'staff-chat',
+  'authorizations',
+  'announcements',
+  'devices',
+  'logs',
+  'reports',
+  'settings',
+]);
+
 const Index = () => {
-  const [activeSection, setActiveSection] = useState('dashboard');
+  const [activeSection, setActiveSection] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STAFF_ACTIVE_SECTION_KEY);
+      return saved && STAFF_SECTIONS.has(saved) ? saved : 'dashboard';
+    } catch {
+      return 'dashboard';
+    }
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STAFF_ACTIVE_SECTION_KEY, activeSection);
+    } catch {
+      // ignore storage errors
+    }
+  }, [activeSection]);
 
   const renderSection = () => {
     switch (activeSection) {

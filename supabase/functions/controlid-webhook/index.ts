@@ -37,6 +37,17 @@ const parseFormEncodedPayload = (raw: string): Record<string, string> => {
   return result;
 };
 
+const isEnterpriseIdentificationPath = (path: string): boolean => {
+  return (
+    path.includes('new_card.fcgi') ||
+    path.includes('new_qrcode.fcgi') ||
+    path.includes('new_uhf_tag.fcgi') ||
+    path.includes('new_user_id_and_password.fcgi') ||
+    path.includes('new_biometric_image.fcgi') ||
+    path.includes('new_biometric_template.fcgi')
+  );
+};
+
 // Rate limiting map
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 const RATE_LIMIT_WINDOW = 60000;
@@ -65,11 +76,20 @@ const checkRateLimit = (deviceId: string): boolean => {
 };
 
 const runBackground = (label: string, task: Promise<unknown> | unknown) => {
-  if (task && typeof (task as any).catch === 'function') {
-    (task as Promise<unknown>).catch((error) => {
-      console.error(`Background task failed: ${label}`, error);
-    });
+  if (!(task && typeof (task as any).catch === 'function')) return;
+
+  const promise = (task as Promise<unknown>).catch((error) => {
+    console.error(`Background task failed: ${label}`, error);
+  });
+
+  const edgeRuntime = (globalThis as any).EdgeRuntime;
+  if (edgeRuntime && typeof edgeRuntime.waitUntil === 'function') {
+    edgeRuntime.waitUntil(promise);
+    return;
   }
+
+  // Fallback for runtimes without waitUntil support.
+  promise;
 };
 
 /**
@@ -138,6 +158,7 @@ const detectEventType = (url: URL, payload: any): string => {
   if (path.includes('/push/result') || path.endsWith('/result')) return 'push_result';
   if (path.includes('device_is_alive.fcgi') || path.includes('/device_is_alive')) return 'device_is_alive';
   if (path.includes('identification_event.fcgi') || path.includes('new_user_identified.fcgi')) return 'identification_event';
+  if (isEnterpriseIdentificationPath(path)) return 'enterprise_identification_event';
   if (path.includes('session_is_valid.fcgi')) return 'session_is_valid';
 
   // Some devices send heartbeat as POST /push (or base webhook path) with access_logs in payload
@@ -156,6 +177,20 @@ const detectEventType = (url: URL, payload: any): string => {
     // Identification payloads always have event + (user_id or user_name)
     if (hasEvent && (hasUserId || hasUserName || hasPortal)) {
       return 'identification_event';
+    }
+
+    // Enterprise mode identification payloads may not include "event".
+    const hasIdentifierData =
+      payload.card_value !== undefined ||
+      payload.uhf_tag !== undefined ||
+      payload.qrcode_value !== undefined ||
+      payload.password !== undefined;
+    const hasEnterpriseContext =
+      payload.identifier_id !== undefined ||
+      payload.portal_id !== undefined ||
+      payload.time !== undefined;
+    if (hasIdentifierData && hasEnterpriseContext) {
+      return 'enterprise_identification_event';
     }
   }
 
@@ -205,23 +240,32 @@ const buildIdentificationActions = (payload: any, deviceType?: string | null) =>
   const portalId = Number.parseInt(String(payload?.portal_id ?? '1'), 10);
   const resolvedPortal = Number.isFinite(portalId) && portalId > 0 ? portalId : 1;
 
-  // Readers often differ between "door" and "sec_box" actions.
-  // To maximize firmware compatibility in heterogeneous environments,
-  // send both actions unless we have an explicit reason to specialize.
-  if (deviceType === 'vehicle_tag' || !deviceType) {
-    return [
-      { action: 'sec_box', parameters: 'id=65793, reason=1' },
-      { action: 'door', parameters: `door=${resolvedPortal}` },
-    ];
+  // Device-specific action mapping (Control iD docs):
+  // - iDFlex / iDAccess Pro / iDAccess Nano / iDFace => sec_box
+  // - iDAccess / iDFit / iDBox / iDUHF (relay) => door
+  if (deviceType === 'facial_recognition') {
+    return [{ action: 'sec_box', parameters: 'id=65793, reason=1' }];
   }
 
-  return [
-    { action: 'sec_box', parameters: 'id=65793, reason=1' },
-    { action: 'door', parameters: `door=${resolvedPortal}` },
-  ];
+  if (deviceType === 'vehicle_tag' || deviceType === 'card_reader') {
+    return [{ action: 'door', parameters: `door=${resolvedPortal}` }];
+  }
+
+  // Unknown device fallback: UHF/card payloads are usually relay/door devices.
+  if (payload?.uhf_tag || payload?.card_value || payload?.qrcode_value) {
+    return [{ action: 'door', parameters: `door=${resolvedPortal}` }];
+  }
+
+  // Unknown facial/identified-user fallback.
+  return [{ action: 'sec_box', parameters: 'id=65793, reason=1' }];
 };
 
-const buildIdentificationResponse = (payload: any, url: URL, deviceType?: string | null) => {
+const buildIdentificationResponse = (
+  payload: any,
+  url: URL,
+  deviceType?: string | null,
+  options?: { forceGranted?: boolean }
+) => {
   const userId = Number.parseInt(String(payload?.user_id ?? '0'), 10);
   const portalId = Number.parseInt(String(payload?.portal_id ?? '1'), 10);
   const incomingEvent = Number.parseInt(String(payload?.event ?? '0'), 10);
@@ -230,14 +274,16 @@ const buildIdentificationResponse = (payload: any, url: URL, deviceType?: string
   const isIdentified = (Number.isFinite(userId) && userId > 0) || userName.length > 0;
   // Event 3/6 = device-side denial (unknown card, etc.). Don't grant.
   const isDeniedByDevice = incomingEvent === 3 || incomingEvent === 6;
-  const granted = isIdentified && !isDeniedByDevice;
+  const granted = options?.forceGranted === true ? true : isIdentified && !isDeniedByDevice;
 
   const resolvedPortal = Number.isFinite(portalId) && portalId > 0 ? portalId : 1;
 
-  // Keep response minimal and numeric. Extra fields can break some firmware parsers.
+  // Keep response close to Control iD examples for maximum compatibility.
   const result: Record<string, unknown> = {
     event: granted ? 7 : 6,
     user_id: Number.isFinite(userId) ? userId : 0,
+    user_name: userName,
+    user_image: false,
     portal_id: resolvedPortal,
   };
 
@@ -829,17 +875,23 @@ Deno.serve(async (req) => {
     // For events without device_id
     const effectiveDeviceId = deviceId || 'unknown-device';
 
-    // ===== IDENTIFICATION EVENT: Return door-open response IMMEDIATELY, then do DB work =====
+    // ===== IDENTIFICATION EVENTS: Return authorization IMMEDIATELY, then do DB work =====
     // Critical: the device has a short timeout (~15s) and will NOT open the door if
     // the response is delayed by database operations.
-    if (eventType === 'identification_event') {
+    if (eventType === 'identification_event' || eventType === 'enterprise_identification_event') {
       // Never block the immediate response on DB lookup.
       const cachedType = deviceTypeCache.get(effectiveDeviceId) ?? null;
       const deviceType = cachedType;
-      const identResponse = buildIdentificationResponse(payload, url, deviceType);
+      const forceGrantedEnterprise =
+        eventType === 'enterprise_identification_event' &&
+        Boolean(payload?.card_value || payload?.uhf_tag || payload?.qrcode_value || payload?.password);
+      const identResponse = buildIdentificationResponse(payload, url, deviceType, {
+        forceGranted: forceGrantedEnterprise,
+      });
       console.log('Identification response (immediate):', {
         device_id: effectiveDeviceId,
         device_type: deviceType,
+        event_type: eventType,
         path: url.pathname,
         portal_id: payload?.portal_id,
         event_in: payload?.event,
@@ -964,7 +1016,7 @@ Deno.serve(async (req) => {
         try {
           await supabaseClient.from('controlid_logs').insert({
             device_id: effectiveDeviceId,
-            event_type: 'identification_event',
+            event_type: eventType,
             payload: enrichedPayload,
             processed: true
           });

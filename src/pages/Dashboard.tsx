@@ -82,7 +82,7 @@ export const Dashboard = () => {
     const { data } = await supabase
       .from('controlid_logs')
       .select('*')
-      .in('event_type', ['dao', 'access_photo', 'identification_event', 'catra_event'])
+      .in('event_type', ['dao', 'access_photo', 'identification_event', 'enterprise_identification_event', 'catra_event'])
       .order('received_at', { ascending: false })
       .limit(50);
     if (data) setControlidLogs(data as ControlidLog[]);
@@ -122,7 +122,7 @@ export const Dashboard = () => {
         table: 'controlid_logs',
       }, (payload) => {
         const newLog = payload.new as ControlidLog;
-        if (['dao', 'access_photo', 'identification_event', 'catra_event'].includes(newLog.event_type)) {
+        if (['dao', 'access_photo', 'identification_event', 'enterprise_identification_event', 'catra_event'].includes(newLog.event_type)) {
           setControlidLogs(prev => [newLog, ...prev].slice(0, 50));
         }
       })
@@ -374,7 +374,7 @@ export const Dashboard = () => {
                   const fullTimeStr = eventTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
                   const dateStr = eventTime.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
                   
-                  const isAccess = ['dao', 'access_photo', 'identification_event', 'catra_event'].includes(log.event_type);
+                  const isAccess = ['dao', 'access_photo', 'identification_event', 'enterprise_identification_event', 'catra_event'].includes(log.event_type);
                   const isTagEvent = mappedDeviceType === 'vehicle_tag';
                   const isRecognized = isAccess && !!userName;
                   const isUnidentified = isAccess && !userName;

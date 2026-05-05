@@ -68,29 +68,57 @@ const uint8ToBase64 = (bytes: Uint8Array): string => {
   return btoa(binary);
 };
 
-const buildPushDispatchFromQueuedCommand = (queuedCommand: any): { command: string; parameters: Record<string, unknown> } => {
-  // New schema (blueprint)
+const buildPushDispatchFromQueuedCommand = (queuedCommand: any): Record<string, unknown> => {
+  // Keep both payload styles for maximum firmware compatibility:
+  // - legacy: { verb, endpoint, body, contentType, queryString }
+  // - flat:   { command, parameters }
+  const defaultVerb = sanitizeString(queuedCommand?.verb || 'POST', 12) || 'POST';
+  const defaultContentType = sanitizeString(queuedCommand?.contentType || 'application/json', 100) || 'application/json';
+
+  // New schema (flat command + parameters)
   if (queuedCommand && typeof queuedCommand.command === 'string') {
-    const command = sanitizeString(String(queuedCommand.command).replace(/\.fcgi$/i, ''), 120);
+    const command = sanitizeString(String(queuedCommand.command).replace(/\.fcgi$/i, ''), 120) || 'noop';
     const parameters = queuedCommand.parameters && typeof queuedCommand.parameters === 'object'
       ? queuedCommand.parameters
       : {};
-    return { command, parameters };
+
+    return {
+      command,
+      parameters,
+      verb: defaultVerb,
+      endpoint: command,
+      body: parameters,
+      contentType: defaultContentType,
+    };
   }
 
-  // Backward compatibility with old schema: { endpoint, body, ... }
+  // Old schema: { endpoint, body, contentType, ... }
   const endpointRaw = sanitizeString(String(queuedCommand?.endpoint || ''), 200);
   const endpointNoExt = endpointRaw.replace(/\.fcgi$/i, '');
-  const [commandNameRaw, queryRaw = ''] = endpointNoExt.split('?');
-  const command = sanitizeString(commandNameRaw, 120) || 'noop';
+  const [endpointBaseRaw, queryRaw = ''] = endpointNoExt.split('?');
+  const endpointBase = sanitizeString(endpointBaseRaw, 120) || 'noop';
+  const endpointLegacy = queryRaw ? `${endpointBase}?${queryRaw}` : endpointBase;
 
-  const body = queuedCommand?.body;
+  const body = queuedCommand?.body ?? {};
   const bodyParams = body && typeof body === 'object' && !Array.isArray(body)
     ? body
     : (typeof body === 'string' && body.length > 0 ? { data: body } : {});
-
   const queryParams = parseQueryStringToObject(queryRaw);
-  return { command, parameters: { ...queryParams, ...(bodyParams as Record<string, unknown>) } };
+
+  const payload: Record<string, unknown> = {
+    command: endpointBase,
+    parameters: { ...queryParams, ...(bodyParams as Record<string, unknown>) },
+    verb: defaultVerb,
+    endpoint: endpointLegacy,
+    body,
+    contentType: defaultContentType,
+  };
+
+  if (queryRaw) {
+    payload.queryString = queryRaw;
+  }
+
+  return payload;
 };
 
 const isEnterpriseIdentificationPath = (path: string): boolean => {
@@ -503,6 +531,19 @@ const getQueuedCommandMeta = (queuedCommand: any): Record<string, unknown> | nul
   return null;
 };
 
+const buildNoCommandPushResponse = () => {
+  const forceEmptyObject = (Deno.env.get('CONTROLID_PUSH_EMPTY_OBJECT_RESPONSE') ?? '0') === '1';
+  if (forceEmptyObject) {
+    return new Response(
+      JSON.stringify({}),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
+  // Control iD Push docs expect an empty 200 response when there is no command.
+  return new Response('', { status: 200, headers: corsHeaders });
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -710,10 +751,7 @@ Deno.serve(async (req) => {
 
         if (markExecutingError || !markedCmd) {
           console.error('Failed to mark push command as executing:', markExecutingError ?? 'command already claimed');
-          return new Response(
-            JSON.stringify({}),
-            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
+          return buildNoCommandPushResponse();
         }
 
         // Blueprint protocol: return a flat object { command, parameters }.
@@ -775,10 +813,7 @@ Deno.serve(async (req) => {
         }
       }
 
-      return new Response(
-        JSON.stringify({}),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return buildNoCommandPushResponse();
     }
 
     // ===== PUSH RESULT: Device sends back result of executed command =====

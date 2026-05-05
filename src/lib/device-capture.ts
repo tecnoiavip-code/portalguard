@@ -329,6 +329,7 @@ export async function capturePhotoFromDevice(
       type: 'face',
       save: true,
       user_id: deviceUserId,
+      timeout: 30,
       panic: false,
     }, 60000, signal);
 

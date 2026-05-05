@@ -205,18 +205,20 @@ const buildIdentificationActions = (payload: any, deviceType?: string | null) =>
   const portalId = Number.parseInt(String(payload?.portal_id ?? '1'), 10);
   const resolvedPortal = Number.isFinite(portalId) && portalId > 0 ? portalId : 1;
 
-  // V6 readers (iDFlex / iDAccess Pro / Nano / iDFace) typically expect sec_box.
-  // For the dedicated vehicle TAG reader we also send the explicit portal open action
-  // so the gate receives a direct open command in firmwares that don't trigger it from
-  // sec_box alone during online authorization.
-  if (deviceType === 'vehicle_tag') {
+  // Readers often differ between "door" and "sec_box" actions.
+  // To maximize firmware compatibility in heterogeneous environments,
+  // send both actions unless we have an explicit reason to specialize.
+  if (deviceType === 'vehicle_tag' || !deviceType) {
     return [
       { action: 'sec_box', parameters: 'id=65793, reason=1' },
       { action: 'door', parameters: `door=${resolvedPortal}` },
     ];
   }
 
-  return [{ action: 'sec_box', parameters: 'id=65793, reason=1' }];
+  return [
+    { action: 'sec_box', parameters: 'id=65793, reason=1' },
+    { action: 'door', parameters: `door=${resolvedPortal}` },
+  ];
 };
 
 const buildIdentificationResponse = (payload: any, url: URL, deviceType?: string | null) => {
@@ -232,14 +234,12 @@ const buildIdentificationResponse = (payload: any, url: URL, deviceType?: string
 
   const resolvedPortal = Number.isFinite(portalId) && portalId > 0 ? portalId : 1;
 
-  // MINIMAL Control iD response. Extra fields like message/user_image/duress can
-  // break the firmware JSON parser and trigger "server communication error".
-  // Use integers (0/1) instead of booleans for maximum compatibility.
+  // Keep response minimal. Extra fields can break some firmware parsers.
   const result: Record<string, unknown> = {
     event: granted ? 7 : 6,
     user_id: Number.isFinite(userId) ? userId : 0,
     user_name: userName,
-    user_image: (payload?.user_has_image === 1 || payload?.user_has_image === '1' || payload?.user_has_image === true || payload?.user_has_image === 'true') ? 1 : 0,
+    user_image: payload?.user_has_image === 1 || payload?.user_has_image === '1' || payload?.user_has_image === true || payload?.user_has_image === 'true',
     portal_id: resolvedPortal,
   };
 
@@ -247,14 +247,10 @@ const buildIdentificationResponse = (payload: any, url: URL, deviceType?: string
     result.actions = buildIdentificationActions(payload, deviceType);
   }
 
-  // Control iD expects DIFFERENT response shapes depending on the callback path:
-  // - official .fcgi callbacks => { result: { ... } }
-  // - direct monitor/online posts to the base webhook URL => flat JSON { ... }
-  // Returning the wrapped payload to base monitor posts causes the device to
-  // recognize the user but still show "server communication error" and not open.
-  const path = url.pathname.toLowerCase();
-  const shouldWrapResult = path.includes('.fcgi');
-  return shouldWrapResult ? { result } : result;
+  // By documentation, identification callbacks expect the payload wrapped in "result".
+  // A flat response can be re-enabled with CONTROLID_IDENT_FLAT_RESPONSE=1.
+  const forceFlat = (Deno.env.get('CONTROLID_IDENT_FLAT_RESPONSE') ?? '') === '1';
+  return forceFlat ? result : { result };
 };
 
 const resolveDeviceType = async (supabaseClient: any, deviceId: string): Promise<string | null> => {
@@ -847,7 +843,9 @@ Deno.serve(async (req) => {
     // Critical: the device has a short timeout (~15s) and will NOT open the door if
     // the response is delayed by database operations.
     if (eventType === 'identification_event') {
-      const deviceType = await resolveDeviceType(supabaseClient, effectiveDeviceId);
+      // Never block the immediate response on DB lookup.
+      const cachedType = deviceTypeCache.get(effectiveDeviceId) ?? null;
+      const deviceType = cachedType;
       const identResponse = buildIdentificationResponse(payload, url, deviceType);
       console.log('Identification response (immediate):', {
         device_id: effectiveDeviceId,
@@ -860,7 +858,11 @@ Deno.serve(async (req) => {
 
       // ALL database work runs in background AFTER response is sent
       runBackground('identificationPostProcess', (async () => {
+        let enrichedPayload: any = payload;
         try {
+          // Refresh cache asynchronously for subsequent requests.
+          runBackground('warmDeviceTypeCache', resolveDeviceType(supabaseClient, effectiveDeviceId));
+
           // 1. Save photo if present in payload
           let savedPhotoPath: string | null = null;
           const photoBase64 = extractPhotoBase64(payload);
@@ -872,7 +874,7 @@ Deno.serve(async (req) => {
             }
           }
 
-          const enrichedPayload = savedPhotoPath
+          enrichedPayload = savedPhotoPath
             ? { ...payload, saved_photo_path: savedPhotoPath }
             : payload;
 

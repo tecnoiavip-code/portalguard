@@ -41,19 +41,22 @@ import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
+const MAIL_FORM_DRAFT_KEY = 'mail-management-form-draft-v1';
+const EMPTY_MAIL_FORM = {
+  residentId: '',
+  sender: '',
+  packageType: 'Carta' as Mail['packageType'],
+  notes: '',
+  trackingCode: '',
+};
+
 export const MailManagement = () => {
   const { mails, saveMail, deleteMail } = useMails();
   const { residents } = useResidents();
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
-  const [formData, setFormData] = useState({
-    residentId: '',
-    sender: '',
-    packageType: 'Carta' as Mail['packageType'],
-    notes: '',
-    trackingCode: '',
-  });
+  const [formData, setFormData] = useState({ ...EMPTY_MAIL_FORM });
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -67,6 +70,87 @@ export const MailManagement = () => {
   const [editingMail, setEditingMail] = useState<Mail | null>(null);
   const [withdrawnBy, setWithdrawnBy] = useState('');
   const [webcamDialogOpen, setWebcamDialogOpen] = useState(false);
+  const [draftEditingMailId, setDraftEditingMailId] = useState<string | null>(null);
+
+  const clearMailDraft = () => {
+    try {
+      localStorage.removeItem(MAIL_FORM_DRAFT_KEY);
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const hasUnsavedForm = () => {
+    return Boolean(
+      formData.residentId ||
+      formData.sender ||
+      formData.notes ||
+      formData.trackingCode ||
+      formData.packageType !== 'Carta' ||
+      photoPreview ||
+      editingMail
+    );
+  };
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(MAIL_FORM_DRAFT_KEY);
+      if (!raw) return;
+
+      const draft = JSON.parse(raw) as {
+        formData?: Partial<typeof EMPTY_MAIL_FORM>;
+        editingMailId?: string | null;
+      };
+
+      setFormData({
+        ...EMPTY_MAIL_FORM,
+        ...(draft.formData || {}),
+      });
+
+      if (draft.editingMailId) {
+        setDraftEditingMailId(draft.editingMailId);
+      }
+    } catch {
+      // ignore invalid drafts
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!draftEditingMailId || editingMail) return;
+    const matched = mails.find((mail) => mail.id === draftEditingMailId);
+    if (matched) setEditingMail(matched);
+    setDraftEditingMailId(null);
+  }, [draftEditingMailId, mails, editingMail]);
+
+  useEffect(() => {
+    if (!hasUnsavedForm()) {
+      clearMailDraft();
+      return;
+    }
+
+    try {
+      localStorage.setItem(
+        MAIL_FORM_DRAFT_KEY,
+        JSON.stringify({
+          formData,
+          editingMailId: editingMail?.id || null,
+        })
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [formData, editingMail, photoPreview]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasUnsavedForm()) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [formData, photoPreview, editingMail]);
 
   const isMobileDevice = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
 
@@ -319,16 +403,11 @@ export const MailManagement = () => {
         }
       }
       
-      setFormData({
-        residentId: '',
-        sender: '',
-        packageType: 'Carta',
-        notes: '',
-        trackingCode: '',
-      });
+      setFormData({ ...EMPTY_MAIL_FORM });
       setPhotoFile(null);
       setPhotoPreview(null);
       setEditingMail(null);
+      clearMailDraft();
     }
     setUploading(false);
   };
@@ -580,13 +659,10 @@ export const MailManagement = () => {
                   variant="outline"
                   onClick={() => {
                     setEditingMail(null);
-                    setFormData({
-                      residentId: '',
-                      sender: '',
-                      packageType: 'Carta',
-                      notes: '',
-                      trackingCode: '',
-                    });
+                    setFormData({ ...EMPTY_MAIL_FORM });
+                    setPhotoFile(null);
+                    setPhotoPreview(null);
+                    clearMailDraft();
                   }}
                   className="w-full"
                 >

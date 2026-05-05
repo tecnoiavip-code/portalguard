@@ -24,6 +24,21 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { exportToCSV } from '@/lib/export-csv';
 
+const NEW_REGISTRY_DRAFT_KEY = 'new-registry-form-draft-v1';
+const EMPTY_NEW_REGISTRY_FORM = {
+  visitorName: '',
+  visitorDocument: '',
+  visitorType: 'visitor' as 'visitor' | 'service_provider',
+  residentId: '',
+  purpose: '',
+  company: '',
+  vehiclePlate: '',
+  vehicleModel: '',
+  vehicleColor: '',
+  photo: '',
+  badgeNumber: '',
+};
+
 interface BlockedVisitor {
   id: string;
   visitor_name: string;
@@ -53,19 +68,7 @@ export const NewRegistry = () => {
   const [selectedDetailEntry, setSelectedDetailEntry] = useState<AccessEntry | null>(null);
   const itemsPerPage = 12;
   const itemsPerPageTable = 10;
-  const [formData, setFormData] = useState({
-    visitorName: '',
-    visitorDocument: '',
-    visitorType: 'visitor' as 'visitor' | 'service_provider',
-    residentId: '',
-    purpose: '',
-    company: '',
-    vehiclePlate: '',
-    vehicleModel: '',
-    vehicleColor: '',
-    photo: '',
-    badgeNumber: '',
-  });
+  const [formData, setFormData] = useState({ ...EMPTY_NEW_REGISTRY_FORM });
   const [showCamera, setShowCamera] = useState(false);
   const [showCameraDialog, setShowCameraDialog] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -89,6 +92,68 @@ export const NewRegistry = () => {
   const [selectedFacialDeviceId, setSelectedFacialDeviceId] = useState('');
   const [showDeviceFacialDialog, setShowDeviceFacialDialog] = useState(false);
   const facialDevices = devices.filter(d => d.type === 'facial_recognition');
+
+  const clearRegistryDraft = () => {
+    try {
+      localStorage.removeItem(NEW_REGISTRY_DRAFT_KEY);
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(NEW_REGISTRY_DRAFT_KEY);
+      if (!raw) return;
+
+      const draft = JSON.parse(raw) as {
+        isOpen?: boolean;
+        editingId?: string;
+        visitedLocationSearch?: string;
+        formData?: Partial<typeof EMPTY_NEW_REGISTRY_FORM>;
+      };
+
+      if (!draft?.isOpen) return;
+
+      setEditingId(draft.editingId || '');
+      setVisitedLocationSearch(draft.visitedLocationSearch || '');
+      setFormData({
+        ...EMPTY_NEW_REGISTRY_FORM,
+        ...(draft.formData || {}),
+      });
+      setIsDialogOpen(true);
+    } catch {
+      // ignore invalid drafts
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isDialogOpen) return;
+    try {
+      localStorage.setItem(
+        NEW_REGISTRY_DRAFT_KEY,
+        JSON.stringify({
+          isOpen: true,
+          editingId,
+          visitedLocationSearch,
+          formData,
+        })
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [isDialogOpen, editingId, visitedLocationSearch, formData]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!isDialogOpen) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDialogOpen]);
 
   useEffect(() => {
     loadBlockedVisitors();
@@ -568,23 +633,12 @@ export const NewRegistry = () => {
   };
   const resetForm = () => {
     setEditingId('');
-    setFormData({
-      visitorName: '',
-      visitorDocument: '',
-      visitorType: 'visitor',
-      residentId: '',
-      purpose: '',
-      company: '',
-      vehiclePlate: '',
-      vehicleModel: '',
-      vehicleColor: '',
-      photo: '',
-      badgeNumber: '',
-    });
+    setFormData({ ...EMPTY_NEW_REGISTRY_FORM });
     setVisitedLocationSearch('');
     setSuggestions([]);
     setShowSuggestions(false);
     setIsDialogOpen(false);
+    clearRegistryDraft();
     stopCamera();
   };
   const handleExit = async (entryId: string) => {
@@ -835,11 +889,14 @@ export const NewRegistry = () => {
       </Dialog>
 
 
-      <Dialog open={isDialogOpen} onOpenChange={open => {
-      if (!open) resetForm();
-      setIsDialogOpen(open);
-    }}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+      <Dialog
+        open={isDialogOpen}
+        onOpenChange={(open) => {
+          // Keep dialog open unless user explicitly clicks Cancelar.
+          if (open) setIsDialogOpen(true);
+        }}
+      >
+        <DialogContent showCloseButton={false} className="max-w-4xl max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{editingId ? 'Editar Cadastro' : 'Registrar Nova Entrada'}</DialogTitle>
           </DialogHeader>

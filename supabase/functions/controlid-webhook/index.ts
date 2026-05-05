@@ -234,12 +234,10 @@ const buildIdentificationResponse = (payload: any, url: URL, deviceType?: string
 
   const resolvedPortal = Number.isFinite(portalId) && portalId > 0 ? portalId : 1;
 
-  // Keep response minimal. Extra fields can break some firmware parsers.
+  // Keep response minimal and numeric. Extra fields can break some firmware parsers.
   const result: Record<string, unknown> = {
     event: granted ? 7 : 6,
     user_id: Number.isFinite(userId) ? userId : 0,
-    user_name: userName,
-    user_image: payload?.user_has_image === 1 || payload?.user_has_image === '1' || payload?.user_has_image === true || payload?.user_has_image === 'true',
     portal_id: resolvedPortal,
   };
 
@@ -831,14 +829,6 @@ Deno.serve(async (req) => {
     // For events without device_id
     const effectiveDeviceId = deviceId || 'unknown-device';
 
-    if (!checkRateLimit(effectiveDeviceId)) {
-      console.error('Rate limit exceeded', { device_id: effectiveDeviceId });
-      return new Response(
-        JSON.stringify({ error: 'Too many requests' }),
-        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     // ===== IDENTIFICATION EVENT: Return door-open response IMMEDIATELY, then do DB work =====
     // Critical: the device has a short timeout (~15s) and will NOT open the door if
     // the response is delayed by database operations.
@@ -987,6 +977,14 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify(identResponse),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!checkRateLimit(effectiveDeviceId)) {
+      console.error('Rate limit exceeded', { device_id: effectiveDeviceId });
+      return new Response(
+        JSON.stringify({ error: 'Too many requests' }),
+        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 

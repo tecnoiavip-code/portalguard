@@ -39,6 +39,22 @@ const EMPTY_NEW_REGISTRY_FORM = {
   badgeNumber: '',
 };
 
+const hasRegistryFormContent = (form: typeof EMPTY_NEW_REGISTRY_FORM, visited: string) =>
+  Boolean(
+    visited ||
+    form.visitorName ||
+    form.visitorDocument ||
+    form.residentId ||
+    form.purpose ||
+    form.company ||
+    form.vehiclePlate ||
+    form.vehicleModel ||
+    form.vehicleColor ||
+    form.photo ||
+    form.badgeNumber ||
+    form.visitorType !== 'visitor'
+  );
+
 interface BlockedVisitor {
   id: string;
   visitor_name: string;
@@ -112,15 +128,16 @@ export const NewRegistry = () => {
         visitedLocationSearch?: string;
         formData?: Partial<typeof EMPTY_NEW_REGISTRY_FORM>;
       };
-
-      if (!draft?.isOpen) return;
-
-      setEditingId(draft.editingId || '');
-      setVisitedLocationSearch(draft.visitedLocationSearch || '');
-      setFormData({
+      const mergedForm = {
         ...EMPTY_NEW_REGISTRY_FORM,
         ...(draft.formData || {}),
-      });
+      };
+      const savedVisited = draft.visitedLocationSearch || '';
+      if (!draft?.isOpen && !hasRegistryFormContent(mergedForm, savedVisited)) return;
+
+      setEditingId(draft.editingId || '');
+      setVisitedLocationSearch(savedVisited);
+      setFormData(mergedForm);
       setIsDialogOpen(true);
     } catch {
       // ignore invalid drafts
@@ -128,12 +145,12 @@ export const NewRegistry = () => {
   }, []);
 
   useEffect(() => {
-    if (!isDialogOpen) return;
+    if (!isDialogOpen && !hasRegistryFormContent(formData, visitedLocationSearch)) return;
     try {
       localStorage.setItem(
         NEW_REGISTRY_DRAFT_KEY,
         JSON.stringify({
-          isOpen: true,
+          isOpen: isDialogOpen,
           editingId,
           visitedLocationSearch,
           formData,
@@ -146,14 +163,37 @@ export const NewRegistry = () => {
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!isDialogOpen) return;
+      if (!isDialogOpen && !hasRegistryFormContent(formData, visitedLocationSearch)) return;
       event.preventDefault();
       event.returnValue = '';
     };
 
+    const persistDraftNow = () => {
+      if (!isDialogOpen && !hasRegistryFormContent(formData, visitedLocationSearch)) return;
+      try {
+        localStorage.setItem(
+          NEW_REGISTRY_DRAFT_KEY,
+          JSON.stringify({
+            isOpen: isDialogOpen,
+            editingId,
+            visitedLocationSearch,
+            formData,
+          })
+        );
+      } catch {
+        // ignore storage errors
+      }
+    };
+
     window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [isDialogOpen]);
+    window.addEventListener('pagehide', persistDraftNow);
+    document.addEventListener('visibilitychange', persistDraftNow);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', persistDraftNow);
+      document.removeEventListener('visibilitychange', persistDraftNow);
+    };
+  }, [isDialogOpen, editingId, visitedLocationSearch, formData]);
 
   useEffect(() => {
     loadBlockedVisitors();

@@ -958,8 +958,21 @@ export const Residents = () => {
       </Card>
 
       {/* Registration Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+      <Dialog
+        open={isDialogOpen}
+        onOpenChange={(open) => {
+          // Only allow opening through dialog state changes.
+          // Closing must happen explicitly through form buttons.
+          if (open) setIsDialogOpen(true);
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          className="max-w-4xl max-h-[90vh] overflow-y-auto"
+          onInteractOutside={(e) => e.preventDefault()}
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>{editingId ? 'Editar Morador' : 'Cadastro de Morador'}</DialogTitle>
           </DialogHeader>
@@ -1128,6 +1141,9 @@ export const Residents = () => {
               <Button type="submit" className="flex-1">
                 <Save className="h-4 w-4 mr-2" />
                 {editingId ? 'Salvar AlteraÃ§Ãµes' : 'Cadastrar Morador'}
+              </Button>
+              <Button type="button" variant="outline" onClick={resetForm}>
+                Fechar
               </Button>
               <Button type="button" variant="secondary" onClick={resetForm}>
                 <X className="h-4 w-4 mr-2" />

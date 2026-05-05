@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import { supabaseStorage } from '@/lib/supabase-storage';
 import { exportToCSV } from '@/lib/export-csv';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -171,7 +171,7 @@ export const Residents = () => {
         }
       }, 100);
     } catch (error) {
-      toast.error('Não foi possível acessar a câmera');
+      toast.error('NÃ£o foi possÃ­vel acessar a cÃ¢mera');
     }
   };
 
@@ -249,7 +249,7 @@ export const Residents = () => {
       if (err.name === 'AbortError') return;
       const isNetworkError = err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError');
       toast.error(isNetworkError
-        ? 'Não foi possível conectar ao dispositivo. Verifique se está na mesma rede.'
+        ? 'NÃ£o foi possÃ­vel conectar ao dispositivo. Verifique se estÃ¡ na mesma rede.'
         : `Erro: ${err.message}`
       );
     } finally {
@@ -298,7 +298,7 @@ export const Residents = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza? Isso também removerá correspondências e o cadastro nos equipamentos.')) return;
+    if (!confirm('Tem certeza? Isso tambÃ©m removerÃ¡ correspondÃªncias e o cadastro nos equipamentos.')) return;
     const ok = await deleteResident(id);
     if (ok && devices.length > 0) {
       // Remove user from all hardware devices in background
@@ -324,7 +324,7 @@ export const Residents = () => {
     ]);
 
     autoTable(doc, {
-      head: [['Nome', 'Apt', 'CPF', 'Telefone', 'E-mail', 'Veículo']],
+      head: [['Nome', 'Apt', 'CPF', 'Telefone', 'E-mail', 'VeÃ­culo']],
       body: tableData,
       startY: 28,
     });
@@ -334,7 +334,7 @@ export const Residents = () => {
   };
 
   const exportResidentsToCSV = () => {
-    const headers = ['Nome', 'Apt', 'CPF', 'Telefone', 'E-mail', 'Veículo'];
+    const headers = ['Nome', 'Apt', 'CPF', 'Telefone', 'E-mail', 'VeÃ­culo'];
     const rows = filteredResidents.map(resident => [
       resident.name, resident.apartment, resident.cpf || '-', resident.phone || '-',
       resident.email || '-', resident.vehiclePlate ? `${resident.vehiclePlate} - ${resident.vehicleModel || ''}` : '-',
@@ -375,14 +375,14 @@ export const Residents = () => {
       return;
     }
     setPhotoSyncLoading(true);
-    setPhotoSyncStatus('Iniciando sincronização...');
+    setPhotoSyncStatus('Iniciando sincronizacao...');
     try {
       const result = await syncPhotosFromDevices(
         devices,
         residents,
         (msg, current, total) => setPhotoSyncStatus(`${msg} (${current} sincronizadas)`)
       );
-      toast.success(`Sincronização concluída: ${result.synced} fotos importadas, ${result.skipped} ignoradas, ${result.errors} erros`);
+      toast.success(`Sincronizacao concluida: ${result.synced} fotos importadas, ${result.skipped} ignoradas, ${result.errors} erros`);
       if (result.synced > 0) refresh();
     } catch (err: any) {
       toast.error(err.message || 'Erro ao sincronizar fotos');
@@ -392,24 +392,55 @@ export const Residents = () => {
     }
   };
 
+  const readTextFileWithEncodingFallback = async (file: File): Promise<string> => {
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+
+    const utf8 = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    const utf8ReplacementCount = (utf8.match(/\uFFFD/g) || []).length;
+
+    if (utf8ReplacementCount === 0) return utf8;
+
+    const win1252 = new TextDecoder('windows-1252', { fatal: false }).decode(bytes);
+    const win1252ReplacementCount = (win1252.match(/\uFFFD/g) || []).length;
+
+    return win1252ReplacementCount < utf8ReplacementCount ? win1252 : utf8;
+  };
+
+  const looksUnstructured = (result: ImportResult): boolean => {
+    if (result.rows.length === 0) return true;
+    const maxCols = result.rows.reduce((max, row) => Math.max(max, row.length), 0);
+    const nonGenericHeaders = result.headers.filter((h) => !/^coluna\s+\d+/i.test(h)).length;
+    return maxCols <= 1 || nonGenericHeaders === 0;
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setImportLoading(true);
     try {
+      const fileName = file.name.toLowerCase();
+      const isPDF = fileName.endsWith('.pdf') || file.type === 'application/pdf';
+      const isCSV = fileName.endsWith('.csv') || fileName.endsWith('.txt') || file.type.includes('csv');
+
+      if (!isPDF && !isCSV) {
+        toast.error('Formato nao suportado. Use arquivos PDF ou CSV.');
+        return;
+      }
+
       let result: ImportResult;
-      if (file.name.endsWith('.pdf')) {
+      if (isPDF) {
         result = await parsePDF(file);
       } else {
-        const text = await file.text();
+        const text = await readTextFileWithEncodingFallback(file);
         result = parseCSV(text);
       }
 
       if (result.rows.length === 0) {
         // If PDF is empty, suggest OCR automatically
-        if (file.name.endsWith('.pdf')) {
-          const tryOCR = confirm('O PDF parece não conter texto extraível (pode ser uma imagem). Deseja tentar a extração via IA (OCR)?');
+        if (isPDF) {
+          const tryOCR = confirm('O PDF parece nao conter texto extraivel (pode ser uma imagem). Deseja tentar a extracao via IA (OCR)?');
           if (tryOCR) {
             setCurrentFile(file);
             handleOCRImport(file);
@@ -429,6 +460,15 @@ export const Residents = () => {
         initialMapping[field] = findBestMatch(result.headers, field);
       });
 
+      if (isPDF && looksUnstructured(result)) {
+        const tryOCR = confirm('O PDF foi lido, mas os dados parecem sem estrutura de colunas (comum em impressoes/escaneados). Deseja tentar OCR para melhorar o reconhecimento?');
+        if (tryOCR) {
+          setCurrentFile(file);
+          handleOCRImport(file);
+          return;
+        }
+      }
+
       setImportData(result);
       setColumnMapping(initialMapping);
       setShowImportDialog(true);
@@ -439,7 +479,6 @@ export const Residents = () => {
       if (e.target.value) e.target.value = ''; // Reset input
     }
   };
-
   const handleOCRImport = async (fileToProcess?: File) => {
     const file = fileToProcess || currentFile;
     if (!file) return;
@@ -447,11 +486,11 @@ export const Residents = () => {
     setImportLoading(true);
     setImportData(null);
     try {
-      toast.info('Iniciando extração via IA... Isso pode levar alguns segundos.', { duration: 5000 });
+      toast.info('Iniciando extraÃ§Ã£o via IA... Isso pode levar alguns segundos.', { duration: 5000 });
       const result = await parsePDFWithOCR(file, supabase);
       
       if (result.rows.length === 0) {
-        toast.error('A IA não conseguiu identificar dados de moradores neste documento.');
+        toast.error('A IA nÃ£o conseguiu identificar dados de moradores neste documento.');
         return;
       }
 
@@ -465,7 +504,7 @@ export const Residents = () => {
       setImportData(result);
       setColumnMapping(initialMapping);
       setShowImportDialog(true);
-      toast.success('Extração via IA concluída!');
+      toast.success('ExtraÃ§Ã£o via IA concluÃ­da!');
     } catch (err: any) {
       toast.error(`Erro no OCR: ${err.message}`);
     } finally {
@@ -490,11 +529,17 @@ export const Residents = () => {
       for (let i = 0; i < importData.rows.length; i++) {
         const row = importData.rows[i];
         
+        const cleanValue = (value: string) => value
+          .replace(/^['"]+|['"]+$/g, '')
+          .replace(/\u00A0/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
         const getVal = (field: string) => {
           const colName = columnMapping[field];
           if (!colName) return '';
           const idx = importData.headers.indexOf(colName);
-          return idx !== -1 ? (row[idx] || '').trim() : '';
+          return idx !== -1 ? cleanValue((row[idx] || '')) : '';
         };
 
         const name = getVal('name');
@@ -524,7 +569,7 @@ export const Residents = () => {
             success++;
           } else {
             errors++;
-            errorDetails.push(`Linha ${i + 1} (${name}): Erro ao salvar (provável duplicata)`);
+            errorDetails.push(`Linha ${i + 1} (${name}): Erro ao salvar (provÃ¡vel duplicata)`);
           }
         } catch (err: any) {
           errors++;
@@ -534,16 +579,16 @@ export const Residents = () => {
       }
 
       if (errors === 0) {
-        toast.success('Importação concluída com sucesso!', {
+        toast.success('ImportaÃ§Ã£o concluÃ­da com sucesso!', {
           description: `${success} moradores importados.`
         });
       } else if (success > 0) {
-        toast.warning('Importação concluída com ressalvas', {
+        toast.warning('ImportaÃ§Ã£o concluÃ­da com ressalvas', {
           description: `${success} importados, ${errors} falhas. Verifique o console para detalhes.`
         });
         console.table(errorDetails);
       } else {
-        toast.error('A importação falhou completamente', {
+        toast.error('A importaÃ§Ã£o falhou completamente', {
           description: `Nenhum registro foi salvo. Verifique o console.`
         });
         console.table(errorDetails);
@@ -552,7 +597,7 @@ export const Residents = () => {
       setShowImportDialog(false);
       refresh();
     } catch (err: any) {
-      toast.error(`Erro crítico na importação: ${err.message}`);
+      toast.error(`Erro crÃ­tico na importaÃ§Ã£o: ${err.message}`);
       console.error('Critical import error:', err);
     } finally {
       setImportLoading(false);
@@ -564,7 +609,7 @@ export const Residents = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold text-foreground mb-2">Moradores</h2>
-          <p className="text-muted-foreground">Cadastre e gerencie os moradores do condomínio</p>
+          <p className="text-muted-foreground">Cadastre e gerencie os moradores do condomÃ­nio</p>
         </div>
         <div className="flex gap-2">
           <Button
@@ -579,7 +624,7 @@ export const Residents = () => {
           <input
             id="fileImport"
             type="file"
-            accept=".csv,.pdf"
+            accept=".csv,.txt,.pdf"
             className="hidden"
             onChange={handleFileUpload}
           />
@@ -652,8 +697,8 @@ export const Residents = () => {
                   <TableHead>CPF</TableHead>
                   <TableHead>Telefone</TableHead>
                   <TableHead>E-mail</TableHead>
-                  <TableHead>Veículo</TableHead>
-                  <TableHead className="text-right w-[100px]">Ações</TableHead>
+                  <TableHead>VeÃ­culo</TableHead>
+                  <TableHead className="text-right w-[100px]">AÃ§Ãµes</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -668,7 +713,7 @@ export const Residents = () => {
                     <TableRow key={resident.id} className="hover:bg-muted/50 cursor-pointer" onClick={() => handleViewDetail(resident)}>
                       <TableCell>
                         <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-3xl">
-                          👤
+                          ðŸ‘¤
                         </div>
                       </TableCell>
                       <TableCell className="font-medium">{resident.name}</TableCell>
@@ -683,7 +728,7 @@ export const Residents = () => {
                       <TableCell className="text-sm text-muted-foreground">
                         {resident.vehiclePlate ? (
                           <div className="space-y-1">
-                            <div>🚗 {resident.vehiclePlate}</div>
+                            <div>ðŸš— {resident.vehiclePlate}</div>
                             {resident.vehicleModel && (
                               <div className="text-xs">{resident.vehicleModel}</div>
                             )}
@@ -731,7 +776,7 @@ export const Residents = () => {
                     {selectedResidentPhoto ? (
                       <img src={selectedResidentPhoto} alt={selectedResident.name} className="w-24 h-24 rounded-full object-cover border-2 border-primary/20" />
                     ) : (
-                      <div className="w-24 h-24 rounded-full bg-muted flex items-center justify-center text-4xl">👤</div>
+                      <div className="w-24 h-24 rounded-full bg-muted flex items-center justify-center text-4xl">ðŸ‘¤</div>
                     )}
                     <div>
                       <h3 className="text-xl font-semibold">{selectedResident.name}</h3>
@@ -756,7 +801,7 @@ export const Residents = () => {
 
                   {(selectedResident.vehiclePlate || selectedResident.vehicleModel || selectedResident.vehicleColor || selectedResident.vehicleTag) && (
                     <div className="border-t pt-3">
-                      <h4 className="font-semibold mb-2">Veículo</h4>
+                      <h4 className="font-semibold mb-2">VeÃ­culo</h4>
                       <div className="grid grid-cols-2 gap-3 text-sm">
                         <div>
                           <span className="text-muted-foreground block">Placa</span>
@@ -820,10 +865,10 @@ export const Residents = () => {
                   <Label>Foto do Morador</Label>
                   <div className="flex gap-2 flex-wrap">
                     <Button type="button" size="sm" variant="outline" onClick={startCamera}>
-                      📷 Webcam
+                      ðŸ“· Webcam
                     </Button>
                     <Button type="button" size="sm" variant="outline" onClick={() => document.getElementById('photoUpload')?.click()}>
-                      📁 Carregar
+                      ðŸ“ Carregar
                     </Button>
                     {facialDevices.length > 0 && (
                       <Button type="button" size="sm" variant="outline" onClick={() => setShowDeviceCaptureDialog(true)} className="gap-1">
@@ -833,7 +878,7 @@ export const Residents = () => {
                     )}
                     {formData.photo && (
                       <Button type="button" size="sm" variant="destructive" onClick={() => setFormData({ ...formData, photo: '' })}>
-                        🗑️ Remover
+                        ðŸ—‘ï¸ Remover
                       </Button>
                     )}
                   </div>
@@ -855,7 +900,7 @@ export const Residents = () => {
                     <canvas ref={canvasRef} className="hidden" />
                     <div className="flex gap-2 mt-4">
                       <Button type="button" onClick={capturePhoto}>
-                        📸 Capturar
+                        ðŸ“¸ Capturar
                       </Button>
                       <Button type="button" variant="secondary" onClick={stopCamera}>
                         Cancelar
@@ -919,7 +964,7 @@ export const Residents = () => {
 
               {/* Vehicle Info */}
               <div className="space-y-2">
-                <Label htmlFor="vehiclePlate">Placa do Veículo</Label>
+                <Label htmlFor="vehiclePlate">Placa do VeÃ­culo</Label>
                 <Input
                   id="vehiclePlate"
                   value={formData.vehiclePlate}
@@ -928,7 +973,7 @@ export const Residents = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="vehicleModel">Modelo do Veículo</Label>
+                <Label htmlFor="vehicleModel">Modelo do VeÃ­culo</Label>
                 <Input
                   id="vehicleModel"
                   value={formData.vehicleModel}
@@ -937,7 +982,7 @@ export const Residents = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="vehicleColor">Cor do Veículo</Label>
+                <Label htmlFor="vehicleColor">Cor do VeÃ­culo</Label>
                 <Input
                   id="vehicleColor"
                   value={formData.vehicleColor}
@@ -952,7 +997,7 @@ export const Residents = () => {
                     id="vehicleTag"
                     value={formData.vehicleTag}
                     onChange={(e) => setFormData({ ...formData, vehicleTag: e.target.value })}
-                    placeholder="Número da TAG de acesso"
+                    placeholder="NÃºmero da TAG de acesso"
                     className="flex-1"
                   />
                   {tagDevices.length > 0 && (
@@ -967,7 +1012,7 @@ export const Residents = () => {
             <div className="flex space-x-2">
               <Button type="submit" className="flex-1">
                 <Save className="h-4 w-4 mr-2" />
-                {editingId ? 'Salvar Alterações' : 'Cadastrar Morador'}
+                {editingId ? 'Salvar AlteraÃ§Ãµes' : 'Cadastrar Morador'}
               </Button>
               <Button type="button" variant="secondary" onClick={resetForm}>
                 <X className="h-4 w-4 mr-2" />
@@ -1119,7 +1164,7 @@ export const Residents = () => {
                 className="text-xs gap-2"
               >
                 {importLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ScanFace className="h-3 w-3" />}
-                Tentar extração via IA (OCR)
+                Tentar extraÃ§Ã£o via IA (OCR)
               </Button>
             </div>
             
@@ -1131,7 +1176,7 @@ export const Residents = () => {
                 { label: 'Telefone', key: 'phone' },
                 { label: 'E-mail', key: 'email' },
                 { label: 'TAG de Acesso', key: 'vehicleTag' },
-                { label: 'Placa do Veículo', key: 'vehiclePlate' },
+                { label: 'Placa do VeÃ­culo', key: 'vehiclePlate' },
               ].map((field) => (
                 <div key={field.key} className="space-y-1">
                   <Label className="text-xs">{field.label}</Label>
@@ -1160,7 +1205,7 @@ export const Residents = () => {
                 className="flex-1"
               >
                 {importLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                Iniciar Importação ({importData?.rows.length} registros)
+                Iniciar ImportaÃ§Ã£o ({importData?.rows.length} registros)
               </Button>
               <Button variant="outline" onClick={() => setShowImportDialog(false)}>
                 Cancelar
@@ -1168,7 +1213,7 @@ export const Residents = () => {
             </div>
             {(!columnMapping.name || !columnMapping.apartment) && (
               <p className="text-xs text-destructive text-center">
-                * Nome e Apartamento são campos obrigatórios para a importação.
+                * Nome e Apartamento sÃ£o campos obrigatÃ³rios para a importaÃ§Ã£o.
               </p>
             )}
           </div>

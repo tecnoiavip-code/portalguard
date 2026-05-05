@@ -1,0 +1,4 @@
+﻿Contact: mailto:security@portalguard.app
+Expires: 2027-12-31T23:59:59.000Z
+Preferred-Languages: pt-BR, en
+Canonical: https://portalguard.app/.well-known/security.txt

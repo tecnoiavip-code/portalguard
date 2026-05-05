@@ -1,9 +1,43 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+const BASE_HEADERS = {
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+const LOCAL_ORIGIN_PATTERNS = [/^http:\/\/localhost:\d+$/i, /^http:\/\/127\.0\.0\.1:\d+$/i];
+const VERCEL_ORIGIN_PATTERN = /^https:\/\/[a-z0-9-]+\.vercel\.app$/i;
+
+const getAllowedOrigins = (): string[] => {
+  const raw = Deno.env.get("ALLOWED_ORIGINS") ?? "";
+  return raw
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
+const isAllowedOrigin = (origin: string | null): boolean => {
+  if (!origin) return true;
+
+  const allowed = getAllowedOrigins();
+  if (allowed.includes(origin)) return true;
+  if (VERCEL_ORIGIN_PATTERN.test(origin)) return true;
+  return LOCAL_ORIGIN_PATTERNS.some((re) => re.test(origin));
+};
+
+const buildCorsHeaders = (req: Request): HeadersInit => {
+  const origin = req.headers.get("origin");
+  if (isAllowedOrigin(origin) && origin) {
+    return { ...BASE_HEADERS, "Access-Control-Allow-Origin": origin, Vary: "Origin" };
+  }
+  return { ...BASE_HEADERS, "Access-Control-Allow-Origin": "null" };
+};
+
+const getBearerToken = (req: Request): string | null => {
+  const authHeader = req.headers.get("authorization") ?? "";
+  if (!authHeader.toLowerCase().startsWith("bearer ")) return null;
+  return authHeader.slice(7).trim();
 };
 
 // ── Base64url helpers ──
@@ -261,8 +295,24 @@ async function sendWebPush(
 // ── Main handler ──
 
 Deno.serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isAllowedOrigin(req.headers.get("origin"))) {
+    return new Response(JSON.stringify({ error: "Forbidden origin" }), {
+      status: 403,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   try {
@@ -270,7 +320,39 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+    const token = getBearerToken(req);
+    if (!token) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { data: authData, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !authData.user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { action, user_id, title, body, tag, data } = await req.json();
+
+    const { data: residentRole } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", authData.user.id)
+      .eq("role", "resident")
+      .maybeSingle();
+
+    const isResident = !!residentRole;
+
+    if (isResident && action !== "get-vapid-key") {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // Action: get-vapid-key
     if (action === "get-vapid-key") {
@@ -429,7 +511,8 @@ Deno.serve(async (req) => {
     });
   } catch (e) {
     console.error("Error:", e);
-    return new Response(JSON.stringify({ error: e.message }), {
+    const message = e instanceof Error ? e.message : "Unknown error";
+    return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -401,10 +401,13 @@ export const Residents = () => {
 
     if (utf8ReplacementCount === 0) return utf8;
 
-    const win1252 = new TextDecoder('windows-1252', { fatal: false }).decode(bytes);
-    const win1252ReplacementCount = (win1252.match(/\uFFFD/g) || []).length;
-
-    return win1252ReplacementCount < utf8ReplacementCount ? win1252 : utf8;
+    try {
+      const win1252 = new TextDecoder('windows-1252', { fatal: false }).decode(bytes);
+      const win1252ReplacementCount = (win1252.match(/\uFFFD/g) || []).length;
+      return win1252ReplacementCount < utf8ReplacementCount ? win1252 : utf8;
+    } catch {
+      return utf8;
+    }
   };
 
   const looksUnstructured = (result: ImportResult): boolean => {
@@ -412,6 +415,75 @@ export const Residents = () => {
     const maxCols = result.rows.reduce((max, row) => Math.max(max, row.length), 0);
     const nonGenericHeaders = result.headers.filter((h) => !/^coluna\s+\d+/i.test(h)).length;
     return maxCols <= 1 || nonGenericHeaders === 0;
+  };
+
+  const normalizeCpf = (value: string) => value.replace(/\D/g, '');
+  const normalizeText = (value: string) => value.trim().toLowerCase();
+
+  const findExistingResident = (candidate: {
+    name: string;
+    apartment: string;
+    cpf: string;
+    email: string;
+  }): Resident | null => {
+    const cpf = normalizeCpf(candidate.cpf);
+    const email = normalizeText(candidate.email);
+    const name = normalizeText(candidate.name);
+    const apartment = normalizeText(candidate.apartment);
+
+    for (const resident of residents) {
+      if (cpf && normalizeCpf(resident.cpf || '') === cpf) return resident;
+      if (email && normalizeText(resident.email || '') === email) return resident;
+      if (
+        name &&
+        apartment &&
+        normalizeText(resident.name || '') === name &&
+        normalizeText(resident.apartment || '') === apartment
+      ) {
+        return resident;
+      }
+    }
+
+    return null;
+  };
+
+  const stripStatusTokens = (value: string) =>
+    value.replace(/\b(ativo|inativo)\b/gi, '').replace(/\s+/g, ' ').trim();
+
+  const extractEmail = (value: string): string => {
+    const match = value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    return match ? match[0].toLowerCase() : '';
+  };
+
+  const extractPhone = (value: string): string => {
+    const cleaned = value.replace(/\s+/g, ' ').trim();
+    const matches = cleaned.match(/(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?\d{4,5}[-\s]?\d{4}/g);
+    if (!matches || matches.length === 0) return '';
+    return matches[matches.length - 1].replace(/\s+/g, ' ').trim();
+  };
+
+  const cleanupCpf = (value: string): string => {
+    const digits = value.replace(/\D/g, '');
+    if (!digits || /^0+$/.test(digits)) return '';
+    if (digits.length < 11 || digits.length > 14) return '';
+    return digits;
+  };
+
+  const cleanupPhone = (value: string): string => {
+    const cleaned = value.trim();
+    const digits = cleaned.replace(/\D/g, '');
+    if (!digits || /^0+$/.test(digits) || digits.length < 10) return '';
+    return cleaned;
+  };
+
+  const inferApartmentFromName = (name: string): { apartment: string; cleanName: string } => {
+    const apartmentRegex = /\b(?:san\s+fran\S*|long\s+beach|salinas|sausalito|carmel|tangara|escritorio|rua\s+principal)\s*\d+[a-z]?\b/i;
+    const match = name.match(apartmentRegex);
+    if (!match) return { apartment: '', cleanName: name };
+
+    const apartment = match[0].replace(/\s+/g, ' ').trim();
+    const cleanName = name.replace(match[0], '').replace(/\s+/g, ' ').trim();
+    return { apartment, cleanName };
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -520,6 +592,7 @@ export const Residents = () => {
 
     setImportLoading(true);
     let success = 0;
+    let updated = 0;
     let errors = 0;
     let errorDetails: string[] = [];
 
@@ -542,8 +615,42 @@ export const Residents = () => {
           return idx !== -1 ? cleanValue((row[idx] || '')) : '';
         };
 
-        const name = getVal('name');
-        const apartment = getVal('apartment');
+        const rawName = getVal('name');
+        const rawApartment = getVal('apartment');
+        const rawCpf = getVal('cpf');
+        const rawPhone = getVal('phone');
+        const rawEmail = getVal('email');
+
+        let name = stripStatusTokens(rawName);
+        let apartment = stripStatusTokens(rawApartment);
+        let cpf = cleanupCpf(rawCpf);
+        let phone = stripStatusTokens(rawPhone);
+        let email = extractEmail(rawEmail) || '';
+
+        const blended = [rawCpf, rawPhone, rawEmail, rawApartment, rawName].join(' ');
+
+        if (!email) {
+          email = extractEmail(blended);
+        }
+
+        if (!phone || /^(ativo|inativo)$/i.test(phone)) {
+          phone = extractPhone(blended);
+        }
+
+        const apartmentInvalid = !apartment || apartment === '-' || /^0+$/.test(apartment) || /^\d{1,4}$/.test(apartment);
+
+        if (apartmentInvalid) {
+          const inferred = inferApartmentFromName(name);
+          if (inferred.apartment) {
+            apartment = inferred.apartment;
+            name = inferred.cleanName || name;
+          }
+        }
+
+        if (apartment === '-') apartment = '';
+        name = name.replace(/\s*-\s*$/, '').trim();
+        apartment = apartment.replace(/\s*-\s*$/, '').trim();
+        phone = cleanupPhone(phone);
 
         if (!name || !apartment) {
           errors++;
@@ -551,25 +658,33 @@ export const Residents = () => {
           continue;
         }
 
-        const residentData: Resident = {
-          id: `res_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        const existingResident = findExistingResident({
           name,
           apartment,
-          cpf: getVal('cpf'),
-          phone: getVal('phone'),
-          email: getVal('email'),
+          cpf,
+          email,
+        });
+
+        const residentData: Resident = {
+          id: existingResident?.id || `res_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+          name,
+          apartment,
+          cpf,
+          phone,
+          email,
           vehicleTag: getVal('vehicleTag'),
           vehiclePlate: getVal('vehiclePlate'),
-          createdAt: new Date().toISOString(),
+          createdAt: existingResident?.createdAt || new Date().toISOString(),
         };
 
         try {
           const result = await saveResident(residentData);
           if (result) {
-            success++;
+            if (existingResident) updated++;
+            else success++;
           } else {
             errors++;
-            errorDetails.push(`Linha ${i + 1} (${name}): Erro ao salvar (provÃ¡vel duplicata)`);
+            errorDetails.push(`Linha ${i + 1} (${name}): Erro ao salvar`);
           }
         } catch (err: any) {
           errors++;
@@ -580,11 +695,11 @@ export const Residents = () => {
 
       if (errors === 0) {
         toast.success('ImportaÃ§Ã£o concluÃ­da com sucesso!', {
-          description: `${success} moradores importados.`
+          description: `${success} importados${updated ? `, ${updated} atualizados` : ''}.`
         });
-      } else if (success > 0) {
+      } else if (success + updated > 0) {
         toast.warning('ImportaÃ§Ã£o concluÃ­da com ressalvas', {
-          description: `${success} importados, ${errors} falhas. Verifique o console para detalhes.`
+          description: `${success} importados${updated ? `, ${updated} atualizados` : ''}, ${errors} falhas. Verifique o console para detalhes.`
         });
         console.table(errorDetails);
       } else {

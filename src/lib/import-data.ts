@@ -1,7 +1,5 @@
 ﻿import * as pdfjsLib from 'pdfjs-dist';
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
 export interface ImportResult {
   headers: string[];
@@ -34,6 +32,27 @@ const HEADER_KEYWORDS = [
   'veiculo',
   'carro',
 ];
+const STATUS_VALUES = ['ativo', 'inativo'];
+
+function isNoiseCell(value: string): boolean {
+  const n = normalizeToken(value);
+  if (!n) return true;
+  if (n.startsWith('--') && n.includes('of')) return true;
+  if (n.includes('portalguard pro')) return true;
+  if (n.includes('lista de moradores')) return true;
+  if (n.startsWith('gerado em')) return true;
+  if (n.startsWith('total de registros')) return true;
+  return false;
+}
+
+function looksLikePhone(value: string): boolean {
+  const digits = value.replace(/\D/g, '');
+  return digits.length >= 10 && digits.length <= 13;
+}
+
+function looksLikeEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
 
 function normalizeText(input: string): string {
   return input
@@ -221,29 +240,79 @@ function isLikelyHeader(firstRow: string[], secondRow?: string[]): boolean {
   return false;
 }
 
+function rowHasUsefulData(row: string[]): boolean {
+  const joined = row.join(' ').trim();
+  const normalized = normalizeToken(joined);
+  if (!normalized) return false;
+
+  if (row.some((cell) => looksLikeEmail(cell))) return true;
+  if (row.some((cell) => looksLikePhone(cell))) return true;
+  if (STATUS_VALUES.some((status) => normalized.includes(status))) return true;
+  if (/\b\d{2,}\b/.test(normalized) && row.length > 1) return true;
+
+  return row.filter((cell) => cell.trim().length > 0).length >= 3;
+}
+
+function repairWrappedRows(rows: string[][]): string[][] {
+  const repaired: string[][] = [];
+  let pendingName = '';
+
+  for (const sourceRow of rows) {
+    const row = [...sourceRow];
+    const nonEmpty = row.filter((cell) => cell.trim().length > 0);
+    const joined = nonEmpty.join(' ').trim();
+
+    if (!joined) continue;
+    if (isNoiseCell(joined)) continue;
+
+    if (nonEmpty.length === 1 && !rowHasUsefulData(row)) {
+      pendingName = pendingName ? `${pendingName} ${nonEmpty[0]}` : nonEmpty[0];
+      continue;
+    }
+
+    if (pendingName) {
+      row[0] = row[0] ? `${pendingName} ${row[0]}` : pendingName;
+      pendingName = '';
+    }
+
+    repaired.push(row.map((cell) => cell.trim()));
+  }
+
+  if (pendingName) {
+    repaired.push([pendingName.trim()]);
+  }
+
+  return repaired;
+}
+
 function rowsToImportResult(rawRows: string[][]): ImportResult {
   const cleanedRows = rawRows
     .map((row) => row.map((cell) => normalizeText(cell).trim()))
     .filter((row) => row.some((cell) => cell.length > 0));
 
-  if (cleanedRows.length === 0) {
+  const normalizedRows = repairWrappedRows(cleanedRows);
+
+  if (normalizedRows.length === 0) {
     return { headers: [], rows: [] };
   }
 
-  const { rows, width } = ensureRowWidth(cleanedRows, 1);
+  const { rows, width } = ensureRowWidth(normalizedRows, 1);
   const firstRow = rows[0];
   const secondRow = rows[1];
 
   if (isLikelyHeader(firstRow, secondRow)) {
     const headers = uniqueHeaders(firstRow);
-    const dataRows = rows
-      .slice(1)
-      .filter((row) => {
+    const filteredRows = rows.slice(1).filter((row) => {
         const rowTokens = row.map(normalizeToken);
         const headerTokens = headers.map(normalizeToken);
         const equalCells = rowTokens.filter((token, idx) => token === headerTokens[idx]).length;
         return equalCells < Math.max(1, Math.floor(headers.length * 0.8));
       });
+    const dataRows = repairWrappedRows(filteredRows).map((row) => {
+      const next = [...row];
+      while (next.length < headers.length) next.push('');
+      return next.slice(0, headers.length);
+    });
 
     return { headers, rows: dataRows };
   }
@@ -468,3 +537,4 @@ export function findBestMatch(headers: string[], field: string): string {
 
   return '';
 }
+

@@ -22,6 +22,10 @@ const isAllowedOrigin = (origin: string | null): boolean => {
   if (!origin) return true;
 
   const allowed = getAllowedOrigins();
+  if (allowed.length === 0) {
+    // Safe fallback to avoid blocking production imports when ALLOWED_ORIGINS is not set yet.
+    return origin.startsWith("https://") || LOCAL_ORIGIN_PATTERNS.some((re) => re.test(origin));
+  }
   if (allowed.includes(origin)) return true;
   if (VERCEL_ORIGIN_PATTERN.test(origin)) return true;
   return LOCAL_ORIGIN_PATTERNS.some((re) => re.test(origin));

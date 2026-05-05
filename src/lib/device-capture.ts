@@ -35,6 +35,9 @@ function normalizePushResult(result: any): any {
 
 function extractImageBase64(result: any): string | null {
   const candidates = [
+    result?.raw_base64,
+    result?.response,
+    result?.raw_data,
     result?.user_image,
     result?.user_image_hash,
     result?.user_image_data,
@@ -46,6 +49,8 @@ function extractImageBase64(result: any): string | null {
     result?.result?.user_image_data,
     result?.result?.image,
     result?.result?.photo,
+    result?.result?.raw_base64,
+    result?.result?.response,
   ];
 
   for (const value of candidates) {
@@ -179,6 +184,64 @@ async function queueBinaryCommandAndWait(
 /**
  * Info about the person being enrolled, used to persist biometrics on the device.
  */
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function fetchUserImageBase64WithRetries(
+  deviceSerial: string,
+  userId: number,
+  signal?: AbortSignal,
+  onAttempt?: (attempt: number, total: number) => void
+): Promise<string | null> {
+  const attempts: Array<{ endpoint: string; body: Record<string, any>; timeoutMs: number }> = [
+    {
+      endpoint: 'user_get_image?get_timestamp=1',
+      body: { user_id: userId, technology: 'visible_light', get_timestamp: 1, raw: false },
+      timeoutMs: 90000,
+    },
+    {
+      endpoint: 'user_get_image?get_timestamp=1',
+      body: { user_id: userId, image_type: 'face', get_timestamp: 1, raw: false },
+      timeoutMs: 90000,
+    },
+    {
+      endpoint: 'user_get_image',
+      body: { user_id: userId, technology: 'visible_light' },
+      timeoutMs: 90000,
+    },
+  ];
+
+  let lastError: Error | null = null;
+
+  for (let i = 0; i < attempts.length; i++) {
+    if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+    const attemptNumber = i + 1;
+    onAttempt?.(attemptNumber, attempts.length);
+
+    const attempt = attempts[i];
+    try {
+      const result = await queueCommandAndWait(
+        deviceSerial,
+        attempt.endpoint,
+        attempt.body,
+        attempt.timeoutMs,
+        signal
+      );
+      const base64 = extractImageBase64(result);
+      if (base64) return base64;
+      lastError = new Error('O dispositivo respondeu sem dados de imagem.');
+    } catch (error: any) {
+      lastError = error instanceof Error ? error : new Error(String(error || 'Falha ao obter imagem.'));
+    }
+
+    if (i < attempts.length - 1) {
+      await sleep(2000);
+    }
+  }
+
+  if (lastError) throw lastError;
+  return null;
+}
+
 export interface CapturePersonInfo {
   /** Person name */
   name: string;
@@ -271,10 +334,15 @@ export async function capturePhotoFromDevice(
 
     checkAbort();
     onStatus('Buscando foto capturada...', 'fetching', 70);
-    const photoResult = await queueCommandAndWait(serial, 'user_get_image', {
-      user_id: deviceUserId,
-      technology: 'visible_light',
-    }, 90000, signal);
+    const base64 = await fetchUserImageBase64WithRetries(
+      serial,
+      deviceUserId,
+      signal,
+      (attempt, total) => {
+        const progress = Math.min(89, 70 + attempt * 6);
+        onStatus(`Baixando foto capturada (tentativa ${attempt}/${total})...`, 'fetching', progress);
+      }
+    );
 
     // Only clean up if NOT persisting on device
     if (!persistOnDevice) {
@@ -289,7 +357,6 @@ export async function capturePhotoFromDevice(
       onStatus('Biometria salva no dispositivo!', 'cleaning', 90);
     }
 
-    const base64 = extractImageBase64(photoResult);
     if (base64) {
       onStatus(
         persistOnDevice
@@ -442,12 +509,7 @@ export async function syncPhotosFromDevices(
       onProgress(`Baixando foto: ${userName} (${i + 1}/${total})`, synced, total);
 
       try {
-        const photoResult = await queueCommandAndWait(serial, 'user_get_image', {
-          user_id: deviceUser.id,
-          technology: 'visible_light',
-        }, 90000);
-
-        const base64 = extractImageBase64(photoResult);
+        const base64 = await fetchUserImageBase64WithRetries(serial, deviceUser.id);
         if (base64) {
           const dataUrl = `data:image/jpeg;base64,${base64}`;
 
@@ -760,8 +822,7 @@ export async function reconcileFromDevices(
       if (!deviceUserHasPhoto(u) && 'image_timestamp' in u) { skipped++; continue; }
 
       try {
-        const photoResult = await queueCommandAndWait(serial, 'user_get_image', { user_id: u.id, technology: 'visible_light' }, 90000);
-        const base64 = extractImageBase64(photoResult);
+        const base64 = await fetchUserImageBase64WithRetries(serial, u.id);
         if (!base64) { skipped++; continue; }
 
         const dataUrl = `data:image/jpeg;base64,${base64}`;

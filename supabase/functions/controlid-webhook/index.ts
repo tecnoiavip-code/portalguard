@@ -48,6 +48,26 @@ const parseQueryStringToObject = (query: string): Record<string, string> => {
   return out;
 };
 
+const uint8ToBase64 = (bytes: Uint8Array): string => {
+  if (bytes.length === 0) return '';
+  const maybeToBase64 = (bytes as any).toBase64;
+  if (typeof maybeToBase64 === 'function') {
+    try {
+      return maybeToBase64.call(bytes);
+    } catch {
+      // fallback below
+    }
+  }
+
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+};
+
 const buildPushDispatchFromQueuedCommand = (queuedCommand: any): { command: string; parameters: Record<string, unknown> } => {
   // New schema (blueprint)
   if (queuedCommand && typeof queuedCommand.command === 'string') {
@@ -422,14 +442,18 @@ const extractPhotoBase64 = (payload: any): string | null => {
   const parsedRawData = tryParseJsonString(payload?.raw_data);
 
   const candidates: unknown[] = [
+    payload?.raw_base64,
     payload?.user_image_hash,
     payload?.user_image_data,
     payload?.face_image,
     payload?.image,
     payload?.photo,
     payload?.photo_data,
+    payload?.response,
+    payload?.raw_data,
     payload?.access_photo?.image,
     payload?.access_photo?.photo,
+    payload?.result?.raw_base64,
     payload?.result?.user_image,
     payload?.result?.image,
     payload?.result?.photo,
@@ -522,9 +546,12 @@ Deno.serve(async (req) => {
     // Parse payload
     let payload: any = {};
     let rawPayload = '';
+    let rawPayloadBytes = new Uint8Array();
     
     if (req.method === 'POST') {
-      rawPayload = await req.text();
+      const rawBuffer = await req.arrayBuffer();
+      rawPayloadBytes = new Uint8Array(rawBuffer);
+      rawPayload = new TextDecoder().decode(rawPayloadBytes);
       
       if (rawPayload && rawPayload.trim()) {
         try {
@@ -536,7 +563,12 @@ Deno.serve(async (req) => {
             payload = formPayload;
           } else {
             console.log('Non-JSON payload received, treating as raw data');
-            payload = { raw_data: rawPayload.substring(0, 1000) };
+            payload = {
+              raw_data: rawPayload.substring(0, 2000),
+              raw_base64: uint8ToBase64(rawPayloadBytes),
+              content_type: req.headers.get('content-type') || 'application/octet-stream',
+              raw_size: rawPayloadBytes.length,
+            };
           }
         }
       }
@@ -1095,9 +1127,12 @@ Deno.serve(async (req) => {
 
             const alreadyQueued = queuedImageCommands?.some((row: any) => {
               const command = row.command as any;
-              const endpoint = String(command?.endpoint || '').replace(/\.fcgi$/i, '');
-              const queuedUserId = Number.parseInt(String(command?.body?.user_id ?? '0'), 10);
-              return endpoint === 'user_get_image' && queuedUserId === userId;
+              const commandName = getQueuedCommandName(command);
+              const queuedUserId = Number.parseInt(
+                String(command?.body?.user_id ?? command?.parameters?.user_id ?? '0'),
+                10
+              );
+              return commandName === 'user_get_image' && queuedUserId === userId;
             }) ?? false;
 
             if (!alreadyQueued) {
@@ -1107,8 +1142,8 @@ Deno.serve(async (req) => {
                   device_id: effectiveDeviceId,
                   command: {
                     verb: 'POST',
-                    endpoint: 'user_get_image',
-                    body: { user_id: userId, technology: 'visible_light' },
+                    endpoint: 'user_get_image?get_timestamp=1',
+                    body: { user_id: userId, technology: 'visible_light', get_timestamp: 1, raw: false },
                     contentType: 'application/json',
                     meta: { log_id: logEntryId, user_id: userId },
                   },

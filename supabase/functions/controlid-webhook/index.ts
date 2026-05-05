@@ -37,6 +37,42 @@ const parseFormEncodedPayload = (raw: string): Record<string, string> => {
   return result;
 };
 
+const parseQueryStringToObject = (query: string): Record<string, string> => {
+  if (!query) return {};
+  const params = new URLSearchParams(query);
+  const out: Record<string, string> = {};
+  for (const [key, value] of params.entries()) {
+    if (!key) continue;
+    out[sanitizeString(key, 100)] = sanitizeString(value, 500);
+  }
+  return out;
+};
+
+const buildPushDispatchFromQueuedCommand = (queuedCommand: any): { command: string; parameters: Record<string, unknown> } => {
+  // New schema (blueprint)
+  if (queuedCommand && typeof queuedCommand.command === 'string') {
+    const command = sanitizeString(String(queuedCommand.command).replace(/\.fcgi$/i, ''), 120);
+    const parameters = queuedCommand.parameters && typeof queuedCommand.parameters === 'object'
+      ? queuedCommand.parameters
+      : {};
+    return { command, parameters };
+  }
+
+  // Backward compatibility with old schema: { endpoint, body, ... }
+  const endpointRaw = sanitizeString(String(queuedCommand?.endpoint || ''), 200);
+  const endpointNoExt = endpointRaw.replace(/\.fcgi$/i, '');
+  const [commandNameRaw, queryRaw = ''] = endpointNoExt.split('?');
+  const command = sanitizeString(commandNameRaw, 120) || 'noop';
+
+  const body = queuedCommand?.body;
+  const bodyParams = body && typeof body === 'object' && !Array.isArray(body)
+    ? body
+    : (typeof body === 'string' && body.length > 0 ? { data: body } : {});
+
+  const queryParams = parseQueryStringToObject(queryRaw);
+  return { command, parameters: { ...queryParams, ...(bodyParams as Record<string, unknown>) } };
+};
+
 const isEnterpriseIdentificationPath = (path: string): boolean => {
   return (
     path.includes('new_card.fcgi') ||
@@ -60,7 +96,7 @@ const deviceTypeCache = new Map<string, string | null>();
 // Throttle config refresh checks (check DB at most every 1 min per device)
 const lastConfigRefreshCheckMap = new Map<string, number>();
 const CONFIG_REFRESH_CHECK_INTERVAL_MS = 60000; // 1 minute
-const CONFIG_REFRESH_INTERVAL_MS = 300000; // 5 minutes
+const CONFIG_REFRESH_INTERVAL_MS = 1800000; // 30 minutes
 const DEVICE_STATUS_WRITE_INTERVAL_MS = 10000;
 
 const checkRateLimit = (deviceId: string): boolean => {
@@ -116,15 +152,23 @@ const getMonitorConfig = () => {
   };
 };
 
-const getGeneralConfig = () => ({
-  general: {
-    // Default to standalone/autonomous mode.
-    // Can be overridden by setting CONTROLID_ONLINE_MODE env var to "1".
-    online: Deno.env.get('CONTROLID_ONLINE_MODE') ?? "0",
-    // Relevant only when online = "1". Keep Pro-mode as default if enabled.
-    local_identification: Deno.env.get('CONTROLID_LOCAL_IDENTIFICATION') ?? "1",
-  }
-});
+const getGeneralConfig = () => {
+  const onlineMode = Deno.env.get('CONTROLID_ONLINE_MODE') ?? '0';
+  const defaultOperationMode = onlineMode === '1' ? 'online' : 'standalone';
+
+  return {
+    general: {
+      // Master 128 / firmware family commonly accepts this shape.
+      language: Deno.env.get('CONTROLID_LANGUAGE') ?? 'portuguese',
+      operation_mode: Deno.env.get('CONTROLID_OPERATION_MODE') ?? defaultOperationMode,
+      // Default to standalone/autonomous mode.
+      // Can be overridden by setting CONTROLID_ONLINE_MODE env var to "1".
+      online: onlineMode,
+      // Relevant only when online = "1". Keep Pro-mode as default if enabled.
+      local_identification: Deno.env.get('CONTROLID_LOCAL_IDENTIFICATION') ?? '1',
+    }
+  };
+};
 
 /**
  * Get the push server configuration.
@@ -144,7 +188,26 @@ const getPushServerConfig = () => {
       push_remote_address: `https://${hostname}/functions/v1/controlid-webhook`,
       push_request_timeout: "15000",
       push_request_period: "5"
-    }
+    },
+    // Blueprint-compatible server stanza for firmwares that use this format.
+    network: {
+      use_dhcp: true,
+    },
+    server: {
+      url: `${hostname}/functions/v1/controlid-webhook`,
+      ssl: true,
+      port: 443,
+      request_timeout: 15,
+      send_user_events: true,
+      send_device_events: true,
+      send_photo: true,
+      image_quality: 80,
+    },
+    access: {
+      enable_face: true,
+      face_threshold: 7,
+      anti_spoofing: 'passive',
+    },
   };
 };
 
@@ -160,6 +223,9 @@ const detectEventType = (url: URL, payload: any): string => {
 
   // Push sub-routes that must be handled before generic /push
   if (path.includes('/push/result') || path.endsWith('/result')) return 'push_result';
+  if (path.endsWith('/access') || path.includes('/access/')) return 'access_event';
+  if (path.endsWith('/user_event') || path.includes('/user_event/')) return 'user_event';
+  if (path.endsWith('/photo') || path.includes('/photo/')) return 'photo_event';
   if (path.includes('device_is_alive.fcgi') || path.includes('/device_is_alive')) return 'device_is_alive';
   if (path.includes('identification_event.fcgi') || path.includes('new_user_identified.fcgi')) return 'identification_event';
   if (isEnterpriseIdentificationPath(path)) return 'enterprise_identification_event';
@@ -389,14 +455,58 @@ const extractPhotoBase64 = (payload: any): string | null => {
   return null;
 };
 
+const getQueuedCommandName = (queuedCommand: any): string => {
+  const directCommand = sanitizeString(queuedCommand?.command ?? '', 160).replace(/\.fcgi$/i, '');
+  if (directCommand) return directCommand;
+
+  const endpointRaw = sanitizeString(queuedCommand?.endpoint ?? '', 200).replace(/\.fcgi$/i, '');
+  const [endpoint] = endpointRaw.split('?');
+  return sanitizeString(endpoint, 160);
+};
+
+const getQueuedCommandMeta = (queuedCommand: any): Record<string, unknown> | null => {
+  if (!queuedCommand || typeof queuedCommand !== 'object') return null;
+
+  if (queuedCommand.meta && typeof queuedCommand.meta === 'object') {
+    return queuedCommand.meta as Record<string, unknown>;
+  }
+
+  const parameters = queuedCommand.parameters;
+  if (parameters && typeof parameters === 'object' && (parameters as any).meta && typeof (parameters as any).meta === 'object') {
+    return (parameters as any).meta as Record<string, unknown>;
+  }
+
+  return null;
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   const url = new URL(req.url);
+  const pathLower = url.pathname.toLowerCase();
 
   try {
+    const webhookSecret = Deno.env.get('CONTROLID_WEBHOOK_SECRET') ?? '';
+    const requireSecret = (Deno.env.get('CONTROLID_REQUIRE_SECRET') ?? (webhookSecret ? '1' : '0')) === '1';
+    const isDeviceIngressPath =
+      pathLower.endsWith('/push') ||
+      pathLower.includes('/push/') ||
+      pathLower.endsWith('/access') ||
+      pathLower.endsWith('/user_event') ||
+      pathLower.endsWith('/photo') ||
+      pathLower.includes('.fcgi') ||
+      pathLower.endsWith('/controlid-webhook') ||
+      pathLower.endsWith('/controlid-webhook/');
+
+    if (requireSecret && webhookSecret && isDeviceIngressPath) {
+      const secret = url.searchParams.get('secret');
+      if (secret !== webhookSecret) {
+        return new Response('Unauthorized', { status: 401, headers: corsHeaders });
+      }
+    }
+
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -469,6 +579,8 @@ Deno.serve(async (req) => {
 
       // Check if this POST is actually a result from a previously sent command
       if (req.method === 'POST' && rawPayload && rawPayload.trim()) {
+        const pushResultPayload = payload?.result ?? payload;
+
         const { data: executingCmd } = await supabaseClient
           .from('push_command_queue')
           .select('id, command, executed_at')
@@ -487,33 +599,36 @@ Deno.serve(async (req) => {
             console.log('Ignoring stale result for command:', executingCmd.id, 'device:', deviceId);
             await supabaseClient
               .from('push_command_queue')
-              .update({ status: 'error', result: { error: 'stale_result_discarded', received_payload: payload } })
+              .update({ status: 'error', result: { error: 'stale_result_discarded', received_payload: pushResultPayload } })
               .eq('id', executingCmd.id);
           } else {
-            console.log('Push result (via /push POST) from device:', deviceId, JSON.stringify(payload).substring(0, 300));
+            console.log('Push result (via /push POST) from device:', deviceId, JSON.stringify(pushResultPayload).substring(0, 300));
 
             // Check if this is a user_get_image result — extract and save photo
             const cmd = executingCmd.command as any;
-            const isImageResult = cmd?.endpoint === 'user_get_image' || cmd?.endpoint === 'user_get_image.fcgi';
+            const commandName = getQueuedCommandName(cmd);
+            const commandMeta = getQueuedCommandMeta(cmd);
+            const isImageResult = commandName === 'user_get_image';
             let photoUpdatePromise: Promise<unknown> = Promise.resolve();
 
             if (isImageResult) {
-              const imageBase64 = extractPhotoBase64(payload);
+              const imageBase64 = extractPhotoBase64(pushResultPayload);
               if (imageBase64) {
                 photoUpdatePromise = (async () => {
                   const photoPath = await saveAccessPhoto(supabaseClient, deviceId, imageBase64);
-                  if (photoPath && cmd?.meta?.log_id) {
+                  const logId = commandMeta?.log_id;
+                  if (photoPath && typeof logId === 'string' && logId.length > 0) {
                     const { data: origLog } = await supabaseClient
                       .from('controlid_logs')
                       .select('payload')
-                      .eq('id', cmd.meta.log_id)
+                      .eq('id', logId)
                       .maybeSingle();
                     if (origLog) {
                       await supabaseClient
                         .from('controlid_logs')
                         .update({ payload: { ...origLog.payload, saved_photo_path: photoPath } })
-                        .eq('id', cmd.meta.log_id);
-                      console.log('Photo linked to identification log:', cmd.meta.log_id, photoPath);
+                        .eq('id', logId);
+                      console.log('Photo linked to identification log:', logId, photoPath);
                     }
                   }
                 })();
@@ -526,7 +641,7 @@ Deno.serve(async (req) => {
                 .update({
                   status: 'done',
                   executed_at: new Date().toISOString(),
-                  result: payload,
+                  result: pushResultPayload,
                 })
                 .eq('id', executingCmd.id),
               photoUpdatePromise,
@@ -563,19 +678,14 @@ Deno.serve(async (req) => {
 
         if (markExecutingError || !markedCmd) {
           console.error('Failed to mark push command as executing:', markExecutingError ?? 'command already claimed');
-          return new Response('', { status: 200, headers: corsHeaders });
+          return new Response(
+            JSON.stringify({}),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
         }
 
-        // Transform command to Control iD push protocol format
-        const cmd = pendingCmd.command as any;
-        const endpoint = String(cmd.endpoint || '').replace(/\.fcgi$/i, '');
-        const body = cmd.body ?? {};
-        const pushCommand = {
-          verb: cmd.verb || 'POST',
-          endpoint,
-          body,
-          contentType: cmd.contentType || 'application/json',
-        };
+        // Blueprint protocol: return a flat object { command, parameters }.
+        const pushCommand = buildPushDispatchFromQueuedCommand(pendingCmd.command);
 
         console.log('Sending push command to device:', deviceId, JSON.stringify(pushCommand).substring(0, 200));
 
@@ -595,28 +705,25 @@ Deno.serve(async (req) => {
           // Check in background; if needed, queue a set_configuration for the NEXT poll
           runBackground('autoRefreshConfig', (async () => {
             const cutoff = new Date(now - CONFIG_REFRESH_INTERVAL_MS).toISOString();
-            const { data: lastCfg } = await supabaseClient
+            const { data: recentCfgRows } = await supabaseClient
               .from('push_command_queue')
-              .select('created_at')
+              .select('id, command, status, created_at')
               .eq('device_id', deviceId)
-              .eq('status', 'done')
-              .contains('command', { endpoint: 'set_configuration' })
               .gte('created_at', cutoff)
-              .limit(1)
-              .maybeSingle();
+              .in('status', ['done', 'pending', 'executing'])
+              .order('created_at', { ascending: false })
+              .limit(20);
 
-            if (!lastCfg) {
-              // Also check pending/executing to avoid duplicates
-              const { data: pendingCfg } = await supabaseClient
-                .from('push_command_queue')
-                .select('id')
-                .eq('device_id', deviceId)
-                .in('status', ['pending', 'executing'])
-                .contains('command', { endpoint: 'set_configuration' })
-                .limit(1)
-                .maybeSingle();
+            const rows = Array.isArray(recentCfgRows) ? recentCfgRows : [];
+            const hasRecentDone = rows.some((row: any) =>
+              row?.status === 'done' && getQueuedCommandName(row?.command) === 'set_configuration'
+            );
+            const hasPendingOrExecuting = rows.some((row: any) =>
+              (row?.status === 'pending' || row?.status === 'executing') &&
+              getQueuedCommandName(row?.command) === 'set_configuration'
+            );
 
-              if (!pendingCfg) {
+            if (!hasRecentDone && !hasPendingOrExecuting) {
                 const monitorConfig = getMonitorConfig();
                 const pushConfig = getPushServerConfig();
                 const generalConfig = getGeneralConfig();
@@ -625,37 +732,41 @@ Deno.serve(async (req) => {
                 await supabaseClient.from('push_command_queue').insert({
                   device_id: deviceId,
                   command: {
-                    verb: 'POST',
-                    endpoint: 'set_configuration',
-                    body: fullConfig,
-                    contentType: 'application/json',
+                    command: 'set_configuration',
+                    parameters: fullConfig,
                   },
                   status: 'pending',
                 });
                 console.log('Auto-queued config refresh for device:', deviceId);
-              }
             }
           })());
         }
       }
 
-      return new Response('', { status: 200, headers: corsHeaders });
+      return new Response(
+        JSON.stringify({}),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     // ===== PUSH RESULT: Device sends back result of executed command =====
     // POST /push/result or POST /push with result payload
     if (eventType === 'push_result' && req.method === 'POST') {
-      console.log('Push result from device:', deviceId, JSON.stringify(payload).substring(0, 300));
+      const pushResultPayload = payload?.result ?? payload;
+      console.log('Push result from device:', deviceId, JSON.stringify(pushResultPayload).substring(0, 300));
 
       // Auto-expire stale executing commands before matching
       if (deviceId) {
         const staleThreshold = new Date(Date.now() - 120000).toISOString();
-        await supabaseClient
-          .from('push_command_queue')
-          .update({ status: 'error', result: { error: 'auto_expired_stale_executing' } })
-          .eq('device_id', deviceId)
-          .eq('status', 'executing')
-          .lt('executed_at', staleThreshold);
+        runBackground(
+          'expireStaleCommandsPushResult',
+          supabaseClient
+            .from('push_command_queue')
+            .update({ status: 'error', result: { error: 'auto_expired_stale_executing' } })
+            .eq('device_id', deviceId)
+            .eq('status', 'executing')
+            .lt('executed_at', staleThreshold)
+        );
       }
 
       // Mark the oldest executing command as done and store result
@@ -670,26 +781,29 @@ Deno.serve(async (req) => {
 
       if (executingCmd) {
         const cmd = executingCmd.command as any;
-        const isImageResult = cmd?.endpoint === 'user_get_image' || cmd?.endpoint === 'user_get_image.fcgi';
+        const commandName = getQueuedCommandName(cmd);
+        const commandMeta = getQueuedCommandMeta(cmd);
+        const isImageResult = commandName === 'user_get_image';
         let photoUpdatePromise: Promise<unknown> = Promise.resolve();
 
         if (isImageResult) {
-          const imageBase64 = extractPhotoBase64(payload);
+          const imageBase64 = extractPhotoBase64(pushResultPayload);
           if (imageBase64) {
             photoUpdatePromise = (async () => {
               const photoPath = await saveAccessPhoto(supabaseClient, deviceId, imageBase64);
-              if (photoPath && cmd?.meta?.log_id) {
+              const logId = commandMeta?.log_id;
+              if (photoPath && typeof logId === 'string' && logId.length > 0) {
                 const { data: origLog } = await supabaseClient
                   .from('controlid_logs')
                   .select('payload')
-                  .eq('id', cmd.meta.log_id)
+                  .eq('id', logId)
                   .maybeSingle();
                 if (origLog) {
                   await supabaseClient
                     .from('controlid_logs')
                     .update({ payload: { ...origLog.payload, saved_photo_path: photoPath } })
-                    .eq('id', cmd.meta.log_id);
-                  console.log('Photo linked to identification log:', cmd.meta.log_id, photoPath);
+                    .eq('id', logId);
+                  console.log('Photo linked to identification log:', logId, photoPath);
                 }
               }
             })();
@@ -702,7 +816,7 @@ Deno.serve(async (req) => {
             .update({
               status: 'done',
               executed_at: new Date().toISOString(),
-              result: payload,
+              result: pushResultPayload,
             })
             .eq('id', executingCmd.id),
           photoUpdatePromise,
@@ -825,10 +939,8 @@ Deno.serve(async (req) => {
       const fullConfig = { ...monitorConfig, ...pushConfig, ...generalConfig };
 
       const command = {
-        verb: 'POST',
-        endpoint: 'set_configuration',
-        body: fullConfig,
-        contentType: 'application/json'
+        command: 'set_configuration',
+        parameters: fullConfig,
       };
 
       // Persist to DB instead of in-memory queue
@@ -871,7 +983,7 @@ Deno.serve(async (req) => {
     // ===== Handle device_is_alive.fcgi and POST /push heartbeat =====
     if (eventType === 'device_is_alive') {
       if (deviceId) {
-        await updateDeviceStatus(supabaseClient, deviceId);
+        runBackground('updateDeviceStatusAlive', updateDeviceStatus(supabaseClient, deviceId));
       }
 
       // Heartbeat must not create access noise; only acknowledge
@@ -1063,7 +1175,7 @@ Deno.serve(async (req) => {
     }
 
     // Ensure non-identification events also reach the frontend
-    if (['dao', 'access_photo', 'catra_event', 'door', 'secbox', 'operation_mode'].includes(eventType)) {
+    if (['dao', 'access_photo', 'catra_event', 'door', 'secbox', 'operation_mode', 'access_event', 'user_event', 'photo_event'].includes(eventType)) {
       try {
         await supabaseClient.from('controlid_logs').insert({
           device_id: effectiveDeviceId,

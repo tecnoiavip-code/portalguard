@@ -57,10 +57,10 @@ const MAX_REQUESTS_PER_WINDOW = 200;
 const lastDeviceStatusWriteMap = new Map<string, number>();
 const deviceTypeCache = new Map<string, string | null>();
 
-// Throttle config refresh checks (check DB at most every 5 min per device)
+// Throttle config refresh checks (check DB at most every 1 min per device)
 const lastConfigRefreshCheckMap = new Map<string, number>();
-const CONFIG_REFRESH_CHECK_INTERVAL_MS = 300000; // 5 minutes
-const CONFIG_REFRESH_INTERVAL_MS = 1800000; // 30 minutes — re-send config well before 90min dropout
+const CONFIG_REFRESH_CHECK_INTERVAL_MS = 60000; // 1 minute
+const CONFIG_REFRESH_INTERVAL_MS = 300000; // 5 minutes
 const DEVICE_STATUS_WRITE_INTERVAL_MS = 10000;
 
 const checkRateLimit = (deviceId: string): boolean => {
@@ -118,7 +118,11 @@ const getMonitorConfig = () => {
 
 const getGeneralConfig = () => ({
   general: {
-    online: "1"
+    // Default to standalone/autonomous mode.
+    // Can be overridden by setting CONTROLID_ONLINE_MODE env var to "1".
+    online: Deno.env.get('CONTROLID_ONLINE_MODE') ?? "0",
+    // Relevant only when online = "1". Keep Pro-mode as default if enabled.
+    local_identification: Deno.env.get('CONTROLID_LOCAL_IDENTIFICATION') ?? "1",
   }
 });
 
@@ -206,6 +210,7 @@ const detectEventType = (url: URL, payload: any): string => {
   if (path.includes('/dao')) return 'dao';
   if (path.includes('/operation_mode')) return 'operation_mode';
   if (path.includes('/door')) return 'door';
+  if (path.includes('/secbox')) return 'secbox';
   if (path.includes('/catra_event')) return 'catra_event';
   if (path.includes('/access_photo')) return 'access_photo';
 
@@ -213,6 +218,7 @@ const detectEventType = (url: URL, payload: any): string => {
   if (payload?.access_logs !== undefined) return 'device_is_alive';
   if (payload?.operation_mode) return 'operation_mode';
   if (payload?.door) return 'door';
+  if (payload?.secbox) return 'secbox';
   if (payload?.access_photo) return 'access_photo';
   if (payload?.event) return 'catra_event';
 
@@ -882,12 +888,7 @@ Deno.serve(async (req) => {
       // Never block the immediate response on DB lookup.
       const cachedType = deviceTypeCache.get(effectiveDeviceId) ?? null;
       const deviceType = cachedType;
-      const forceGrantedEnterprise =
-        eventType === 'enterprise_identification_event' &&
-        Boolean(payload?.card_value || payload?.uhf_tag || payload?.qrcode_value || payload?.password);
-      const identResponse = buildIdentificationResponse(payload, url, deviceType, {
-        forceGranted: forceGrantedEnterprise,
-      });
+      const identResponse = buildIdentificationResponse(payload, url, deviceType);
       console.log('Identification response (immediate):', {
         device_id: effectiveDeviceId,
         device_type: deviceType,
@@ -1062,7 +1063,7 @@ Deno.serve(async (req) => {
     }
 
     // Ensure non-identification events also reach the frontend
-    if (['dao', 'access_photo', 'catra_event'].includes(eventType)) {
+    if (['dao', 'access_photo', 'catra_event', 'door', 'secbox', 'operation_mode'].includes(eventType)) {
       try {
         await supabaseClient.from('controlid_logs').insert({
           device_id: effectiveDeviceId,

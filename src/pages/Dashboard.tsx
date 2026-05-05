@@ -82,7 +82,7 @@ export const Dashboard = () => {
     const { data } = await supabase
       .from('controlid_logs')
       .select('*')
-      .in('event_type', ['dao', 'access_photo', 'identification_event', 'enterprise_identification_event', 'catra_event'])
+      .in('event_type', ['dao', 'access_photo', 'identification_event', 'enterprise_identification_event', 'catra_event', 'door', 'secbox', 'operation_mode'])
       .order('received_at', { ascending: false })
       .limit(50);
     if (data) setControlidLogs(data as ControlidLog[]);
@@ -122,7 +122,7 @@ export const Dashboard = () => {
         table: 'controlid_logs',
       }, (payload) => {
         const newLog = payload.new as ControlidLog;
-        if (['dao', 'access_photo', 'identification_event', 'enterprise_identification_event', 'catra_event'].includes(newLog.event_type)) {
+        if (['dao', 'access_photo', 'identification_event', 'enterprise_identification_event', 'catra_event', 'door', 'secbox', 'operation_mode'].includes(newLog.event_type)) {
           setControlidLogs(prev => [newLog, ...prev].slice(0, 50));
         }
       })
@@ -383,7 +383,17 @@ export const Dashboard = () => {
                   const isTagRecognized = isTagEvent && isRecognized;
                   const isTagUnknown = isTagEvent && !isRecognized;
 
-                  const displayName = parsedName || (isTagEvent ? 'TAG não identificada' : log.event_type === 'device_is_alive' ? 'Dispositivo online' : log.event_type === 'door' ? 'Evento de porta' : 'Acesso pela interface web');
+                  const displayName = parsedName || (isTagEvent
+                    ? 'TAG não identificada'
+                    : log.event_type === 'device_is_alive'
+                      ? 'Dispositivo online'
+                      : log.event_type === 'door'
+                        ? 'Evento de porta'
+                        : log.event_type === 'secbox'
+                          ? 'Evento de secbox'
+                          : log.event_type === 'operation_mode'
+                            ? 'Mudança de modo de operação'
+                            : 'Acesso pela interface web');
                   const displayLabel = apartment && parsedName ? `${apartment} - ${parsedName.toUpperCase()}` : displayName.toUpperCase();
 
                   // Visual config: TAG uses same green/red as facial

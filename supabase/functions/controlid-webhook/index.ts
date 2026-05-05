@@ -146,6 +146,8 @@ const lastConfigRefreshCheckMap = new Map<string, number>();
 const CONFIG_REFRESH_CHECK_INTERVAL_MS = 60000; // 1 minute
 const CONFIG_REFRESH_INTERVAL_MS = 1800000; // 30 minutes
 const DEVICE_STATUS_WRITE_INTERVAL_MS = 10000;
+const STALE_EXECUTING_THRESHOLD_MS = 120000; // 120 seconds
+const MAX_STALE_REQUEUE_RETRIES = 3;
 
 const checkRateLimit = (deviceId: string): boolean => {
   const now = Date.now();
@@ -176,6 +178,30 @@ const runBackground = (label: string, task: Promise<unknown> | unknown) => {
   promise;
 };
 
+const getWebhookSecretQueryParam = (): string => {
+  const webhookSecret = sanitizeString(Deno.env.get('CONTROLID_WEBHOOK_SECRET') ?? '', 1024);
+  const appendSecretToCallbackUrls = (Deno.env.get('CONTROLID_APPEND_SECRET_TO_DEVICE_URLS') ?? (webhookSecret ? '1' : '0')) === '1';
+  if (!appendSecretToCallbackUrls || !webhookSecret) return '';
+  return `secret=${encodeURIComponent(webhookSecret)}`;
+};
+
+const appendQueryString = (path: string, queryString: string): string => {
+  if (!queryString) return path;
+  return `${path}${path.includes('?') ? '&' : '?'}${queryString}`;
+};
+
+const getDeviceWebhookPath = (): string => {
+  return appendQueryString('/functions/v1/controlid-webhook', getWebhookSecretQueryParam());
+};
+
+const getDeviceWebhookUrl = (hostname: string): string => {
+  return `https://${hostname}${getDeviceWebhookPath()}`;
+};
+
+const getDeviceServerUrl = (hostname: string): string => {
+  return `${hostname}${getDeviceWebhookPath()}`;
+};
+
 /**
  * Get the correct monitor configuration for a device.
  * Uses the Supabase project hostname.
@@ -194,7 +220,7 @@ const getMonitorConfig = () => {
       request_timeout: "15000",
       hostname: `${hostname}`,
       port: "443",
-      path: "/functions/v1/controlid-webhook",
+      path: getDeviceWebhookPath(),
       secure: "1"
     }
   };
@@ -233,7 +259,7 @@ const getPushServerConfig = () => {
 
   return {
     push_server: {
-      push_remote_address: `https://${hostname}/functions/v1/controlid-webhook`,
+      push_remote_address: getDeviceWebhookUrl(hostname),
       push_request_timeout: "15000",
       push_request_period: "5"
     },
@@ -242,7 +268,7 @@ const getPushServerConfig = () => {
       use_dhcp: true,
     },
     server: {
-      url: `${hostname}/functions/v1/controlid-webhook`,
+      url: getDeviceServerUrl(hostname),
       ssl: true,
       port: 443,
       request_timeout: 15,
@@ -544,6 +570,138 @@ const buildNoCommandPushResponse = () => {
   return new Response('', { status: 200, headers: corsHeaders });
 };
 
+const normalizePushResultPayload = (payload: any): Record<string, unknown> => {
+  const base = payload && typeof payload === 'object' ? payload : {};
+  const parsedResponse = tryParseJsonString((base as any)?.response);
+  const parsedRawData = tryParseJsonString((base as any)?.raw_data);
+  const parsedResult = tryParseJsonString((base as any)?.result);
+
+  return {
+    ...base,
+    ...(parsedResponse && typeof parsedResponse === 'object' ? parsedResponse : {}),
+    ...(parsedRawData && typeof parsedRawData === 'object' ? parsedRawData : {}),
+    ...(parsedResult && typeof parsedResult === 'object' ? parsedResult : {}),
+  };
+};
+
+const pickFirstNonEmptyError = (values: unknown[]): string | null => {
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const normalized = value.trim();
+    if (!normalized || normalized === '{}' || normalized.toLowerCase() === 'ok') continue;
+    return normalized.substring(0, 500);
+  }
+  return null;
+};
+
+const extractPushResultError = (payload: any): string | null => {
+  const normalized = normalizePushResultPayload(payload);
+  const directError = pickFirstNonEmptyError([
+    normalized?.error,
+    normalized?.message,
+    (normalized as any)?.result?.error,
+    (normalized as any)?.result?.message,
+    (normalized as any)?.response?.error,
+    (normalized as any)?.response?.message,
+  ]);
+
+  if (directError) return directError;
+
+  if (normalized?.success === false || (normalized as any)?.result?.success === false) {
+    return 'device_reported_failure';
+  }
+
+  const txResults = Array.isArray((normalized as any)?.transaction_results)
+    ? (normalized as any).transaction_results
+    : Array.isArray((normalized as any)?.transactions_results)
+      ? (normalized as any).transactions_results
+      : [];
+
+  for (const tx of txResults) {
+    if (!tx || typeof tx !== 'object') continue;
+    if ((tx as any).success === false) {
+      const txError = pickFirstNonEmptyError([
+        (tx as any).error,
+        (tx as any).message,
+        (tx as any).response,
+      ]);
+      return txError || 'transaction_failed';
+    }
+  }
+
+  const responseString = typeof (normalized as any)?.response === 'string'
+    ? (normalized as any).response.trim()
+    : '';
+  if (/^error\b/i.test(responseString)) {
+    return responseString.substring(0, 500);
+  }
+
+  return null;
+};
+
+const isCommandResultSuccessful = (payload: any): boolean => {
+  // Legacy rows may not have result payload. Keep them as successful to avoid noisy requeue loops.
+  if (payload === null || payload === undefined) return true;
+  return extractPushResultError(payload) === null;
+};
+
+const buildCommandResultForStorage = (payload: any, errorMessage: string | null): any => {
+  if (!errorMessage) return payload;
+  if (payload && typeof payload === 'object') {
+    return {
+      ...payload,
+      error: (payload as any).error || errorMessage,
+      message: (payload as any).message || errorMessage,
+    };
+  }
+  return { error: errorMessage, payload };
+};
+
+const requeueStaleExecutingCommands = async (supabaseClient: any, deviceId: string) => {
+  if (!deviceId) return;
+
+  const staleThreshold = new Date(Date.now() - STALE_EXECUTING_THRESHOLD_MS).toISOString();
+  const { data: staleRows, error } = await supabaseClient
+    .from('push_command_queue')
+    .select('id, result')
+    .eq('device_id', deviceId)
+    .eq('status', 'executing')
+    .lt('executed_at', staleThreshold)
+    .order('executed_at', { ascending: true })
+    .limit(20);
+
+  if (error || !staleRows || staleRows.length === 0) return;
+
+  const nowIso = new Date().toISOString();
+  for (const row of staleRows) {
+    const prevResult = row?.result && typeof row.result === 'object'
+      ? row.result as Record<string, unknown>
+      : {};
+
+    const prevRetriesRaw = Number((prevResult as any).stale_retries ?? 0);
+    const prevRetries = Number.isFinite(prevRetriesRaw) && prevRetriesRaw > 0 ? prevRetriesRaw : 0;
+    const nextRetries = prevRetries + 1;
+    const shouldRetry = nextRetries <= MAX_STALE_REQUEUE_RETRIES;
+
+    const nextResult = {
+      ...prevResult,
+      stale_retries: nextRetries,
+      stale_reason: 'auto_expired_stale_executing',
+      stale_updated_at: nowIso,
+    };
+
+    await supabaseClient
+      .from('push_command_queue')
+      .update({
+        status: shouldRetry ? 'pending' : 'error',
+        executed_at: shouldRetry ? null : nowIso,
+        result: nextResult,
+      })
+      .eq('id', row.id)
+      .eq('status', 'executing');
+  }
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -640,13 +798,9 @@ Deno.serve(async (req) => {
 
       // Auto-expire stale executing commands (>120s old) to prevent queue blockage
       if (deviceId) {
-        const staleThreshold = new Date(Date.now() - 120000).toISOString();
-        runBackground('expireStaleCommands', supabaseClient
-          .from('push_command_queue')
-          .update({ status: 'error', result: { error: 'auto_expired_stale_executing' } })
-          .eq('device_id', deviceId)
-          .eq('status', 'executing')
-          .lt('executed_at', staleThreshold)
+        runBackground(
+          'requeueStaleCommandsViaPushRequest',
+          requeueStaleExecutingCommands(supabaseClient, deviceId)
         );
       }
 
@@ -708,13 +862,23 @@ Deno.serve(async (req) => {
               }
             }
 
+            const pushError = extractPushResultError(pushResultPayload);
+            const nextStatus = pushError ? 'error' : 'done';
+            if (pushError) {
+              console.error('Push command failed on device:', {
+                device_id: deviceId,
+                command_id: executingCmd.id,
+                error: pushError,
+              });
+            }
+
             runBackground('storePushResultViaPush', Promise.all([
               supabaseClient
                 .from('push_command_queue')
                 .update({
-                  status: 'done',
+                  status: nextStatus,
                   executed_at: new Date().toISOString(),
-                  result: pushResultPayload,
+                  result: buildCommandResultForStorage(pushResultPayload, pushError),
                 })
                 .eq('id', executingCmd.id),
               photoUpdatePromise,
@@ -777,7 +941,7 @@ Deno.serve(async (req) => {
             const cutoff = new Date(now - CONFIG_REFRESH_INTERVAL_MS).toISOString();
             const { data: recentCfgRows } = await supabaseClient
               .from('push_command_queue')
-              .select('id, command, status, created_at')
+              .select('id, command, status, created_at, result')
               .eq('device_id', deviceId)
               .gte('created_at', cutoff)
               .in('status', ['done', 'pending', 'executing'])
@@ -786,7 +950,9 @@ Deno.serve(async (req) => {
 
             const rows = Array.isArray(recentCfgRows) ? recentCfgRows : [];
             const hasRecentDone = rows.some((row: any) =>
-              row?.status === 'done' && getQueuedCommandName(row?.command) === 'set_configuration'
+              row?.status === 'done' &&
+              getQueuedCommandName(row?.command) === 'set_configuration' &&
+              isCommandResultSuccessful(row?.result)
             );
             const hasPendingOrExecuting = rows.some((row: any) =>
               (row?.status === 'pending' || row?.status === 'executing') &&
@@ -824,15 +990,9 @@ Deno.serve(async (req) => {
 
       // Auto-expire stale executing commands before matching
       if (deviceId) {
-        const staleThreshold = new Date(Date.now() - 120000).toISOString();
         runBackground(
-          'expireStaleCommandsPushResult',
-          supabaseClient
-            .from('push_command_queue')
-            .update({ status: 'error', result: { error: 'auto_expired_stale_executing' } })
-            .eq('device_id', deviceId)
-            .eq('status', 'executing')
-            .lt('executed_at', staleThreshold)
+          'requeueStaleCommandsViaPushResult',
+          requeueStaleExecutingCommands(supabaseClient, deviceId)
         );
       }
 
@@ -877,13 +1037,23 @@ Deno.serve(async (req) => {
           }
         }
 
+        const pushError = extractPushResultError(pushResultPayload);
+        const nextStatus = pushError ? 'error' : 'done';
+        if (pushError) {
+          console.error('Push result reported command error:', {
+            device_id: deviceId,
+            command_id: executingCmd.id,
+            error: pushError,
+          });
+        }
+
         runBackground('storePushResult', Promise.all([
           supabaseClient
             .from('push_command_queue')
             .update({
-              status: 'done',
+              status: nextStatus,
               executed_at: new Date().toISOString(),
-              result: pushResultPayload,
+              result: buildCommandResultForStorage(pushResultPayload, pushError),
             })
             .eq('id', executingCmd.id),
           photoUpdatePromise,

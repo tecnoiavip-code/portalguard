@@ -31,6 +31,20 @@ import { ptBR } from 'date-fns/locale';
 import { parseCSV, parsePDF, parsePDFWithOCR, findBestMatch, ImportResult } from '@/lib/import-data';
 import { supabase } from '@/integrations/supabase/client';
 
+const RESIDENT_FORM_DRAFT_KEY = 'resident-form-draft-v1';
+const EMPTY_RESIDENT_FORM = {
+  name: '',
+  cpf: '',
+  apartment: '',
+  phone: '',
+  email: '',
+  photo: '',
+  vehiclePlate: '',
+  vehicleModel: '',
+  vehicleColor: '',
+  vehicleTag: '',
+};
+
 export const Residents = () => {
   const { residents, loading, saveResident, deleteResident, refresh } = useResidents();
   const { devices } = useDevices();
@@ -42,18 +56,7 @@ export const Residents = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const itemsPerPage = 10;
-  const [formData, setFormData] = useState({
-    name: '',
-    cpf: '',
-    apartment: '',
-    phone: '',
-    email: '',
-    photo: '',
-    vehiclePlate: '',
-    vehicleModel: '',
-    vehicleColor: '',
-    vehicleTag: '',
-  });
+  const [formData, setFormData] = useState({ ...EMPTY_RESIDENT_FORM });
   const [showCamera, setShowCamera] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -98,6 +101,65 @@ export const Residents = () => {
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
+
+  const clearResidentDraft = () => {
+    try {
+      sessionStorage.removeItem(RESIDENT_FORM_DRAFT_KEY);
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(RESIDENT_FORM_DRAFT_KEY);
+      if (!raw) return;
+
+      const draft = JSON.parse(raw) as {
+        isOpen?: boolean;
+        editingId?: string;
+        formData?: Partial<typeof EMPTY_RESIDENT_FORM>;
+      };
+
+      if (!draft?.isOpen) return;
+
+      setEditingId(draft.editingId || '');
+      setFormData({
+        ...EMPTY_RESIDENT_FORM,
+        ...(draft.formData || {}),
+      });
+      setIsDialogOpen(true);
+    } catch {
+      // ignore invalid drafts
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isDialogOpen) return;
+    try {
+      sessionStorage.setItem(
+        RESIDENT_FORM_DRAFT_KEY,
+        JSON.stringify({
+          isOpen: true,
+          editingId,
+          formData,
+        })
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [isDialogOpen, editingId, formData]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!isDialogOpen) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDialogOpen]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -171,7 +233,7 @@ export const Residents = () => {
         }
       }, 100);
     } catch (error) {
-      toast.error('NÃ£o foi possÃ­vel acessar a cÃ¢mera');
+      toast.error('Não foi possível acessar a câmera');
     }
   };
 
@@ -249,7 +311,7 @@ export const Residents = () => {
       if (err.name === 'AbortError') return;
       const isNetworkError = err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError');
       toast.error(isNetworkError
-        ? 'NÃ£o foi possÃ­vel conectar ao dispositivo. Verifique se estÃ¡ na mesma rede.'
+        ? 'Não foi possível conectar ao dispositivo. Verifique se está na mesma rede.'
         : `Erro: ${err.message}`
       );
     } finally {
@@ -298,7 +360,7 @@ export const Residents = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza? Isso tambÃ©m removerÃ¡ correspondÃªncias e o cadastro nos equipamentos.')) return;
+    if (!confirm('Tem certeza? Isso também removerá correspondências e o cadastro nos equipamentos.')) return;
     const ok = await deleteResident(id);
     if (ok && devices.length > 0) {
       // Remove user from all hardware devices in background
@@ -324,7 +386,7 @@ export const Residents = () => {
     ]);
 
     autoTable(doc, {
-      head: [['Nome', 'Apt', 'CPF', 'Telefone', 'E-mail', 'VeÃ­culo']],
+      head: [['Nome', 'Apt', 'CPF', 'Telefone', 'E-mail', 'Veículo']],
       body: tableData,
       startY: 28,
     });
@@ -334,7 +396,7 @@ export const Residents = () => {
   };
 
   const exportResidentsToCSV = () => {
-    const headers = ['Nome', 'Apt', 'CPF', 'Telefone', 'E-mail', 'VeÃ­culo'];
+    const headers = ['Nome', 'Apt', 'CPF', 'Telefone', 'E-mail', 'Veículo'];
     const rows = filteredResidents.map(resident => [
       resident.name, resident.apartment, resident.cpf || '-', resident.phone || '-',
       resident.email || '-', resident.vehiclePlate ? `${resident.vehiclePlate} - ${resident.vehicleModel || ''}` : '-',
@@ -345,20 +407,10 @@ export const Residents = () => {
 
   const resetForm = () => {
     setEditingId('');
-    setFormData({
-      name: '',
-      cpf: '',
-      apartment: '',
-      phone: '',
-      email: '',
-      photo: '',
-      vehiclePlate: '',
-      vehicleModel: '',
-      vehicleColor: '',
-      vehicleTag: '',
-    });
+    setFormData({ ...EMPTY_RESIDENT_FORM });
     stopCamera();
     setIsDialogOpen(false);
+    clearResidentDraft();
     setShowDeviceCaptureDialog(false);
     setShowTagSyncDialog(false);
     setDeviceCaptureStatus('');
@@ -558,11 +610,11 @@ export const Residents = () => {
     setImportLoading(true);
     setImportData(null);
     try {
-      toast.info('Iniciando extraÃ§Ã£o via IA... Isso pode levar alguns segundos.', { duration: 5000 });
+      toast.info('Iniciando extração via IA... Isso pode levar alguns segundos.', { duration: 5000 });
       const result = await parsePDFWithOCR(file, supabase);
       
       if (result.rows.length === 0) {
-        toast.error('A IA nÃ£o conseguiu identificar dados de moradores neste documento.');
+        toast.error('A IA não conseguiu identificar dados de moradores neste documento.');
         return;
       }
 
@@ -576,7 +628,7 @@ export const Residents = () => {
       setImportData(result);
       setColumnMapping(initialMapping);
       setShowImportDialog(true);
-      toast.success('ExtraÃ§Ã£o via IA concluÃ­da!');
+      toast.success('Extração via IA concluída!');
     } catch (err: any) {
       toast.error(`Erro no OCR: ${err.message}`);
     } finally {
@@ -694,16 +746,16 @@ export const Residents = () => {
       }
 
       if (errors === 0) {
-        toast.success('ImportaÃ§Ã£o concluÃ­da com sucesso!', {
+        toast.success('Importação concluída com sucesso!', {
           description: `${success} importados${updated ? `, ${updated} atualizados` : ''}.`
         });
       } else if (success + updated > 0) {
-        toast.warning('ImportaÃ§Ã£o concluÃ­da com ressalvas', {
+        toast.warning('Importação concluída com ressalvas', {
           description: `${success} importados${updated ? `, ${updated} atualizados` : ''}, ${errors} falhas. Verifique o console para detalhes.`
         });
         console.table(errorDetails);
       } else {
-        toast.error('A importaÃ§Ã£o falhou completamente', {
+        toast.error('A importação falhou completamente', {
           description: `Nenhum registro foi salvo. Verifique o console.`
         });
         console.table(errorDetails);
@@ -712,7 +764,7 @@ export const Residents = () => {
       setShowImportDialog(false);
       refresh();
     } catch (err: any) {
-      toast.error(`Erro crÃ­tico na importaÃ§Ã£o: ${err.message}`);
+      toast.error(`Erro crítico na importação: ${err.message}`);
       console.error('Critical import error:', err);
     } finally {
       setImportLoading(false);
@@ -724,7 +776,7 @@ export const Residents = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold text-foreground mb-2">Moradores</h2>
-          <p className="text-muted-foreground">Cadastre e gerencie os moradores do condomÃ­nio</p>
+          <p className="text-muted-foreground">Cadastre e gerencie os moradores do condomínio</p>
         </div>
         <div className="flex gap-2">
           <Button
@@ -812,8 +864,8 @@ export const Residents = () => {
                   <TableHead>CPF</TableHead>
                   <TableHead>Telefone</TableHead>
                   <TableHead>E-mail</TableHead>
-                  <TableHead>VeÃ­culo</TableHead>
-                  <TableHead className="text-right w-[100px]">AÃ§Ãµes</TableHead>
+                  <TableHead>Veículo</TableHead>
+                  <TableHead className="text-right w-[100px]">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -827,8 +879,8 @@ export const Residents = () => {
                   paginatedResidents.map((resident) => (
                     <TableRow key={resident.id} className="hover:bg-muted/50 cursor-pointer" onClick={() => handleViewDetail(resident)}>
                       <TableCell>
-                        <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-3xl">
-                          ðŸ‘¤
+                        <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-xs">
+                          Sem foto
                         </div>
                       </TableCell>
                       <TableCell className="font-medium">{resident.name}</TableCell>
@@ -843,7 +895,7 @@ export const Residents = () => {
                       <TableCell className="text-sm text-muted-foreground">
                         {resident.vehiclePlate ? (
                           <div className="space-y-1">
-                            <div>ðŸš— {resident.vehiclePlate}</div>
+                            <div>Placa: {resident.vehiclePlate}</div>
                             {resident.vehicleModel && (
                               <div className="text-xs">{resident.vehicleModel}</div>
                             )}
@@ -891,7 +943,7 @@ export const Residents = () => {
                     {selectedResidentPhoto ? (
                       <img src={selectedResidentPhoto} alt={selectedResident.name} className="w-24 h-24 rounded-full object-cover border-2 border-primary/20" />
                     ) : (
-                      <div className="w-24 h-24 rounded-full bg-muted flex items-center justify-center text-4xl">ðŸ‘¤</div>
+                      <div className="w-24 h-24 rounded-full bg-muted flex items-center justify-center text-xs text-muted-foreground">Sem foto</div>
                     )}
                     <div>
                       <h3 className="text-xl font-semibold">{selectedResident.name}</h3>
@@ -916,7 +968,7 @@ export const Residents = () => {
 
                   {(selectedResident.vehiclePlate || selectedResident.vehicleModel || selectedResident.vehicleColor || selectedResident.vehicleTag) && (
                     <div className="border-t pt-3">
-                      <h4 className="font-semibold mb-2">VeÃ­culo</h4>
+                      <h4 className="font-semibold mb-2">Veículo</h4>
                       <div className="grid grid-cols-2 gap-3 text-sm">
                         <div>
                           <span className="text-muted-foreground block">Placa</span>
@@ -993,10 +1045,10 @@ export const Residents = () => {
                   <Label>Foto do Morador</Label>
                   <div className="flex gap-2 flex-wrap">
                     <Button type="button" size="sm" variant="outline" onClick={startCamera}>
-                      ðŸ“· Webcam
+                      Webcam
                     </Button>
                     <Button type="button" size="sm" variant="outline" onClick={() => document.getElementById('photoUpload')?.click()}>
-                      ðŸ“ Carregar
+                      Carregar
                     </Button>
                     {facialDevices.length > 0 && (
                       <Button type="button" size="sm" variant="outline" onClick={() => setShowDeviceCaptureDialog(true)} className="gap-1">
@@ -1006,7 +1058,7 @@ export const Residents = () => {
                     )}
                     {formData.photo && (
                       <Button type="button" size="sm" variant="destructive" onClick={() => setFormData({ ...formData, photo: '' })}>
-                        ðŸ—‘ï¸ Remover
+                        Remover
                       </Button>
                     )}
                   </div>
@@ -1028,7 +1080,7 @@ export const Residents = () => {
                     <canvas ref={canvasRef} className="hidden" />
                     <div className="flex gap-2 mt-4">
                       <Button type="button" onClick={capturePhoto}>
-                        ðŸ“¸ Capturar
+                        Capturar
                       </Button>
                       <Button type="button" variant="secondary" onClick={stopCamera}>
                         Cancelar
@@ -1092,7 +1144,7 @@ export const Residents = () => {
 
               {/* Vehicle Info */}
               <div className="space-y-2">
-                <Label htmlFor="vehiclePlate">Placa do VeÃ­culo</Label>
+                <Label htmlFor="vehiclePlate">Placa do Veículo</Label>
                 <Input
                   id="vehiclePlate"
                   value={formData.vehiclePlate}
@@ -1101,7 +1153,7 @@ export const Residents = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="vehicleModel">Modelo do VeÃ­culo</Label>
+                <Label htmlFor="vehicleModel">Modelo do Veículo</Label>
                 <Input
                   id="vehicleModel"
                   value={formData.vehicleModel}
@@ -1110,7 +1162,7 @@ export const Residents = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="vehicleColor">Cor do VeÃ­culo</Label>
+                <Label htmlFor="vehicleColor">Cor do Veículo</Label>
                 <Input
                   id="vehicleColor"
                   value={formData.vehicleColor}
@@ -1125,7 +1177,7 @@ export const Residents = () => {
                     id="vehicleTag"
                     value={formData.vehicleTag}
                     onChange={(e) => setFormData({ ...formData, vehicleTag: e.target.value })}
-                    placeholder="NÃºmero da TAG de acesso"
+                    placeholder="Número da TAG de acesso"
                     className="flex-1"
                   />
                   {tagDevices.length > 0 && (
@@ -1140,7 +1192,7 @@ export const Residents = () => {
             <div className="flex space-x-2">
               <Button type="submit" className="flex-1">
                 <Save className="h-4 w-4 mr-2" />
-                {editingId ? 'Salvar AlteraÃ§Ãµes' : 'Cadastrar Morador'}
+                {editingId ? 'Salvar Alterações' : 'Cadastrar Morador'}
               </Button>
               <Button type="button" variant="outline" onClick={resetForm}>
                 Fechar
@@ -1295,7 +1347,7 @@ export const Residents = () => {
                 className="text-xs gap-2"
               >
                 {importLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ScanFace className="h-3 w-3" />}
-                Tentar extraÃ§Ã£o via IA (OCR)
+                Tentar extração via IA (OCR)
               </Button>
             </div>
             
@@ -1307,7 +1359,7 @@ export const Residents = () => {
                 { label: 'Telefone', key: 'phone' },
                 { label: 'E-mail', key: 'email' },
                 { label: 'TAG de Acesso', key: 'vehicleTag' },
-                { label: 'Placa do VeÃ­culo', key: 'vehiclePlate' },
+                { label: 'Placa do Veículo', key: 'vehiclePlate' },
               ].map((field) => (
                 <div key={field.key} className="space-y-1">
                   <Label className="text-xs">{field.label}</Label>
@@ -1336,7 +1388,7 @@ export const Residents = () => {
                 className="flex-1"
               >
                 {importLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                Iniciar ImportaÃ§Ã£o ({importData?.rows.length} registros)
+                Iniciar Importação ({importData?.rows.length} registros)
               </Button>
               <Button variant="outline" onClick={() => setShowImportDialog(false)}>
                 Cancelar
@@ -1344,7 +1396,7 @@ export const Residents = () => {
             </div>
             {(!columnMapping.name || !columnMapping.apartment) && (
               <p className="text-xs text-destructive text-center">
-                * Nome e Apartamento sÃ£o campos obrigatÃ³rios para a importaÃ§Ã£o.
+                * Nome e Apartamento são campos obrigatórios para a importação.
               </p>
             )}
           </div>

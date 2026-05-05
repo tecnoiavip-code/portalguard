@@ -32,6 +32,16 @@ import {
   type SyncJobState,
 } from '@/lib/sync-job-store';
 
+const DEVICE_FORM_DRAFT_KEY = 'device-form-draft-v1';
+const EMPTY_DEVICE_FORM = {
+  name: '',
+  type: 'facial_recognition' as Device['type'],
+  location: '',
+  status: 'online' as Device['status'],
+  ipAddress: '',
+  serialNumber: '',
+};
+
 // Health indicator color: green = ok, yellow = attention, red = offline
 const getDeviceHealth = (device: Device): { color: string; label: string } => {
   if (device.status !== 'online') return { color: 'bg-destructive', label: 'Desconectado' };
@@ -55,14 +65,80 @@ export const Devices = () => {
   }, []);
 
   const syncing = job.status === 'running';
-  const [formData, setFormData] = useState({
-    name: '',
-    type: 'facial_recognition' as Device['type'],
-    location: '',
-    status: 'online' as Device['status'],
-    ipAddress: '',
-    serialNumber: '',
-  });
+  const [formData, setFormData] = useState({ ...EMPTY_DEVICE_FORM });
+
+  const clearDeviceDraft = () => {
+    try {
+      localStorage.removeItem(DEVICE_FORM_DRAFT_KEY);
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const hasUnsavedDeviceForm = () => {
+    return Boolean(
+      formData.name ||
+      formData.location ||
+      formData.ipAddress ||
+      formData.serialNumber ||
+      formData.type !== 'facial_recognition' ||
+      formData.status !== 'online'
+    );
+  };
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DEVICE_FORM_DRAFT_KEY);
+      if (!raw) return;
+
+      const draft = JSON.parse(raw) as {
+        showForm?: boolean;
+        editingId?: string;
+        formData?: Partial<typeof EMPTY_DEVICE_FORM>;
+      };
+
+      if (!draft.showForm) return;
+      setShowForm(true);
+      setEditingId(draft.editingId || '');
+      setFormData({
+        ...EMPTY_DEVICE_FORM,
+        ...(draft.formData || {}),
+      });
+    } catch {
+      // ignore invalid drafts
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!showForm || !hasUnsavedDeviceForm()) {
+      clearDeviceDraft();
+      return;
+    }
+
+    try {
+      localStorage.setItem(
+        DEVICE_FORM_DRAFT_KEY,
+        JSON.stringify({
+          showForm: true,
+          editingId,
+          formData,
+        })
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [showForm, editingId, formData]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!showForm || !hasUnsavedDeviceForm()) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [showForm, formData]);
 
   const handleSyncAll = async () => {
     if (devices.length === 0) {
@@ -182,11 +258,9 @@ export const Devices = () => {
 
   const resetForm = () => {
     setEditingId('');
-    setFormData({
-      name: '', type: 'facial_recognition', location: '', status: 'online',
-      ipAddress: '', serialNumber: '',
-    });
+    setFormData({ ...EMPTY_DEVICE_FORM });
     setShowForm(false);
+    clearDeviceDraft();
   };
 
   const getDeviceIcon = (type: Device['type']) => {

@@ -27,6 +27,8 @@ import { sendPushToUser } from '@/lib/push-subscription';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
+const STAFF_ANNOUNCEMENT_DRAFT_KEY = 'staff-announcement-draft-v1';
+
 interface Announcement {
   id: string;
   title: string;
@@ -59,6 +61,7 @@ const StaffAnnouncements = () => {
   const [body, setBody] = useState('');
   const [priority, setPriority] = useState('normal');
   const [files, setFiles] = useState<File[]>([]);
+  const [needsReattachFiles, setNeedsReattachFiles] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [detailDialog, setDetailDialog] = useState<{ open: boolean; announcement: Announcement | null }>({ open: false, announcement: null });
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -66,6 +69,71 @@ const StaffAnnouncements = () => {
   const [totalResidents, setTotalResidents] = useState(0);
   const [annPage, setAnnPage] = useState(1);
   const ANN_PAGE_SIZE = 10;
+
+  const clearAnnouncementDraft = () => {
+    try {
+      localStorage.removeItem(STAFF_ANNOUNCEMENT_DRAFT_KEY);
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const hasUnsavedAnnouncementForm = () => {
+    return Boolean(title.trim() || body.trim() || priority !== 'normal' || files.length > 0);
+  };
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STAFF_ANNOUNCEMENT_DRAFT_KEY);
+      if (!raw) return;
+
+      const draft = JSON.parse(raw) as {
+        title?: string;
+        body?: string;
+        priority?: string;
+        hadFiles?: boolean;
+      };
+
+      setTitle(draft.title || '');
+      setBody(draft.body || '');
+      setPriority(draft.priority || 'normal');
+      setNeedsReattachFiles(Boolean(draft.hadFiles));
+    } catch {
+      // ignore invalid drafts
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hasUnsavedAnnouncementForm()) {
+      clearAnnouncementDraft();
+      return;
+    }
+
+    try {
+      localStorage.setItem(
+        STAFF_ANNOUNCEMENT_DRAFT_KEY,
+        JSON.stringify({
+          title,
+          body,
+          priority,
+          hadFiles: files.length > 0,
+        })
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [title, body, priority, files]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasUnsavedAnnouncementForm()) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [title, body, priority, files]);
 
   const loadAnnouncements = async () => {
     const { data } = await supabase
@@ -153,6 +221,8 @@ const StaffAnnouncements = () => {
       setBody('');
       setPriority('normal');
       setFiles([]);
+      setNeedsReattachFiles(false);
+      clearAnnouncementDraft();
     } catch (err: any) {
       toast.error('Erro ao enviar comunicado: ' + err.message);
     } finally {
@@ -167,6 +237,7 @@ const StaffAnnouncements = () => {
       toast.error('Alguns arquivos excedem 20MB e foram ignorados');
     }
     setFiles(prev => [...prev, ...valid]);
+    if (valid.length > 0) setNeedsReattachFiles(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -269,6 +340,11 @@ const StaffAnnouncements = () => {
             {/* Attachments */}
             <div className="space-y-2">
               <Label>Anexos</Label>
+              {needsReattachFiles && files.length === 0 && (
+                <p className="text-xs text-warning">
+                  O rascunho foi recuperado. Reanexe os arquivos antes de enviar.
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 {files.map((file, i) => (
                   <div key={i} className="flex items-center gap-1 bg-muted px-3 py-1 rounded-full text-sm">

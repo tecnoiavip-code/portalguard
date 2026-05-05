@@ -9,9 +9,20 @@ import ResidentAnnouncements from './ResidentAnnouncements';
 
 const RESIDENT_ACTIVE_TAB_KEY = 'resident-active-tab-v1';
 const RESIDENT_TABS = new Set(['home', 'mails', 'announcements', 'visitors', 'authorizations', 'chat']);
+const RESIDENT_HASH_PREFIX = 'morador-';
+
+const getResidentTabFromHash = () => {
+  const rawHash = window.location.hash.replace(/^#/, '').trim();
+  if (!rawHash.startsWith(RESIDENT_HASH_PREFIX)) return null;
+  const tab = rawHash.replace(RESIDENT_HASH_PREFIX, '');
+  return RESIDENT_TABS.has(tab) ? tab : null;
+};
 
 const ResidentApp = () => {
   const [activeTab, setActiveTab] = useState(() => {
+    const tabFromHash = getResidentTabFromHash();
+    if (tabFromHash) return tabFromHash;
+
     try {
       const saved = localStorage.getItem(RESIDENT_ACTIVE_TAB_KEY);
       return saved && RESIDENT_TABS.has(saved) ? saved : 'home';
@@ -31,7 +42,22 @@ const ResidentApp = () => {
     } catch {
       // ignore storage errors
     }
+
+    const expectedHash = `#${RESIDENT_HASH_PREFIX}${activeTab}`;
+    if (window.location.hash !== expectedHash) {
+      window.history.replaceState(null, '', expectedHash);
+    }
   }, [activeTab]);
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const tabFromHash = getResidentTabFromHash();
+      if (tabFromHash) setActiveTab(tabFromHash);
+    };
+
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   const renderTab = () => {
     switch (activeTab) {

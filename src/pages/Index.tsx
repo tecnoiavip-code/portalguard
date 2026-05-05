@@ -31,8 +31,16 @@ const STAFF_SECTIONS = new Set([
   'settings',
 ]);
 
+const getSectionFromHash = () => {
+  const rawHash = window.location.hash.replace(/^#/, '').trim();
+  return STAFF_SECTIONS.has(rawHash) ? rawHash : null;
+};
+
 const Index = () => {
   const [activeSection, setActiveSection] = useState(() => {
+    const sectionFromHash = getSectionFromHash();
+    if (sectionFromHash) return sectionFromHash;
+
     try {
       const saved = localStorage.getItem(STAFF_ACTIVE_SECTION_KEY);
       return saved && STAFF_SECTIONS.has(saved) ? saved : 'dashboard';
@@ -48,7 +56,21 @@ const Index = () => {
     } catch {
       // ignore storage errors
     }
+
+    if (window.location.hash !== `#${activeSection}`) {
+      window.history.replaceState(null, '', `#${activeSection}`);
+    }
   }, [activeSection]);
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const sectionFromHash = getSectionFromHash();
+      if (sectionFromHash) setActiveSection(sectionFromHash);
+    };
+
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   const renderSection = () => {
     switch (activeSection) {

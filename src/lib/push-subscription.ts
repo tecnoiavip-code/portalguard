@@ -59,11 +59,9 @@ export async function subscribeToPush(userId: string): Promise<boolean> {
       return false;
     }
 
-    // Request notification permission
-    if (Notification.permission === 'denied') return false;
-    if (Notification.permission !== 'granted') {
-      const perm = await Notification.requestPermission();
-      if (perm !== 'granted') return false;
+    // Never auto-prompt here. Permission must be requested from explicit UI action.
+    if (!('Notification' in window) || Notification.permission !== 'granted') {
+      return false;
     }
 
     // Get VAPID key

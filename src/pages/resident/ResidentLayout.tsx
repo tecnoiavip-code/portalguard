@@ -10,7 +10,7 @@ import { Loader2 } from 'lucide-react';
 import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 import { setAppBadge } from '@/lib/pwa-badge';
 import { notifyResident, requestNotificationPermission } from '@/lib/pwa-notify';
-import { subscribeToPush, sendPushToUser } from '@/lib/push-subscription';
+import { subscribeToPush } from '@/lib/push-subscription';
 
 interface ResidentLayoutProps {
   children: ReactNode;
@@ -95,17 +95,13 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
   }, [activeTab, user]);
 
   useEffect(() => {
-    const handler = () => {
-      requestNotificationPermission().then(() => {
-        if (user) subscribeToPush(user.id);
-      });
-      window.removeEventListener('click', handler);
-    };
-    window.addEventListener('click', handler, { once: true });
-    requestNotificationPermission().then(() => {
-      if (user) subscribeToPush(user.id);
-    });
-    return () => window.removeEventListener('click', handler);
+    if (!user || !('Notification' in window)) return;
+
+    // Auto-subscribe only when permission was previously granted.
+    // This avoids automatic permission prompts that can be flagged as abusive on mobile.
+    if (Notification.permission === 'granted') {
+      subscribeToPush(user.id);
+    }
   }, [user]);
 
   useEffect(() => {
@@ -302,6 +298,19 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
 
   const markNotifsRead = async () => {
     if (!user) return;
+
+    // Ask notification permission only after explicit user interaction (click on bell).
+    if ('Notification' in window) {
+      if (Notification.permission === 'default') {
+        const granted = await requestNotificationPermission();
+        if (granted) {
+          await subscribeToPush(user.id);
+        }
+      } else if (Notification.permission === 'granted') {
+        await subscribeToPush(user.id);
+      }
+    }
+
     setCounts(prev => ({ ...prev, notif: 0 }));
     await supabase
       .from('notifications')

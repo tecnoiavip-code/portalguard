@@ -4,6 +4,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { Device } from '@/types';
 import { toast } from 'sonner';
 
+const CONTROL_ID_INTEGRATION_ENABLED = import.meta.env.VITE_CONTROLID_INTEGRATION_ENABLED === 'true';
+
 export const useDevices = () => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,6 +19,10 @@ export const useDevices = () => {
 
   useEffect(() => {
     loadDevices(true);
+
+    if (!CONTROL_ID_INTEGRATION_ENABLED) {
+      return;
+    }
 
     // Realtime subscription for device status updates
     const channel = supabase

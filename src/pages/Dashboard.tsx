@@ -1,11 +1,10 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Users, Mail, UserCheck, Clock, Activity } from 'lucide-react';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { StatsCard } from '@/components/StatsCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabaseStorage } from '@/lib/supabase-storage';
-import { DashboardStats, AccessEntry, Mail as MailType, RealtimeEvent, Resident } from '@/types';
+import { DashboardStats, AccessEntry } from '@/types';
 import { AreaChart as RechartsAreaChart, Area as RechartsArea, XAxis as RechartsXAxis, YAxis as RechartsYAxis, CartesianGrid as RechartsCartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer as RechartsResponsiveContainer } from 'recharts';
 
 const AreaChart: any = RechartsAreaChart;
@@ -24,10 +23,7 @@ export const Dashboard = () => {
     todayEntries: 0,
   });
   
-  const [recentEntries, setRecentEntries] = useState<AccessEntry[]>([]);
   const [allEntries, setAllEntries] = useState<AccessEntry[]>([]);
-  const [realtimeEvents, setRealtimeEvents] = useState<RealtimeEvent[]>([]);
-  const [residents, setResidents] = useState<Resident[]>([]);
 
   useEffect(() => {
     loadStats();
@@ -39,14 +35,11 @@ export const Dashboard = () => {
   }, []);
 
   const loadStats = async () => {
-    const [residentsData, mailsData, entriesData, eventsData] = await Promise.all([
-      supabaseStorage.getResidents(true),
+    const [residentsData, mailsData, entriesData] = await Promise.all([
+      supabaseStorage.getResidents(false),
       supabaseStorage.getMails(),
       supabaseStorage.getEntries(),
-      supabaseStorage.getEvents(),
     ]);
-
-    setResidents(residentsData || []);
 
     const today = new Date().toDateString();
     const todayEntries = entriesData.filter(
@@ -62,9 +55,7 @@ export const Dashboard = () => {
       todayEntries: todayEntries.length,
     });
 
-    setRecentEntries(entriesData.slice(0, 5));
     setAllEntries(entriesData);
-    setRealtimeEvents(eventsData.slice(0, 5));
   };
 
   const chartData = useMemo(() => {

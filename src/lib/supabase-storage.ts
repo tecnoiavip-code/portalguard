@@ -1,6 +1,8 @@
 import { supabase } from '@/integrations/supabase/client';
 import { Resident, Mail, AccessEntry, Device, RealtimeEvent } from '@/types';
 
+const CONTROL_ID_INTEGRATION_ENABLED = import.meta.env.VITE_CONTROLID_INTEGRATION_ENABLED === 'true';
+
 // Helper to uppercase string fields (except email and urls)
 const up = (val: string | null | undefined): string | null => val ? val.toUpperCase() : val as null;
 
@@ -489,6 +491,10 @@ export const supabaseStorage = {
 
   // Devices
   async getDevices(): Promise<Device[]> {
+    if (!CONTROL_ID_INTEGRATION_ENABLED) {
+      return [];
+    }
+
     const { data, error } = await supabase
       .from('devices')
       .select('*')

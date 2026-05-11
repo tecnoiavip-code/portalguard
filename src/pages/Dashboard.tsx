@@ -1,11 +1,10 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Users, Mail, UserCheck, Clock, Activity, Radio, CheckCheck, User, ShieldCheck, ShieldAlert, X, Car } from 'lucide-react';
+import { Users, Mail, UserCheck, Clock, Activity } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { StatsCard } from '@/components/StatsCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabaseStorage } from '@/lib/supabase-storage';
-import { supabase } from '@/integrations/supabase/client';
 import { DashboardStats, AccessEntry, Mail as MailType, RealtimeEvent, Resident } from '@/types';
 import { AreaChart as RechartsAreaChart, Area as RechartsArea, XAxis as RechartsXAxis, YAxis as RechartsYAxis, CartesianGrid as RechartsCartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer as RechartsResponsiveContainer } from 'recharts';
 
@@ -16,24 +15,6 @@ const YAxis: any = RechartsYAxis;
 const CartesianGrid: any = RechartsCartesianGrid;
 const Tooltip: any = RechartsTooltip;
 const ResponsiveContainer: any = RechartsResponsiveContainer;
-
-interface ControlidLog {
-  id: string;
-  device_id: string;
-  event_type: string;
-  payload: any;
-  processed: boolean;
-  received_at: string;
-}
-
-const normalizeDeviceKey = (value: unknown): string => String(value ?? '').trim().toLowerCase();
-const compactDeviceKey = (value: unknown): string => normalizeDeviceKey(value).replace(/[^a-z0-9]/g, '');
-const normalizePersonName = (value: unknown): string =>
-  String(value ?? '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
-    .toLowerCase();
 
 export const Dashboard = () => {
   const [stats, setStats] = useState<DashboardStats>({
@@ -46,93 +27,16 @@ export const Dashboard = () => {
   const [recentEntries, setRecentEntries] = useState<AccessEntry[]>([]);
   const [allEntries, setAllEntries] = useState<AccessEntry[]>([]);
   const [realtimeEvents, setRealtimeEvents] = useState<RealtimeEvent[]>([]);
-  const [controlidLogs, setControlidLogs] = useState<ControlidLog[]>([]);
   const [residents, setResidents] = useState<Resident[]>([]);
-  const [deviceNames, setDeviceNames] = useState<Record<string, string>>({});
-  const [deviceTypes, setDeviceTypes] = useState<Record<string, string>>({});
-  const [photoSignedUrls, setPhotoSignedUrls] = useState<Record<string, string>>({});
-  const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; name: string; time: string; location: string } | null>(null);
-
-  // Generate signed URLs for access photos stored in the bucket
-  useEffect(() => {
-    const paths = controlidLogs
-      .map(l => l.payload?.saved_photo_path)
-      .filter((p): p is string => !!p && !photoSignedUrls[p]);
-    
-    if (paths.length === 0) return;
-    const uniquePaths = [...new Set(paths)];
-
-    Promise.all(
-      uniquePaths.map(async (path) => {
-        const { data } = await supabase.storage
-          .from('access-photos')
-          .createSignedUrl(path, 3600);
-        return [path, data?.signedUrl || ''] as const;
-      })
-    ).then(results => {
-      const newUrls: Record<string, string> = {};
-      results.forEach(([p, url]) => { if (url) newUrls[p] = url; });
-      if (Object.keys(newUrls).length > 0) {
-        setPhotoSignedUrls(prev => ({ ...prev, ...newUrls }));
-      }
-    });
-  }, [controlidLogs]);
-
-  const loadControlidLogs = useCallback(async () => {
-    const { data } = await supabase
-      .from('controlid_logs')
-      .select('*')
-      .in('event_type', ['dao', 'access_photo', 'identification_event', 'enterprise_identification_event', 'catra_event', 'door', 'secbox', 'operation_mode', 'access_event', 'user_event', 'photo_event'])
-      .order('received_at', { ascending: false })
-      .limit(50);
-    if (data) setControlidLogs(data as ControlidLog[]);
-  }, []);
 
   useEffect(() => {
     loadStats();
-    loadControlidLogs();
-    // Load device names from devices table only (registered in project)
-    supabase.from('devices').select('id, name, serial_number, ip_address, last_sync, type').then(({ data }) => {
-      if (data) {
-        const nameMap: Record<string, string> = {};
-        const typeMap: Record<string, string> = {};
-
-        data.forEach((d) => {
-          const keys = [d.id, d.serial_number, d.ip_address, d.name];
-
-          keys.forEach((key) => {
-            const normalized = normalizeDeviceKey(key);
-            const compact = compactDeviceKey(key);
-
-            if (normalized) { nameMap[normalized] = d.name; if (d.type) typeMap[normalized] = d.type; }
-            if (compact) { nameMap[compact] = d.name; if (d.type) typeMap[compact] = d.type; }
-          });
-        });
-
-        setDeviceNames(nameMap);
-        setDeviceTypes(typeMap);
-      }
-    });
     const interval = setInterval(loadStats, 30000);
-    const channel = supabase
-      .channel('controlid-realtime')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'controlid_logs',
-      }, (payload) => {
-        const newLog = payload.new as ControlidLog;
-        if (['dao', 'access_photo', 'identification_event', 'enterprise_identification_event', 'catra_event', 'door', 'secbox', 'operation_mode', 'access_event', 'user_event', 'photo_event'].includes(newLog.event_type)) {
-          setControlidLogs(prev => [newLog, ...prev].slice(0, 50));
-        }
-      })
-      .subscribe();
 
     return () => {
       clearInterval(interval);
-      supabase.removeChannel(channel);
     };
-  }, [loadControlidLogs]);
+  }, []);
 
   const loadStats = async () => {
     const [residentsData, mailsData, entriesData, eventsData] = await Promise.all([

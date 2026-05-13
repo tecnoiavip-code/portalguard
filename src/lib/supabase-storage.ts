@@ -12,7 +12,8 @@ export const supabaseStorage = {
     const { data, error } = await supabase
       .from('residents')
       .select('id, name, cpf, apartment, phone, email, photo_url, vehicle_plate, vehicle_model, vehicle_color, vehicle_tag, created_at')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(500);
     
     if (error) {
       console.error('Error fetching residents:', error);
@@ -276,8 +277,9 @@ export const supabaseStorage = {
   async getMails(): Promise<Mail[]> {
     const { data, error } = await supabase
       .from('mails')
-      .select('*')
-      .order('received_at', { ascending: false });
+      .select('id, resident_id, sender, package_type, notes, tracking_code, photo_url, received_at, status, delivered_at, withdrawn_by')
+      .order('received_at', { ascending: false })
+      .limit(500);
     
     if (error) {
       console.error('Error fetching mails:', error);
@@ -354,10 +356,15 @@ export const supabaseStorage = {
 
   // Access Entries
   async getEntries(): Promise<AccessEntry[]> {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
     const { data, error } = await supabase
       .from('access_entries')
-      .select('*')
-      .order('entry_time', { ascending: false });
+      .select('id, visitor_name, visitor_document, visitor_type, resident_id, resident_name, apartment, purpose, entry_time, exit_time, vehicle_plate, vehicle_model, vehicle_color, photo_url, company, auto_recognized, badge_number')
+      .or(`exit_time.is.null,entry_time.gte.${thirtyDaysAgo.toISOString()}`)
+      .order('entry_time', { ascending: false })
+      .limit(500);
     
     if (error) {
       console.error('Error fetching entries:', error);

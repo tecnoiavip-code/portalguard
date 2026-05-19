@@ -266,6 +266,7 @@ export const Auth = () => {
         </div>
       )}
     </div>
+    </>
   );
 };
 

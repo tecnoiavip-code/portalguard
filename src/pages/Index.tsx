@@ -99,6 +99,14 @@ const Index = () => {
 
   return (
     <Layout>
+      <Helmet>
+        <title>Painel da equipe — PortalGuard Pro</title>
+        <meta name="description" content="Painel da equipe do condomínio: gerencie moradores, visitantes, prestadores, correspondências e dispositivos no PortalGuard Pro." />
+        <link rel="canonical" href="https://portalguard.lovable.app/" />
+        <meta property="og:title" content="Painel da equipe — PortalGuard Pro" />
+        <meta property="og:description" content="Gerencie o seu condomínio em um único painel." />
+        <meta property="og:url" content="https://portalguard.lovable.app/" />
+      </Helmet>
       <Sidebar
         activeSection={activeSection}
         onSectionChange={handleSectionChange}

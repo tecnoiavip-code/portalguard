@@ -74,6 +74,15 @@ const ResidentApp = () => {
 
   return (
     <ResidentLayout activeTab={activeTab} onTabChange={handleTabChange} counts={counts} setCounts={setCounts}>
+      <Helmet>
+        <title>Portal do Morador — PortalGuard Pro</title>
+        <meta name="description" content="Acompanhe visitantes autorizados, correspondências, avisos do condomínio e converse com a portaria pelo Portal do Morador." />
+        <link rel="canonical" href="https://portalguard.lovable.app/morador" />
+        <meta property="og:title" content="Portal do Morador — PortalGuard Pro" />
+        <meta property="og:description" content="O seu condomínio na palma da mão." />
+        <meta property="og:url" content="https://portalguard.lovable.app/morador" />
+        <meta name="robots" content="noindex,nofollow" />
+      </Helmet>
       {renderTab()}
     </ResidentLayout>
   );

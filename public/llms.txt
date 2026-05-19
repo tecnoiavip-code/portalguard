@@ -1,0 +1,9 @@
+# PortalGuard Pro
+
+> Sistema profissional de controle de acesso para condomínios — gerencia moradores, visitantes, prestadores de serviço e correspondências em um só lugar.
+
+PortalGuard Pro é um aplicativo privado usado pela equipe de portaria e pelos moradores do condomínio. A maior parte do produto exige autenticação, portanto não há páginas públicas indexáveis além da página inicial institucional.
+
+## Pages
+
+- [Início](/): Visão geral do PortalGuard Pro.

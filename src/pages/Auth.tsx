@@ -114,6 +114,16 @@ export const Auth = () => {
   };
 
   return (
+    <>
+    <Helmet>
+      <title>Acesso da equipe — PortalGuard Pro</title>
+      <meta name="description" content="Entre na conta da equipe do PortalGuard Pro para gerenciar moradores, visitantes e correspondências do condomínio." />
+      <link rel="canonical" href="https://portalguard.lovable.app/auth" />
+      <meta property="og:title" content="Acesso da equipe — PortalGuard Pro" />
+      <meta property="og:description" content="Login da equipe do condomínio no PortalGuard Pro." />
+      <meta property="og:url" content="https://portalguard.lovable.app/auth" />
+      <meta name="robots" content="noindex,nofollow" />
+    </Helmet>
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">

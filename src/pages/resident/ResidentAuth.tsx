@@ -123,6 +123,16 @@ const ResidentAuth = () => {
   };
 
   return (
+    <>
+    <Helmet>
+      <title>Portal do Morador — Acesso — PortalGuard Pro</title>
+      <meta name="description" content="Acesse o Portal do Morador do PortalGuard Pro para ver visitantes, correspondências, avisos e autorizar acessos." />
+      <link rel="canonical" href="https://portalguard.lovable.app/morador/login" />
+      <meta property="og:title" content="Portal do Morador — Acesso" />
+      <meta property="og:description" content="Entre no Portal do Morador do seu condomínio." />
+      <meta property="og:url" content="https://portalguard.lovable.app/morador/login" />
+      <meta name="robots" content="noindex,nofollow" />
+    </Helmet>
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-accent/5 via-background to-primary/5 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">

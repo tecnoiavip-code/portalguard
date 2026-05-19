@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Helmet } from 'react-helmet-async';
 import ResidentLayout, { type Counts } from './ResidentLayout';
 import ResidentDashboard from './ResidentDashboard';
 import ResidentMails from './ResidentMails';

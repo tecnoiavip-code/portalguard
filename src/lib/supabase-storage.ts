@@ -1,20 +1,49 @@
 import { supabase } from '@/integrations/supabase/client';
 import { Resident, Mail, AccessEntry, Device, RealtimeEvent } from '@/types';
 
-// Helper to uppercase string fields (except email and urls)
-const up = (val: string | null | undefined): string | null => val ? val.toUpperCase() : val as null;
+// ─────────────────────────────────────────────────────────────
+// Simple in-memory cache with TTL to avoid redundant DB queries
+// ─────────────────────────────────────────────────────────────
+interface CacheEntry<T> { data: T; expires: number; }
+const _cache: Record<string, CacheEntry<any>> = {};
 
+function getCache<T>(key: string): T | null {
+  const e = _cache[key];
+  if (e && e.expires > Date.now()) return e.data as T;
+  delete _cache[key];
+  return null;
+}
+function setCache<T>(key: string, data: T, ttlMs = 60_000) {
+  _cache[key] = { data, expires: Date.now() + ttlMs };
+}
+export function invalidateCache(...keys: string[]) {
+  keys.forEach(k => { delete _cache[k]; });
+}
+
+// ─────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────
+const up = (val: string | null | undefined): string | null =>
+  val ? val.toUpperCase() : (val as null);
+
+// ─────────────────────────────────────────────────────────────
 export const supabaseStorage = {
-  // Residents
+
+  // ── Residents ──────────────────────────────────────────────
+
   async getResidents(includePhotos = false): Promise<Resident[] | null> {
+    const cacheKey = 'residents_list';
+    const cached = getCache<Resident[]>(cacheKey);
+    if (cached) return cached;
+
     const { data, error } = await supabase
       .from('residents')
       .select('id, name, cpf, apartment, phone, email, photo_url, vehicle_plate, vehicle_model, vehicle_color, vehicle_tag, created_at')
-      .order('created_at', { ascending: false });
-    
+      .order('name', { ascending: true });
+
     if (error) {
       console.error('Error fetching residents:', error);
-      return null; // Return null on error so callers can preserve existing data
+      return null;
     }
 
     const residents = (data || []).map(r => ({
@@ -24,7 +53,7 @@ export const supabaseStorage = {
       apartment: r.apartment,
       phone: r.phone || '',
       email: r.email || '',
-      photo: includePhotos ? (r.photo_url || '') : '',
+      photo: '', // never bulk-load photos — use getResidentPhoto() per-item
       vehiclePlate: r.vehicle_plate || '',
       vehicleModel: r.vehicle_model || '',
       vehicleColor: r.vehicle_color || '',
@@ -32,22 +61,16 @@ export const supabaseStorage = {
       createdAt: r.created_at,
     }));
 
-    if (!includePhotos || residents.length === 0) {
-      return residents;
-    }
-
-    const residentsWithPhotos = await Promise.all(
-      residents.map(async (resident) => ({
-        ...resident,
-        photo: await supabaseStorage.getResidentPhoto(resident.id),
-      }))
-    );
-
-    return residentsWithPhotos;
+    setCache(cacheKey, residents, 60_000); // cache for 60 s
+    return residents;
   },
 
   async getResidentPhoto(id: string): Promise<string> {
-    // First check if there's a photo in Storage
+    const cacheKey = `photo_${id}`;
+    const cached = getCache<string>(cacheKey);
+    if (cached !== null) return cached;
+
+    // 1. Check Storage bucket
     const { data: storageFiles } = await supabase.storage
       .from('resident-photos')
       .list(id, { limit: 1 });
@@ -56,28 +79,30 @@ export const supabaseStorage = {
       const { data: signedUrl } = await supabase.storage
         .from('resident-photos')
         .createSignedUrl(`${id}/${storageFiles[0].name}`, 3600);
-      return signedUrl?.signedUrl || '';
+      const url = signedUrl?.signedUrl || '';
+      setCache(cacheKey, url, 3500_000); // cache ~1 h (URL valid 1 h)
+      return url;
     }
 
-    // Fallback: check legacy base64 in photo_url column
-    const { data, error } = await supabase
+    // 2. Fallback: photo_url column (legacy base64)
+    const { data } = await supabase
       .from('residents')
       .select('photo_url')
       .eq('id', id)
       .maybeSingle();
 
-    if (error || !data?.photo_url) return '';
+    if (!data?.photo_url) { setCache(cacheKey, '', 300_000); return ''; }
 
-    // If it's base64, migrate it to Storage automatically
     if (data.photo_url.startsWith('data:')) {
       const migrated = await supabaseStorage.uploadResidentPhoto(id, data.photo_url);
       if (migrated) {
-        // Clear the base64 from the DB column
         await supabase.from('residents').update({ photo_url: null }).eq('id', id);
+        setCache(cacheKey, migrated, 3500_000);
         return migrated;
       }
     }
 
+    setCache(cacheKey, data.photo_url, 3500_000);
     return data.photo_url;
   },
 
@@ -85,7 +110,6 @@ export const supabaseStorage = {
     try {
       let file: File;
       if (typeof base64OrFile === 'string') {
-        // Convert base64 to File
         const res = await fetch(base64OrFile);
         const blob = await res.blob();
         file = new File([blob], 'photo.jpg', { type: blob.type || 'image/jpeg' });
@@ -96,23 +120,21 @@ export const supabaseStorage = {
       const ext = file.name.split('.').pop() || 'jpg';
       const path = `${residentId}/photo.${ext}`;
 
-      // Remove old photo if exists
       await supabase.storage.from('resident-photos').remove([path]);
 
       const { error } = await supabase.storage
         .from('resident-photos')
         .upload(path, file, { upsert: true });
 
-      if (error) {
-        console.error('Error uploading photo:', error);
-        return null;
-      }
+      if (error) { console.error('Error uploading photo:', error); return null; }
 
       const { data: signedUrl } = await supabase.storage
         .from('resident-photos')
         .createSignedUrl(path, 3600);
 
-      return signedUrl?.signedUrl || null;
+      const url = signedUrl?.signedUrl || null;
+      if (url) setCache(`photo_${residentId}`, url, 3500_000);
+      return url;
     } catch (err) {
       console.error('Error in uploadResidentPhoto:', err);
       return null;
@@ -128,59 +150,49 @@ export const supabaseStorage = {
         .from('resident-photos')
         .remove(files.map(f => `${residentId}/${f.name}`));
     }
+    invalidateCache(`photo_${residentId}`);
   },
 
+  // Single consolidated duplicate check — one query instead of 3
   async checkResidentDuplicate(resident: Resident, excludeId?: string): Promise<string | null> {
     const normalizedName = resident.name.trim().toUpperCase();
-    const normalizedApt = resident.apartment.trim().toUpperCase();
     const normalizedCpf = resident.cpf ? resident.cpf.replace(/\D/g, '') : '';
     const normalizedEmail = resident.email ? resident.email.trim().toLowerCase() : '';
 
-    // Check by CPF if provided (strip non-digits for comparison)
-    if (normalizedCpf) {
-      const { data } = await supabase
-        .from('residents')
-        .select('id, name, apartment, cpf');
-      if (data) {
-        const match = data.find(r => {
-          if (excludeId && r.id === excludeId) return false;
-          const rCpf = (r.cpf || '').replace(/\D/g, '');
-          return rCpf === normalizedCpf;
-        });
-        if (match) {
-          return `Já existe um morador com este CPF: ${match.name} (${match.apartment})`;
-        }
-      }
-    }
-
-    // Check by name (any apartment - same person cannot be registered twice)
-    const { data: nameData } = await supabase
+    // Build a single query to check all fields at once
+    const { data } = await supabase
       .from('residents')
-      .select('id, name, apartment')
-      .ilike('name', normalizedName);
-    if (nameData) {
-      const match = nameData.find(r => {
-        if (excludeId && r.id === excludeId) return false;
-        return r.name.trim().toUpperCase() === normalizedName;
-      });
-      if (match) {
-        return `Já existe um morador com este nome: ${match.name} (${match.apartment})`;
-      }
+      .select('id, name, apartment, cpf, email')
+      .or(
+        [
+          `name.ilike.${normalizedName}`,
+          normalizedCpf ? `cpf.ilike.%${normalizedCpf}%` : null,
+          normalizedEmail ? `email.ilike.${normalizedEmail}` : null,
+        ]
+          .filter(Boolean)
+          .join(',')
+      )
+      .limit(20);
+
+    if (!data || data.length === 0) return null;
+
+    const others = excludeId ? data.filter(r => r.id !== excludeId) : data;
+    if (others.length === 0) return null;
+
+    // Check CPF match
+    if (normalizedCpf) {
+      const match = others.find(r => (r.cpf || '').replace(/\D/g, '') === normalizedCpf);
+      if (match) return `Já existe um morador com este CPF: ${match.name} (${match.apartment})`;
     }
 
-    // Check by email if provided
+    // Check name match
+    const nameMatch = others.find(r => r.name.trim().toUpperCase() === normalizedName);
+    if (nameMatch) return `Já existe um morador com este nome: ${nameMatch.name} (${nameMatch.apartment})`;
+
+    // Check email match
     if (normalizedEmail) {
-      const { data: emailData } = await supabase
-        .from('residents')
-        .select('id, name, apartment')
-        .ilike('email', normalizedEmail)
-        .limit(1);
-      if (emailData) {
-        const match = emailData.find(r => !(excludeId && r.id === excludeId));
-        if (match) {
-          return `Já existe um morador com este e-mail: ${match.name} (${match.apartment})`;
-        }
-      }
+      const emailMatch = others.find(r => (r.email || '').toLowerCase() === normalizedEmail);
+      if (emailMatch) return `Já existe um morador com este e-mail: ${emailMatch.name} (${emailMatch.apartment})`;
     }
 
     return null;
@@ -190,7 +202,6 @@ export const supabaseStorage = {
     const isNew = !resident.id || resident.id.startsWith('res_');
     const excludeId = isNew ? undefined : resident.id;
 
-    // Check for duplicates
     const duplicateMsg = await supabaseStorage.checkResidentDuplicate(resident, excludeId);
     if (duplicateMsg) {
       const { toast } = await import('sonner');
@@ -209,9 +220,6 @@ export const supabaseStorage = {
       vehicle_color: up(resident.vehicleColor) || null,
       vehicle_tag: up(resident.vehicleTag) || null,
     };
-
-    // Determine resident ID for photo upload
-    const residentId = isNew ? undefined : resident.id;
 
     let savedId: string;
 
@@ -232,57 +240,47 @@ export const supabaseStorage = {
         .update(residentData)
         .eq('id', resident.id)
         .select();
-      if (error) {
-        console.error('Error updating resident:', error.message);
-        return null;
-      }
+      if (error) { console.error('Error updating resident:', error.message); return null; }
       savedId = resident.id;
     }
 
-    // Upload photo to Storage if provided
+    // Handle photo
     if (resident.photo && resident.photo.startsWith('data:')) {
       await supabaseStorage.uploadResidentPhoto(savedId, resident.photo);
-      // Clear base64 from DB column
       await supabase.from('residents').update({ photo_url: null }).eq('id', savedId);
     } else if (!resident.photo) {
-      // Photo was removed
       await supabaseStorage.deleteResidentPhoto(savedId);
       await supabase.from('residents').update({ photo_url: null }).eq('id', savedId);
     }
-    
+
+    // Invalidate list cache so next read is fresh
+    invalidateCache('residents_list');
     return savedId;
   },
 
   async deleteResident(id: string): Promise<boolean> {
-    // Delete photo from Storage first
     await supabaseStorage.deleteResidentPhoto(id);
-
-    const { error } = await supabase
-      .from('residents')
-      .delete()
-      .eq('id', id);
-    
-    if (error) {
-      console.error('Error deleting resident:', error);
-      return false;
-    }
-    
+    const { error } = await supabase.from('residents').delete().eq('id', id);
+    if (error) { console.error('Error deleting resident:', error); return false; }
+    invalidateCache('residents_list', `photo_${id}`);
     return true;
   },
 
-  // Mails
+  // ── Mails ──────────────────────────────────────────────────
+
   async getMails(): Promise<Mail[]> {
+    const cacheKey = 'mails_list';
+    const cached = getCache<Mail[]>(cacheKey);
+    if (cached) return cached;
+
     const { data, error } = await supabase
       .from('mails')
       .select('*')
       .order('received_at', { ascending: false });
-    
-    if (error) {
-      console.error('Error fetching mails:', error);
-      return [];
-    }
-    
-    return (data || []).map(m => ({
+
+    if (error) { console.error('Error fetching mails:', error); return []; }
+
+    const mails = (data || []).map(m => ({
       id: m.id,
       residentId: m.resident_id,
       sender: m.sender,
@@ -295,11 +293,13 @@ export const supabaseStorage = {
       deliveredAt: m.delivered_at,
       withdrawnBy: m.withdrawn_by,
     }));
+
+    setCache(cacheKey, mails, 60_000);
+    return mails;
   },
 
   async saveMail(mail: Mail): Promise<boolean> {
     const isNew = mail.id.startsWith('mail_');
-    
     const mailData: any = {
       resident_id: mail.residentId,
       sender: mail.sender,
@@ -313,56 +313,39 @@ export const supabaseStorage = {
     };
 
     if (isNew) {
-      const { error } = await supabase
-        .from('mails')
-        .insert(mailData);
-      
-      if (error) {
-        console.error('Error inserting mail:', error);
-        return null;
-      }
+      const { error } = await supabase.from('mails').insert(mailData);
+      if (error) { console.error('Error inserting mail:', error); return false; }
     } else {
-      const { error } = await supabase
-        .from('mails')
-        .update(mailData)
-        .eq('id', mail.id);
-      
-      if (error) {
-        console.error('Error updating mail:', error);
-        return false;
-      }
+      const { error } = await supabase.from('mails').update(mailData).eq('id', mail.id);
+      if (error) { console.error('Error updating mail:', error); return false; }
     }
-    
+    invalidateCache('mails_list');
     return true;
   },
 
   async deleteMail(id: string): Promise<boolean> {
-    const { error } = await supabase
-      .from('mails')
-      .delete()
-      .eq('id', id);
-    
-    if (error) {
-      console.error('Error deleting mail:', error);
-      return false;
-    }
-    
+    const { error } = await supabase.from('mails').delete().eq('id', id);
+    if (error) { console.error('Error deleting mail:', error); return false; }
+    invalidateCache('mails_list');
     return true;
   },
 
-  // Access Entries
+  // ── Access Entries ──────────────────────────────────────────
+
   async getEntries(): Promise<AccessEntry[]> {
+    const cacheKey = 'entries_list';
+    const cached = getCache<AccessEntry[]>(cacheKey);
+    if (cached) return cached;
+
     const { data, error } = await supabase
       .from('access_entries')
       .select('*')
-      .order('entry_time', { ascending: false });
-    
-    if (error) {
-      console.error('Error fetching entries:', error);
-      return [];
-    }
-    
-    return (data || []).map(e => ({
+      .order('entry_time', { ascending: false })
+      .limit(200); // cap at 200 — avoids unbounded growth
+
+    if (error) { console.error('Error fetching entries:', error); return []; }
+
+    const entries = (data || []).map(e => ({
       id: e.id,
       visitorName: e.visitor_name,
       visitorDocument: e.visitor_document,
@@ -381,39 +364,38 @@ export const supabaseStorage = {
       autoRecognized: e.auto_recognized || false,
       badgeNumber: (e as any).badge_number || '',
     }));
+
+    setCache(cacheKey, entries, 30_000); // 30 s cache for entries
+    return entries;
   },
 
   async checkEntryDuplicate(entry: AccessEntry, excludeId?: string): Promise<string | null> {
-    // Check if same visitor (by document) is currently active (no exit) in the building
-    if (entry.visitorDocument) {
-      const query = supabase
-        .from('access_entries')
-        .select('id, visitor_name, apartment')
-        .eq('visitor_document', entry.visitorDocument)
-        .is('exit_time', null)
-        .limit(1);
-      if (excludeId) query.neq('id', excludeId);
-      const { data } = await query;
-      if (data && data.length > 0) {
-        return `Este visitante (${data[0].visitor_name}) já está com entrada ativa no ${data[0].apartment}. Registre a saída antes de uma nova entrada.`;
-      }
-    }
+    if (!entry.visitorDocument && (!entry.badgeNumber || !entry.badgeNumber.trim())) return null;
 
-    // Check if badge number is already in use by an active entry (no exit)
-    if (entry.badgeNumber && entry.badgeNumber.trim()) {
-      const badgeQuery = supabase
-        .from('access_entries')
-        .select('id, visitor_name, apartment, badge_number')
-        .eq('badge_number', entry.badgeNumber.trim().toUpperCase())
-        .is('exit_time', null)
-        .limit(1);
-      if (excludeId) badgeQuery.neq('id', excludeId);
-      const { data: badgeData } = await badgeQuery;
-      if (badgeData && badgeData.length > 0) {
-        return `O crachá ${badgeData[0].badge_number} já está em uso por ${badgeData[0].visitor_name} (${badgeData[0].apartment}). Registre a saída antes de reutilizá-lo.`;
-      }
-    }
+    const conditions: string[] = [];
+    if (entry.visitorDocument) conditions.push(`visitor_document.eq.${entry.visitorDocument}`);
+    if (entry.badgeNumber?.trim()) conditions.push(`badge_number.eq.${entry.badgeNumber.trim().toUpperCase()}`);
 
+    const query = supabase
+      .from('access_entries')
+      .select('id, visitor_name, apartment, badge_number')
+      .or(conditions.join(','))
+      .is('exit_time', null)
+      .limit(5);
+    if (excludeId) query.neq('id', excludeId);
+
+    const { data } = await query;
+    if (!data || data.length === 0) return null;
+
+    const active = data.find(r => !(excludeId && r.id === excludeId));
+    if (!active) return null;
+
+    if (entry.visitorDocument && active.visitor_name) {
+      return `Este visitante (${active.visitor_name}) já está com entrada ativa no ${active.apartment}. Registre a saída antes de uma nova entrada.`;
+    }
+    if (entry.badgeNumber && active.badge_number) {
+      return `O crachá ${active.badge_number} já está em uso. Registre a saída antes de reutilizá-lo.`;
+    }
     return null;
   },
 
@@ -421,7 +403,6 @@ export const supabaseStorage = {
     const isNew = entry.id.startsWith('entry_');
     const excludeId = isNew ? undefined : entry.id;
 
-    // Only check duplicates for new entries (not exits/updates)
     if (isNew) {
       const duplicateMsg = await supabaseStorage.checkEntryDuplicate(entry, excludeId);
       if (duplicateMsg) {
@@ -430,7 +411,7 @@ export const supabaseStorage = {
         return false;
       }
     }
-    
+
     const entryData: any = {
       visitor_name: up(entry.visitorName) || entry.visitorName,
       visitor_document: up(entry.visitorDocument) || entry.visitorDocument,
@@ -450,56 +431,38 @@ export const supabaseStorage = {
     };
 
     if (isNew) {
-      const { error } = await supabase
-        .from('access_entries')
-        .insert(entryData);
-      
-      if (error) {
-        console.error('Error inserting entry:', error);
-        return false;
-      }
+      const { error } = await supabase.from('access_entries').insert(entryData);
+      if (error) { console.error('Error inserting entry:', error); return false; }
     } else {
-      const { error } = await supabase
-        .from('access_entries')
-        .update(entryData)
-        .eq('id', entry.id);
-      
-      if (error) {
-        console.error('Error updating entry:', error);
-        return false;
-      }
+      const { error } = await supabase.from('access_entries').update(entryData).eq('id', entry.id);
+      if (error) { console.error('Error updating entry:', error); return false; }
     }
-    
+    invalidateCache('entries_list');
     return true;
   },
 
   async deleteEntry(id: string): Promise<boolean> {
-    const { error } = await supabase
-      .from('access_entries')
-      .delete()
-      .eq('id', id);
-    
-    if (error) {
-      console.error('Error deleting entry:', error);
-      return false;
-    }
-    
+    const { error } = await supabase.from('access_entries').delete().eq('id', id);
+    if (error) { console.error('Error deleting entry:', error); return false; }
+    invalidateCache('entries_list');
     return true;
   },
 
-  // Devices
+  // ── Devices ────────────────────────────────────────────────
+
   async getDevices(): Promise<Device[]> {
+    const cacheKey = 'devices_list';
+    const cached = getCache<Device[]>(cacheKey);
+    if (cached) return cached;
+
     const { data, error } = await supabase
       .from('devices')
       .select('*')
       .order('created_at', { ascending: false });
-    
-    if (error) {
-      console.error('Error fetching devices:', error);
-      return [];
-    }
-    
-    return (data || []).map(d => ({
+
+    if (error) { console.error('Error fetching devices:', error); return []; }
+
+    const devices = (data || []).map(d => ({
       id: d.id,
       name: d.name,
       type: d.type as any,
@@ -509,11 +472,13 @@ export const supabaseStorage = {
       ipAddress: d.ip_address || '',
       serialNumber: d.serial_number || '',
     }));
+
+    setCache(cacheKey, devices, 30_000); // 30 s — devices change less often
+    return devices;
   },
 
   async saveDevice(device: Device): Promise<boolean> {
     const isNew = device.id.startsWith('dev_');
-    
     const deviceData = {
       name: device.name,
       type: device.type,
@@ -524,57 +489,39 @@ export const supabaseStorage = {
     };
 
     if (isNew) {
-      const { error } = await supabase
-        .from('devices')
-        .insert(deviceData);
-      
-      if (error) {
-        console.error('Error inserting device:', error);
-        return false;
-      }
+      const { error } = await supabase.from('devices').insert(deviceData);
+      if (error) { console.error('Error inserting device:', error); return false; }
     } else {
-      const { error } = await supabase
-        .from('devices')
-        .update(deviceData)
-        .eq('id', device.id);
-      
-      if (error) {
-        console.error('Error updating device:', error);
-        return false;
-      }
+      const { error } = await supabase.from('devices').update(deviceData).eq('id', device.id);
+      if (error) { console.error('Error updating device:', error); return false; }
     }
-    
+    invalidateCache('devices_list');
     return true;
   },
 
   async deleteDevice(id: string): Promise<boolean> {
-    const { error } = await supabase
-      .from('devices')
-      .delete()
-      .eq('id', id);
-    
-    if (error) {
-      console.error('Error deleting device:', error);
-      return false;
-    }
-    
+    const { error } = await supabase.from('devices').delete().eq('id', id);
+    if (error) { console.error('Error deleting device:', error); return false; }
+    invalidateCache('devices_list');
     return true;
   },
 
-  // Realtime Events
+  // ── Realtime Events ────────────────────────────────────────
+
   async getEvents(): Promise<RealtimeEvent[]> {
+    const cacheKey = 'events_list';
+    const cached = getCache<RealtimeEvent[]>(cacheKey);
+    if (cached) return cached;
+
     const { data, error } = await supabase
       .from('realtime_events')
       .select('*')
       .order('timestamp', { ascending: false })
-      .limit(50);
-    
-    if (error) {
-      console.error('Error fetching events:', error);
-      return [];
-    }
-    
-    return (data || []).map(e => ({
+      .limit(30);
+
+    if (error) { console.error('Error fetching events:', error); return []; }
+
+    const events = (data || []).map(e => ({
       id: e.id,
       type: e.type as any,
       description: e.description,
@@ -582,23 +529,20 @@ export const supabaseStorage = {
       priority: e.priority as any,
       relatedId: e.related_id || undefined,
     }));
+
+    setCache(cacheKey, events, 60_000);
+    return events;
   },
 
   async addEvent(event: Omit<RealtimeEvent, 'id' | 'timestamp'>): Promise<boolean> {
-    const { error } = await supabase
-      .from('realtime_events')
-      .insert({
-        type: event.type,
-        description: event.description,
-        priority: event.priority,
-        related_id: event.relatedId || null,
-      });
-    
-    if (error) {
-      console.error('Error adding event:', error);
-      return false;
-    }
-    
+    const { error } = await supabase.from('realtime_events').insert({
+      type: event.type,
+      description: event.description,
+      priority: event.priority,
+      related_id: event.relatedId || null,
+    });
+    if (error) { console.error('Error adding event:', error); return false; }
+    invalidateCache('events_list');
     return true;
   },
 };

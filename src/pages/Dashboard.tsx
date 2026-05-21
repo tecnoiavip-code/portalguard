@@ -113,7 +113,7 @@ export const Dashboard = () => {
         setDeviceTypes(typeMap);
       }
     });
-    const interval = setInterval(loadStats, 30000);
+    const interval = setInterval(loadStats, 180000); // 3 minutes polling
     const channel = supabase
       .channel('controlid-realtime')
       .on('postgres_changes', {

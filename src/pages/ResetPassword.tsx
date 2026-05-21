@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -109,6 +110,16 @@ const ResetPassword = () => {
   }
 
   return (
+    <>
+    <Helmet>
+      <title>Redefinir senha — PortalGuard Pro</title>
+      <meta name="description" content="Crie uma nova senha para acessar a sua conta do PortalGuard Pro." />
+      <link rel="canonical" href="https://portalguard.lovable.app/reset-password" />
+      <meta property="og:title" content="Redefinir senha — PortalGuard Pro" />
+      <meta property="og:description" content="Crie uma nova senha para a sua conta PortalGuard Pro." />
+      <meta property="og:url" content="https://portalguard.lovable.app/reset-password" />
+      <meta name="robots" content="noindex,nofollow" />
+    </Helmet>
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
@@ -160,6 +171,7 @@ const ResetPassword = () => {
         </CardContent>
       </Card>
     </div>
+    </>
   );
 };
 

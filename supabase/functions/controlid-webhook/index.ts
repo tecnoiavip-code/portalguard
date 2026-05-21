@@ -710,6 +710,19 @@ Deno.serve(async (req) => {
   const url = new URL(req.url);
   const pathLower = url.pathname.toLowerCase();
 
+  const controlIdEnabled = (Deno.env.get('CONTROLID_WEBHOOK_ENABLED') ?? '0') === '1';
+  if (!controlIdEnabled) {
+    const isFcgiCallback = pathLower.includes('.fcgi');
+    if (isFcgiCallback || pathLower.endsWith('/push') || pathLower.includes('/push/')) {
+      return new Response('', { status: 200, headers: corsHeaders });
+    }
+
+    return new Response(
+      JSON.stringify({ success: true, suspended: true, message: 'Control iD integration temporarily suspended' }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
   try {
     const webhookSecret = Deno.env.get('CONTROLID_WEBHOOK_SECRET') ?? '';
     const requireSecret = (Deno.env.get('CONTROLID_REQUIRE_SECRET') ?? (webhookSecret ? '1' : '0')) === '1';

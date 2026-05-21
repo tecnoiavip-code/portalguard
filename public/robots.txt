@@ -1,5 +1,7 @@
-﻿User-agent: *
+User-agent: *
 Allow: /
 Disallow: /auth
 Disallow: /reset-password
 Disallow: /morador
+
+Sitemap: https://portalguard.lovable.app/sitemap.xml

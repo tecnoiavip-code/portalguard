@@ -86,11 +86,11 @@ export const Settings = () => {
   };
 
 
-  const handleExportData = () => {
+  const handleExportData = async () => {
     const doc = new jsPDF();
-    const residents = storage.getResidents();
-    const mails = storage.getMails();
-    const entries = storage.getEntries();
+    const residents = await storage.getResidents();
+    const mails = await storage.getMails();
+    const entries = await storage.getEntries();
     
     // Header
     doc.setFontSize(18);
@@ -238,10 +238,10 @@ export const Settings = () => {
     input.click();
   };
 
-  const handleExportCSV = () => {
-    const residents = storage.getResidents();
-    const mails = storage.getMails();
-    const entries = storage.getEntries();
+  const handleExportCSV = async () => {
+    const residents = await storage.getResidents();
+    const mails = await storage.getMails();
+    const entries = await storage.getEntries();
     
     // Export Residents
     if (residents.length > 0) {

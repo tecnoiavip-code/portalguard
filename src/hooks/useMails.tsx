@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabaseStorage } from '@/lib/supabase-storage';
 import { Mail } from '@/types';
 import { toast } from 'sonner';
@@ -7,36 +7,51 @@ export const useMails = () => {
   const [mails, setMails] = useState<Mail[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const loadMails = async () => {
+  const loadMails = useCallback(async () => {
     setLoading(true);
     const data = await supabaseStorage.getMails();
     setMails(data);
     setLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
     loadMails();
-  }, []);
+  }, [loadMails]);
 
-  const saveMail = async (mail: Mail) => {
+  const saveMail = useCallback(async (mail: Mail) => {
     const success = await supabaseStorage.saveMail(mail);
     if (success) {
-      await loadMails();
+      // Update local state instead of full reload
+      const updatedMail = await supabaseStorage.getMailById(mail.id);
+      if (updatedMail) {
+        setMails(prev => {
+          const index = prev.findIndex(m => m.id === mail.id);
+          if (index > -1) {
+            // Update existing
+            const newMails = [...prev];
+            newMails[index] = updatedMail;
+            return newMails;
+          }
+          // Add new mail at the beginning
+          return [updatedMail, ...prev];
+        });
+      }
       return true;
     }
     toast.error('Erro ao salvar correspondência');
     return false;
-  };
+  }, []);
 
-  const deleteMail = async (id: string) => {
+  const deleteMail = useCallback(async (id: string) => {
     const success = await supabaseStorage.deleteMail(id);
     if (success) {
-      await loadMails();
+      // Update local state
+      setMails(prev => prev.filter(m => m.id !== id));
       return true;
     }
     toast.error('Erro ao excluir correspondência');
     return false;
-  };
+  }, []);
 
   return {
     mails,

@@ -197,10 +197,47 @@ export const NewRegistry = () => {
 
   useEffect(() => {
     loadBlockedVisitors();
-    loadVehicleSuggestions();
+    loadVehicleSuggestionsWithCache();
   }, []);
 
-  // Auto-correct pagination when current page exceeds total pages
+  // Cache de sugestões de veículos para evitar queries desnecessárias
+  const loadVehicleSuggestionsWithCache = async () => {
+    const cacheKey = 'vehicle_suggestions_cache';
+    const now = Date.now();
+    
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        // Reutilizar cache por 1 hora (3600000ms)
+        if (now - timestamp < 3600000) {
+          setAllVehicleModels(data.models || []);
+          setAllVehicleColors(data.colors || []);
+          return;
+        }
+      }
+    } catch {
+      // ignore cache errors
+    }
+
+    // Se cache expirou ou não existe, fazer queries
+    await loadVehicleSuggestions();
+    
+    // Salvar novo cache
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify({
+        data: {
+          models: allVehicleModels,
+          colors: allVehicleColors,
+        },
+        timestamp: now,
+      }));
+    } catch {
+      // ignore cache save errors
+    }
+  };
+
+  const loadVehicleSuggestions = async () => {
   useEffect(() => {
     const total = Math.ceil(entries.filter(e => !e.exitTime).length / itemsPerPage);
     if (total > 0 && currentPage > total) {
@@ -211,7 +248,7 @@ export const NewRegistry = () => {
   const loadBlockedVisitors = async () => {
     const { data, error } = await supabase
       .from('blocked_visitors')
-      .select('*')
+      .select('id, visitor_name, visitor_document, reason, blocked_at, is_active')
       .eq('is_active', true)
       .order('blocked_at', { ascending: false });
     if (!error && data) setBlockedVisitors(data as BlockedVisitor[]);

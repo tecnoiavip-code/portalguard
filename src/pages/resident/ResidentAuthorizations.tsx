@@ -57,7 +57,7 @@ const ResidentAuthorizations = () => {
   const loadAuths = async (rid: string) => {
     const { data } = await supabase
       .from('visitor_authorizations')
-      .select('*')
+      .select('id, visitor_name, visitor_contact, start_date, end_date, is_active, resident_id')
       .eq('resident_id', rid)
       .order('created_at', { ascending: false });
     setAuths((data as any) || []);

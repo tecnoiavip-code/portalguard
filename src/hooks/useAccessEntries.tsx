@@ -21,21 +21,18 @@ export const useAccessEntries = () => {
   const saveEntry = useCallback(async (entry: AccessEntry) => {
     const success = await supabaseStorage.saveEntry(entry);
     if (success) {
-      // Update local state instead of full reload
-      const updatedEntry = await supabaseStorage.getEntryById(entry.id);
-      if (updatedEntry) {
-        setEntries(prev => {
-          const index = prev.findIndex(e => e.id === entry.id);
-          if (index > -1) {
-            // Update existing (for exit time changes)
-            const newEntries = [...prev];
-            newEntries[index] = updatedEntry;
-            return newEntries;
-          }
-          // Add new entry at the beginning
-          return [updatedEntry, ...prev];
-        });
-      }
+      // Otimização: atualizar estado local com dados que temos, sem getEntryById() extra
+      setEntries(prev => {
+        const index = prev.findIndex(e => e.id === entry.id);
+        if (index > -1) {
+          // Update existing (for exit time changes)
+          const newEntries = [...prev];
+          newEntries[index] = entry;
+          return newEntries;
+        }
+        // Add new entry at the beginning
+        return [entry, ...prev];
+      });
       return true;
     }
     toast.error('Erro ao salvar cadastro');

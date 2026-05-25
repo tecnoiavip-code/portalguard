@@ -138,7 +138,7 @@ const StaffAnnouncements = () => {
   const loadAnnouncements = async () => {
     const { data } = await supabase
       .from('announcements')
-      .select('*')
+      .select('id, title, body, created_at, attachments')
       .order('created_at', { ascending: false });
     setAnnouncements((data as any) || []);
     setLoading(false);
@@ -249,8 +249,8 @@ const StaffAnnouncements = () => {
     setDetailDialog({ open: true, announcement: ann });
 
     const [{ data: att }, { data: rd }, { count }] = await Promise.all([
-      supabase.from('announcement_attachments').select('*').eq('announcement_id', ann.id),
-      supabase.from('announcement_reads').select('*').eq('announcement_id', ann.id),
+      supabase.from('announcement_attachments').select('id, filename, url, announcement_id').eq('announcement_id', ann.id),
+      supabase.from('announcement_reads').select('id, user_id, read_at').eq('announcement_id', ann.id),
       supabase.from('residents').select('*', { count: 'exact', head: true }),
     ]);
     setAttachments((att as any) || []);

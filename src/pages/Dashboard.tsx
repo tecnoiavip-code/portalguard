@@ -50,7 +50,7 @@ export const Dashboard = () => {
         setDeviceTypes(typeMap);
       }
     });
-    const interval = setInterval(loadStats, 180000); // 3 minutes polling
+    const interval = setInterval(loadStats, 600000); // Otimização: reduzido de 3 min para 10 min (polling leve)
     const channel = supabase
       .channel('controlid-realtime')
       .on('postgres_changes', {
@@ -67,6 +67,7 @@ export const Dashboard = () => {
 
     return () => {
       clearInterval(interval);
+      supabase.removeChannel(channel);
     };
   }, []);
 

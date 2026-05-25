@@ -45,7 +45,7 @@ const ResidentAnnouncements = () => {
     if (!user) return;
 
     const [{ data: anns }, { data: rds }] = await Promise.all([
-      supabase.from('announcements').select('*').order('created_at', { ascending: false }),
+      supabase.from('announcements').select('id, title, body, created_at, attachments').order('created_at', { ascending: false }),
       supabase.from('announcement_reads').select('announcement_id').eq('user_id', user.id),
     ]);
 

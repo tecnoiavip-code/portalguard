@@ -23,21 +23,22 @@ export const useResidents = () => {
   const saveResident = useCallback(async (resident: Resident) => {
     const savedId = await supabaseStorage.saveResident(resident);
     if (savedId) {
-      // Update local state instead of full reload
-      const updatedResident = await supabaseStorage.getResidentById(savedId);
-      if (updatedResident) {
-        setResidents(prev => {
-          const index = prev.findIndex(r => r.id === savedId);
-          if (index > -1) {
-            // Update existing
-            const newResidents = [...prev];
-            newResidents[index] = updatedResident;
-            return newResidents;
-          }
-          // Add new resident at the beginning
-          return [updatedResident, ...prev];
-        });
-      }
+      // Otimização: atualizar estado local com dados que temos (resident), sem getResidentById() extra
+      const updatedResident = {
+        ...resident,
+        id: savedId,
+      };
+      setResidents(prev => {
+        const index = prev.findIndex(r => r.id === savedId);
+        if (index > -1) {
+          // Update existing
+          const newResidents = [...prev];
+          newResidents[index] = updatedResident;
+          return newResidents;
+        }
+        // Add new resident at the beginning
+        return [updatedResident, ...prev];
+      });
       return savedId;
     }
     toast.error('Erro ao salvar morador');

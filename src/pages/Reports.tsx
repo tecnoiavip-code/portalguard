@@ -116,7 +116,7 @@ export const Reports = () => {
   const loadPortariaEquipment = async () => {
     const { data, error } = await supabase
       .from('portaria_equipment')
-      .select('*')
+      .select('id, name, type, location, status, is_active')
       .eq('is_active', true)
       .order('name');
     if (error) {
@@ -135,7 +135,7 @@ export const Reports = () => {
   const loadAllPortariaEquipment = async () => {
     const { data, error } = await supabase
       .from('portaria_equipment')
-      .select('*')
+      .select('id, name, type, location, status, is_active')
       .order('name');
     if (!error) setPortariaEquipment(data || []);
   };
@@ -143,7 +143,7 @@ export const Reports = () => {
   const loadShifts = async () => {
     const { data, error } = await supabase
       .from('shifts')
-      .select('*')
+      .select('id, start_time, end_time, shift_start, shift_end, staff_name, created_at')
       .order('shift_start', { ascending: false });
     if (!error) setShifts((data || []) as Shift[]);
   };
@@ -151,7 +151,7 @@ export const Reports = () => {
   const loadIncidents = async () => {
     const { data, error } = await supabase
       .from('incidents')
-      .select('*')
+      .select('id, title, description, incident_date, priority, created_at')
       .order('created_at', { ascending: false });
     if (!error) setIncidents((data || []) as Incident[]);
   };
@@ -159,7 +159,7 @@ export const Reports = () => {
   const checkCurrentShift = async () => {
     const { data } = await supabase
       .from('shifts')
-      .select('*')
+      .select('id, shift_start, shift_end, staff_name, created_at')
       .is('shift_end', null)
       .order('shift_start', { ascending: false })
       .limit(1)

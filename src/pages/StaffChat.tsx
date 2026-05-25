@@ -58,51 +58,30 @@ const StaffChat = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const loadThreads = async () => {
-    const { data: chatResidents } = await supabase
-      .from('chat_messages')
-      .select('resident_id')
-      .order('created_at', { ascending: false });
+    // Otimização: usar RPC em vez de N+1 queries
+    // Antes: 1 query + (N*3 queries) = 31 queries para 10 threads
+    // Depois: 1 query RPC = 1 query
+    const { data, error } = await supabase
+      .rpc('get_chat_threads');
 
-    if (!chatResidents) return;
-
-    const uniqueIds = [...new Set(chatResidents.map(c => String(c.resident_id)).filter(Boolean))];
-    if (uniqueIds.length === 0) { setThreads([]); return; }
-
-    const threadList: ChatThread[] = [];
-    for (const rid of uniqueIds) {
-      const { data: res } = await supabase
-        .from('residents')
-        .select('name, apartment')
-        .eq('id', rid)
-        .maybeSingle();
-      const residentData = res as { name?: string; apartment?: string } | null;
-      if (!residentData) continue;
-
-      const { count } = await supabase
-        .from('chat_messages')
-        .select('*', { count: 'exact', head: true })
-        .eq('resident_id', rid)
-        .eq('sender_type', 'resident')
-        .eq('read', false);
-
-      const { data: lastMsg } = await supabase
-        .from('chat_messages')
-        .select('message, created_at')
-        .eq('resident_id', rid)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const lastMessageData = lastMsg as { message?: string; created_at?: string } | null;
-
-      threadList.push({
-        resident_id: String(rid),
-        resident_name: String(residentData.name || ''),
-        apartment: String(residentData.apartment || ''),
-        unread_count: count || 0,
-        last_message: String(lastMessageData?.message || ''),
-        last_time: String(lastMessageData?.created_at || ''),
-      });
+    if (error) {
+      console.error('Erro ao carregar threads:', error);
+      return;
     }
+
+    if (!data || data.length === 0) {
+      setThreads([]);
+      return;
+    }
+
+    const threadList: ChatThread[] = (data as any[]).map(row => ({
+      resident_id: String(row.resident_id),
+      resident_name: String(row.resident_name || ''),
+      apartment: String(row.apartment || ''),
+      unread_count: Number(row.unread_count || 0),
+      last_message: String(row.last_message || ''),
+      last_time: String(row.last_time || ''),
+    }));
 
     setThreads(threadList);
   };

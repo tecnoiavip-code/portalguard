@@ -85,7 +85,8 @@ function buildCardObjectId(userId: number, cardValue: number): number {
 }
 
 /**
- * Queue a command to a device via push_command_queue and poll for result.
+ * Queue a command to a device via push_command_queue and wait for result using Realtime.
+ * Otimização: em vez de polling a cada 2s (30 queries em 60s), usa Realtime subscription (1 query + listener)
  */
 async function queueCommandAndWait(
   deviceSerial: string,
@@ -111,28 +112,56 @@ async function queueCommandAndWait(
   }
 
   const commandId = inserted.id;
-  const startTime = Date.now();
 
-  while (Date.now() - startTime < timeoutMs) {
-    if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
-    await new Promise(resolve => setTimeout(resolve, 2000));
+  // Otimização: usar Realtime em vez de polling
+  return new Promise((resolve, reject) => {
+    const timeoutHandle = setTimeout(() => {
+      supabase.removeChannel(channel);
+      reject(new Error('Timeout: o dispositivo não respondeu a tempo. Verifique se está online.'));
+    }, timeoutMs);
 
-    const { data: cmd } = await supabase
-      .from('push_command_queue')
-      .select('status, result')
-      .eq('id', commandId)
-      .single();
+    const abortHandler = () => {
+      clearTimeout(timeoutHandle);
+      supabase.removeChannel(channel);
+      reject(new DOMException('Cancelled', 'AbortError'));
+    };
 
-    if (cmd?.status === 'done') {
-      return normalizePushResult(cmd.result);
-    }
-    if (cmd?.status === 'error') {
-      const errorResult = normalizePushResult(cmd.result);
-      throw new Error(errorResult?.message || errorResult?.error || 'Comando retornou erro do dispositivo');
-    }
-  }
+    signal?.addEventListener('abort', abortHandler);
 
-  throw new Error('Timeout: o dispositivo não respondeu a tempo. Verifique se está online.');
+    const channel = supabase
+      .channel(`push_result_${commandId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'push_command_queue',
+          filter: `id=eq.${commandId}`,
+        },
+        (payload) => {
+          const cmd = payload.new as any;
+          if (cmd?.status === 'done') {
+            clearTimeout(timeoutHandle);
+            signal?.removeEventListener('abort', abortHandler);
+            supabase.removeChannel(channel);
+            resolve(normalizePushResult(cmd.result));
+          } else if (cmd?.status === 'error') {
+            clearTimeout(timeoutHandle);
+            signal?.removeEventListener('abort', abortHandler);
+            supabase.removeChannel(channel);
+            const errorResult = normalizePushResult(cmd.result);
+            reject(new Error(errorResult?.message || errorResult?.error || 'Comando retornou erro do dispositivo'));
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          clearTimeout(timeoutHandle);
+          signal?.removeEventListener('abort', abortHandler);
+          reject(new Error('Erro ao conectar ao Realtime'));
+        }
+      });
+  });
 }
 
 async function queueBinaryCommandAndWait(
@@ -172,28 +201,56 @@ async function queueBinaryCommandAndWait(
   }
 
   const commandId = inserted.id;
-  const startTime = Date.now();
 
-  while (Date.now() - startTime < timeoutMs) {
-    if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
-    await new Promise(resolve => setTimeout(resolve, 2000));
+  // Otimização: usar Realtime em vez de polling
+  return new Promise((resolve, reject) => {
+    const timeoutHandle = setTimeout(() => {
+      supabase.removeChannel(channel);
+      reject(new Error('Timeout: o dispositivo não respondeu a tempo. Verifique se está online.'));
+    }, timeoutMs);
 
-    const { data: cmd } = await supabase
-      .from('push_command_queue')
-      .select('status, result')
-      .eq('id', commandId)
-      .single();
+    const abortHandler = () => {
+      clearTimeout(timeoutHandle);
+      supabase.removeChannel(channel);
+      reject(new DOMException('Cancelled', 'AbortError'));
+    };
 
-    if (cmd?.status === 'done') {
-      return normalizePushResult(cmd.result);
-    }
-    if (cmd?.status === 'error') {
-      const errorResult = normalizePushResult(cmd.result);
-      throw new Error(errorResult?.message || errorResult?.error || 'Comando binário retornou erro do dispositivo');
-    }
-  }
+    signal?.addEventListener('abort', abortHandler);
 
-  throw new Error('Timeout: o dispositivo não respondeu a tempo. Verifique se está online.');
+    const channel = supabase
+      .channel(`push_result_binary_${commandId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'push_command_queue',
+          filter: `id=eq.${commandId}`,
+        },
+        (payload) => {
+          const cmd = payload.new as any;
+          if (cmd?.status === 'done') {
+            clearTimeout(timeoutHandle);
+            signal?.removeEventListener('abort', abortHandler);
+            supabase.removeChannel(channel);
+            resolve(normalizePushResult(cmd.result));
+          } else if (cmd?.status === 'error') {
+            clearTimeout(timeoutHandle);
+            signal?.removeEventListener('abort', abortHandler);
+            supabase.removeChannel(channel);
+            const errorResult = normalizePushResult(cmd.result);
+            reject(new Error(errorResult?.message || errorResult?.error || 'Comando binário retornou erro do dispositivo'));
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          clearTimeout(timeoutHandle);
+          signal?.removeEventListener('abort', abortHandler);
+          reject(new Error('Erro ao conectar ao Realtime'));
+        }
+      });
+  });
 }
 
 /**

@@ -21,21 +21,18 @@ export const useMails = () => {
   const saveMail = useCallback(async (mail: Mail) => {
     const success = await supabaseStorage.saveMail(mail);
     if (success) {
-      // Update local state instead of full reload
-      const updatedMail = await supabaseStorage.getMailById(mail.id);
-      if (updatedMail) {
-        setMails(prev => {
-          const index = prev.findIndex(m => m.id === mail.id);
-          if (index > -1) {
-            // Update existing
-            const newMails = [...prev];
-            newMails[index] = updatedMail;
-            return newMails;
-          }
-          // Add new mail at the beginning
-          return [updatedMail, ...prev];
-        });
-      }
+      // Otimização: atualizar estado local com dados que temos, sem getMailById() extra
+      setMails(prev => {
+        const index = prev.findIndex(m => m.id === mail.id);
+        if (index > -1) {
+          // Update existing
+          const newMails = [...prev];
+          newMails[index] = mail;
+          return newMails;
+        }
+        // Add new mail at the beginning
+        return [mail, ...prev];
+      });
       return true;
     }
     toast.error('Erro ao salvar correspondência');

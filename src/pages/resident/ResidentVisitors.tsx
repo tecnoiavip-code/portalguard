@@ -47,7 +47,7 @@ const ResidentVisitors = () => {
 
       const { data } = await supabase
         .from('access_entries')
-        .select('*')
+        .select('id, visitor_name, entry_time, exit_time, photo_url, badge_number, apartment')
         .eq('apartment', res.apartment)
         .order('entry_time', { ascending: false })
         .limit(50);

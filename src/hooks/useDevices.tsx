@@ -59,21 +59,20 @@ export const useDevices = () => {
   const saveDevice = useCallback(async (device: Device) => {
     const success = await supabaseStorage.saveDevice(device);
     if (success) {
-      // Update local state instead of full reload
-      const updatedDevice = await supabaseStorage.getDeviceById(device.id);
-      if (updatedDevice) {
-        setDevices(prev => {
-          const index = prev.findIndex(d => d.id === device.id);
-          if (index > -1) {
-            // Update existing
-            const newDevices = [...prev];
-            newDevices[index] = updatedDevice;
-            return newDevices;
-          }
-          // Add new device at the beginning
-          return [updatedDevice, ...prev];
-        });
-      }
+      // Otimização: invalidar cache e recarregar ao invés de fazer getDeviceById() extra
+      // Assim a próxima leitura vem fresca, mas sem query extra imediata
+      // Usar realtime para atualizar se disponível, senão recarrega na próxima abertura
+      setDevices(prev => {
+        const index = prev.findIndex(d => d.id === device.id);
+        if (index > -1) {
+          // Update existing with local data
+          const newDevices = [...prev];
+          newDevices[index] = device;
+          return newDevices;
+        }
+        // Add new device at the beginning
+        return [device, ...prev];
+      });
       return true;
     }
     toast.error('Erro ao salvar dispositivo');

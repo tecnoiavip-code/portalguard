@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { translateAuthError } from '@/lib/translate-auth-error';
+import { getUserRole } from '@/lib/auth-role';
 import appLogo from '@/assets/app-icon-v18-preview.png';
 
 export const Auth = () => {
@@ -62,20 +63,12 @@ export const Auth = () => {
         return;
       }
 
-      const { data: { user } } = await auth.getUser();
-      if (user) {
-        const { data: residentRole } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', user.id)
-          .eq('role', 'resident')
-          .maybeSingle();
-
-        if (residentRole) {
-          toast.success('Login realizado! Redirecionando para o Portal do Morador.');
-          navigate('/morador');
-          return;
-        }
+      const { data: { session } } = await auth.getSession();
+      const role = session?.user?.id ? await getUserRole(session.user.id) : null;
+      if (role === 'resident') {
+        toast.success('Login realizado! Redirecionando para o Portal do Morador.');
+        navigate('/morador');
+        return;
       }
 
       toast.success('Login realizado com sucesso!');

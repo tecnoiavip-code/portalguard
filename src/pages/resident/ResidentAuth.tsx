@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
+import { getUserRole } from '@/lib/auth-role';
 import appLogo from '@/assets/app-icon-v18-preview.png';
 
 const ResidentAuth = () => {
@@ -59,14 +60,8 @@ const ResidentAuth = () => {
         return;
       }
 
-      const { data: role } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', data.user.id)
-        .eq('role', 'resident')
-        .maybeSingle();
-
-      if (!role) {
+      const role = data.user?.id ? await getUserRole(data.user.id) : null;
+      if (role !== 'resident') {
         toast.success('Login realizado! Redirecionando para a portaria.');
         navigate('/');
         return;

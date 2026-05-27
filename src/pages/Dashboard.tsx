@@ -1,19 +1,12 @@
-import { useEffect, useState, useMemo } from 'react';
-import { Users, Mail, UserCheck, Clock, Activity } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Activity, Clock, Mail, UserCheck, Users } from 'lucide-react';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { StatsCard } from '@/components/StatsCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { supabase } from '@/integrations/supabase/client';
 import { supabaseStorage } from '@/lib/supabase-storage';
-import { DashboardStats, AccessEntry } from '@/types';
-import { AreaChart as RechartsAreaChart, Area as RechartsArea, XAxis as RechartsXAxis, YAxis as RechartsYAxis, CartesianGrid as RechartsCartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer as RechartsResponsiveContainer } from 'recharts';
-
-const AreaChart: any = RechartsAreaChart;
-const Area: any = RechartsArea;
-const XAxis: any = RechartsXAxis;
-const YAxis: any = RechartsYAxis;
-const CartesianGrid: any = RechartsCartesianGrid;
-const Tooltip: any = RechartsTooltip;
-const ResponsiveContainer: any = RechartsResponsiveContainer;
+import { AccessEntry, DashboardStats } from '@/types';
 
 export const Dashboard = () => {
   const [stats, setStats] = useState<DashboardStats>({
@@ -22,99 +15,81 @@ export const Dashboard = () => {
     activeVisitors: 0,
     todayEntries: 0,
   });
-  
   const [allEntries, setAllEntries] = useState<AccessEntry[]>([]);
+  const statsLoadInFlight = useRef(false);
+
+  const loadStats = async () => {
+    if (statsLoadInFlight.current) return;
+    statsLoadInFlight.current = true;
+
+    try {
+      const [residentsCountRes, pendingMailsRes, entriesData] = await Promise.all([
+        supabase.from('residents').select('id', { count: 'exact', head: true }),
+        supabase.from('mails').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+        supabaseStorage.getEntries(),
+      ]);
+
+      const today = new Date().toDateString();
+      const todayEntries = entriesData.filter(
+        (entry) => new Date(entry.entryTime).toDateString() === today
+      );
+
+      setStats({
+        totalResidents: residentsCountRes.count || 0,
+        pendingMails: pendingMailsRes.count || 0,
+        activeVisitors: entriesData.filter((entry) => !entry.exitTime).length,
+        todayEntries: todayEntries.length,
+      });
+      setAllEntries(entriesData);
+    } catch (error) {
+      console.error('Error loading dashboard stats:', error);
+    } finally {
+      statsLoadInFlight.current = false;
+    }
+  };
 
   useEffect(() => {
     loadStats();
-    loadControlidLogs();
-    // Load device names from devices table only (registered in project)
-    supabase.from('devices').select('id, name, serial_number, ip_address, last_sync, type').then(({ data }) => {
-      if (data) {
-        const nameMap: Record<string, string> = {};
-        const typeMap: Record<string, string> = {};
 
-        data.forEach((d) => {
-          const keys = [d.id, d.serial_number, d.ip_address, d.name];
+    const loadIfVisible = () => {
+      if (document.visibilityState === 'visible') loadStats();
+    };
+    window.addEventListener('focus', loadIfVisible);
+    document.addEventListener('visibilitychange', loadIfVisible);
 
-          keys.forEach((key) => {
-            const normalized = normalizeDeviceKey(key);
-            const compact = compactDeviceKey(key);
-
-            if (normalized) { nameMap[normalized] = d.name; if (d.type) typeMap[normalized] = d.type; }
-            if (compact) { nameMap[compact] = d.name; if (d.type) typeMap[compact] = d.type; }
-          });
-        });
-
-        setDeviceNames(nameMap);
-        setDeviceTypes(typeMap);
-      }
-    });
-    const interval = setInterval(loadStats, 600000); // Otimização: reduzido de 3 min para 10 min (polling leve)
-    const channel = supabase
-      .channel('controlid-realtime')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'controlid_logs',
-      }, (payload) => {
-        const newLog = payload.new as ControlidLog;
-        if (['dao', 'access_photo', 'identification_event', 'enterprise_identification_event', 'catra_event', 'door', 'secbox', 'operation_mode', 'access_event', 'user_event', 'photo_event'].includes(newLog.event_type)) {
-          setControlidLogs(prev => [newLog, ...prev].slice(0, 50));
-        }
-      })
-      .subscribe();
+    const interval = window.setInterval(loadIfVisible, 300000);
 
     return () => {
-      clearInterval(interval);
-      supabase.removeChannel(channel);
+      window.clearInterval(interval);
+      window.removeEventListener('focus', loadIfVisible);
+      document.removeEventListener('visibilitychange', loadIfVisible);
     };
   }, []);
-
-  const loadStats = async () => {
-    const [residentsData, mailsData, entriesData] = await Promise.all([
-      supabaseStorage.getResidents(false),
-      supabaseStorage.getMails(),
-      supabaseStorage.getEntries(),
-    ]);
-
-    const today = new Date().toDateString();
-    const todayEntries = entriesData.filter(
-      (e) => new Date(e.entryTime).toDateString() === today
-    );
-    const activeVisitors = entriesData.filter((e) => !e.exitTime).length;
-    const pendingMails = mailsData.filter((m) => m.status === 'pending').length;
-
-    setStats({
-      totalResidents: (residentsData || []).length,
-      pendingMails,
-      activeVisitors,
-      todayEntries: todayEntries.length,
-    });
-
-    setAllEntries(entriesData);
-  };
 
   const chartData = useMemo(() => {
     const now = new Date();
     const hours: { hour: string; entradas: number; saidas: number }[] = [];
+
     for (let i = 23; i >= 0; i--) {
-      const h = new Date(now);
-      h.setHours(now.getHours() - i, 0, 0, 0);
-      const hEnd = new Date(h);
-      hEnd.setHours(h.getHours() + 1);
-      const label = h.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-      const entradas = allEntries.filter(e => {
-        const t = new Date(e.entryTime);
-        return t >= h && t < hEnd;
-      }).length;
-      const saidas = allEntries.filter(e => {
-        if (!e.exitTime) return false;
-        const t = new Date(e.exitTime);
-        return t >= h && t < hEnd;
-      }).length;
-      hours.push({ hour: label, entradas, saidas });
+      const start = new Date(now);
+      start.setHours(now.getHours() - i, 0, 0, 0);
+      const end = new Date(start);
+      end.setHours(start.getHours() + 1);
+
+      hours.push({
+        hour: start.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        entradas: allEntries.filter((entry) => {
+          const entryTime = new Date(entry.entryTime);
+          return entryTime >= start && entryTime < end;
+        }).length,
+        saidas: allEntries.filter((entry) => {
+          if (!entry.exitTime) return false;
+          const exitTime = new Date(entry.exitTime);
+          return exitTime >= start && exitTime < end;
+        }).length,
+      });
     }
+
     return hours;
   }, [allEntries]);
 
@@ -126,40 +101,19 @@ export const Dashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatsCard
-          title="Total de Moradores"
-          value={stats.totalResidents}
-          icon={Users}
-          colorClass="bg-primary"
-        />
-        <StatsCard
-          title="Correspondências Pendentes"
-          value={stats.pendingMails}
-          icon={Mail}
-          colorClass="bg-warning"
-        />
-        <StatsCard
-          title="Visitantes Ativos"
-          value={stats.activeVisitors}
-          icon={UserCheck}
-          colorClass="bg-success"
-        />
-        <StatsCard
-          title="Entradas Hoje"
-          value={stats.todayEntries}
-          icon={Clock}
-          colorClass="bg-accent"
-        />
+        <StatsCard title="Total de Moradores" value={stats.totalResidents} icon={Users} colorClass="bg-primary" />
+        <StatsCard title="Correspondências Pendentes" value={stats.pendingMails} icon={Mail} colorClass="bg-warning" />
+        <StatsCard title="Visitantes Ativos" value={stats.activeVisitors} icon={UserCheck} colorClass="bg-success" />
+        <StatsCard title="Entradas Hoje" value={stats.todayEntries} icon={Clock} colorClass="bg-accent" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
         <Card className="lg:col-span-1">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center space-x-2 text-base">
               <Activity className="h-4 w-4 text-primary" />
               <span>Monitoramento de Acessos</span>
-              <Badge variant="default" className="ml-auto text-xs animate-pulse">
+              <Badge variant="default" className="ml-auto text-xs">
                 Live
               </Badge>
             </CardTitle>
@@ -178,16 +132,8 @@ export const Dashboard = () => {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis
-                  dataKey="hour"
-                  tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
-                  interval="preserveStartEnd"
-                  tickCount={6}
-                />
-                <YAxis
-                  tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
-                  allowDecimals={false}
-                />
+                <XAxis dataKey="hour" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} interval="preserveStartEnd" tickCount={6} />
+                <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} allowDecimals={false} />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: 'hsl(var(--card))',
@@ -196,24 +142,8 @@ export const Dashboard = () => {
                     fontSize: '12px',
                   }}
                 />
-                <Area
-                  type="monotone"
-                  dataKey="entradas"
-                  name="Entradas"
-                  stroke="hsl(var(--primary))"
-                  fillOpacity={1}
-                  fill="url(#colorEntradas)"
-                  strokeWidth={2}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="saidas"
-                  name="Saídas"
-                  stroke="hsl(var(--destructive))"
-                  fillOpacity={1}
-                  fill="url(#colorSaidas)"
-                  strokeWidth={2}
-                />
+                <Area type="monotone" dataKey="entradas" name="Entradas" stroke="hsl(var(--primary))" fillOpacity={1} fill="url(#colorEntradas)" strokeWidth={2} />
+                <Area type="monotone" dataKey="saidas" name="Saídas" stroke="hsl(var(--destructive))" fillOpacity={1} fill="url(#colorSaidas)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
           </CardContent>

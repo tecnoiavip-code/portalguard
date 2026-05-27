@@ -11,6 +11,7 @@ import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 import { setAppBadge } from '@/lib/pwa-badge';
 import { notifyResident, requestNotificationPermission } from '@/lib/pwa-notify';
 import { subscribeToPush } from '@/lib/push-subscription';
+import { clearRoleCache, getUserRole } from '@/lib/auth-role';
 
 interface ResidentLayoutProps {
   children: ReactNode;
@@ -43,6 +44,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
   const residentIdRef = useRef<string | null>(null);
   const isFirstLoad = useRef(true);
   const suppressedKeysRef = useRef<Set<keyof Counts>>(new Set());
+  const countsLoadInFlight = useRef(false);
 
   const totalBadge = counts.chat + counts.notif + counts.mails + counts.announcements;
 
@@ -95,16 +97,14 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
   }, [activeTab, user]);
 
   useEffect(() => {
+    if (!user) return;
     const handler = () => {
       requestNotificationPermission().then(() => {
-        if (user) subscribeToPush(user.id);
+        subscribeToPush(user.id);
       });
       window.removeEventListener('click', handler);
     };
     window.addEventListener('click', handler, { once: true });
-    requestNotificationPermission().then(() => {
-      if (user) subscribeToPush(user.id);
-    });
     return () => window.removeEventListener('click', handler);
   }, [user]);
 
@@ -121,13 +121,8 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
     if (!user) return;
 
     const checkRole = async () => {
-      const { data: role } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user.id)
-        .eq('role', 'resident')
-        .maybeSingle();
-      if (!role) navigate('/morador/login');
+      const role = await getUserRole(user.id);
+      if (role !== 'resident') navigate('/morador/login');
     };
     checkRole();
 
@@ -135,49 +130,75 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
     let pollTimeout: ReturnType<typeof setTimeout>;
 
     const loadCounts = async () => {
-      if (!residentIdRef.current) {
-        const { data: res } = await (supabase
-          .from('residents')
-          .select('id') as any)
-          .eq('auth_user_id', user.id)
-          .maybeSingle();
-        if (!res) return;
-        residentIdRef.current = res.id;
+      if (countsLoadInFlight.current) return;
+      countsLoadInFlight.current = true;
+
+      let newCounts: Counts | null = null;
+
+      try {
+        const { data: badgeRows, error: badgeError } = await (supabase as any).rpc('get_resident_badge_counts');
+        const badge = Array.isArray(badgeRows) ? badgeRows[0] : badgeRows;
+        if (!badgeError && badge) {
+          residentIdRef.current = badge.resident_id || residentIdRef.current;
+          newCounts = {
+            chat: Number(badge.chat || 0),
+            notif: Number(badge.notif || 0),
+            mails: Number(badge.mails || 0),
+            announcements: Number(badge.announcements || 0),
+          };
+        }
+
+        if (!newCounts) {
+          if (!residentIdRef.current) {
+            const { data: res } = await (supabase
+              .from('residents')
+              .select('id') as any)
+              .eq('auth_user_id', user.id)
+              .maybeSingle();
+            if (!res) return;
+            residentIdRef.current = res.id;
+          }
+          const rid = residentIdRef.current!;
+
+          const [chatRes, notifRes, mailsRes, announcementsRes, readsRes] = await Promise.all([
+            supabase
+              .from('chat_messages')
+              .select('id', { count: 'exact', head: true })
+              .eq('resident_id', rid)
+              .eq('sender_type', 'staff')
+              .eq('read', false),
+            supabase
+              .from('notifications')
+              .select('id', { count: 'exact', head: true })
+              .eq('user_id', user.id)
+              .eq('read', false),
+            supabase
+              .from('mails')
+              .select('id', { count: 'exact', head: true })
+              .eq('resident_id', rid)
+              .eq('status', 'pending'),
+            supabase
+              .from('announcements')
+              .select('id', { count: 'exact', head: true }),
+            supabase
+              .from('announcement_reads')
+              .select('announcement_id', { count: 'exact', head: true })
+              .eq('user_id', user.id),
+          ]);
+
+          newCounts = {
+            chat: chatRes.count || 0,
+            notif: notifRes.count || 0,
+            mails: mailsRes.count || 0,
+            announcements: Math.max(0, (announcementsRes.count || 0) - (readsRes.count || 0)),
+          };
+        }
+      } catch (error) {
+        console.error('Error loading resident badge counts:', error);
+        return;
+      } finally {
+        countsLoadInFlight.current = false;
       }
-      const rid = residentIdRef.current!;
-
-      const [chatRes, notifRes, mailsRes, announcementsRes, readsRes] = await Promise.all([
-        supabase
-          .from('chat_messages')
-          .select('*', { count: 'exact', head: true })
-          .eq('resident_id', rid)
-          .eq('sender_type', 'staff')
-          .eq('read', false),
-        supabase
-          .from('notifications')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .eq('read', false),
-        supabase
-          .from('mails')
-          .select('*', { count: 'exact', head: true })
-          .eq('resident_id', rid)
-          .eq('status', 'pending'),
-        supabase
-          .from('announcements')
-          .select('id', { count: 'exact', head: true }),
-        supabase
-          .from('announcement_reads')
-          .select('announcement_id', { count: 'exact', head: true })
-          .eq('user_id', user.id),
-      ]);
-
-      const newCounts: Counts = {
-        chat: chatRes.count || 0,
-        notif: notifRes.count || 0,
-        mails: mailsRes.count || 0,
-        announcements: Math.max(0, (announcementsRes.count || 0) - (readsRes.count || 0)),
-      };
 
       const prev = prevCountsRef.current;
 
@@ -248,7 +269,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
         const msg = payload.new as any;
-        if (msg.sender_type === 'staff') {
+        if (msg.sender_type === 'staff' && msg.resident_id === residentIdRef.current) {
           setCounts(prev => {
             const next = { ...prev, chat: prev.chat + 1 };
             const total = next.chat + next.notif + next.mails + next.announcements;
@@ -275,16 +296,24 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
       })
       .subscribe();
 
+    const loadIfVisible = () => {
+      if (document.visibilityState === 'visible') loadCounts();
+    };
+    window.addEventListener('focus', loadIfVisible);
+    document.addEventListener('visibilitychange', loadIfVisible);
+
     const poll = () => {
       if (!isActive) return;
-      loadCounts();
-      pollTimeout = setTimeout(poll, 8000);
+      loadIfVisible();
+      pollTimeout = setTimeout(poll, 120000);
     };
-    pollTimeout = setTimeout(poll, 8000);
+    pollTimeout = setTimeout(poll, 120000);
 
     return () => {
       isActive = false;
       clearTimeout(pollTimeout);
+      window.removeEventListener('focus', loadIfVisible);
+      document.removeEventListener('visibilitychange', loadIfVisible);
       supabase.removeChannel(channel);
     };
   }, [user, isLoading, navigate]);
@@ -314,6 +343,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
   const handleSignOut = async () => {
     document.title = 'Portal do Morador';
     setAppBadge(0);
+    if (user?.id) clearRoleCache(user.id);
     await (supabase.auth as any).signOut();
     navigate('/morador/login');
   };

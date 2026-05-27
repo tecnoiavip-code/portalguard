@@ -237,7 +237,6 @@ export const NewRegistry = () => {
     }
   };
 
-  const loadVehicleSuggestions = async () => {
   useEffect(() => {
     const total = Math.ceil(entries.filter(e => !e.exitTime).length / itemsPerPage);
     if (total > 0 && currentPage > total) {

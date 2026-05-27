@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { getUserRole } from '@/lib/auth-role';
 import { Loader2 } from 'lucide-react';
 
 interface ProtectedRouteProps {
@@ -27,16 +27,11 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
       setRoleChecked(false);
 
       Promise.race([
-        supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', user.id)
-          .eq('role', 'resident')
-          .maybeSingle(),
-        new Promise<{ data: null }>((resolve) => setTimeout(() => resolve({ data: null }), 4000)),
-      ]).then(({ data }) => {
+        getUserRole(user.id),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
+      ]).then((role) => {
         if (!active) return;
-        if (data) {
+        if (role === 'resident') {
           setIsResident(true);
           navigate('/morador');
         } else {

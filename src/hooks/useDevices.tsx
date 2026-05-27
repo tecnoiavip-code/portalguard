@@ -30,7 +30,7 @@ export const useDevices = () => {
       .channel('devices-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'devices' }, async (payload) => {
         // Only update the specific device that changed
-        const changedId = payload.new?.id || payload.old?.id;
+        const changedId = (payload.new as any)?.id || (payload.old as any)?.id;
         if (changedId) {
           const updatedDevice = await supabaseStorage.getDeviceById(changedId);
           if (updatedDevice) {

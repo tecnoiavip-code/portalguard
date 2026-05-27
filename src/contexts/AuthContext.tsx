@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
+import { clearRoleCache } from '@/lib/auth-role';
 
 type AuthUser = any;
 type AuthSession = any;
@@ -78,6 +79,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signOut = async () => {
+    if (user?.id) clearRoleCache(user.id);
     await auth.signOut();
     navigate('/auth');
   };

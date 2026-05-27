@@ -114,8 +114,8 @@ export const Reports = () => {
   };
 
   const loadPortariaEquipment = async () => {
-    const { data, error } = await supabase
-      .from('portaria_equipment')
+    const { data, error } = await (supabase
+      .from('portaria_equipment') as any)
       .select('id, name, type, location, status, is_active')
       .eq('is_active', true)
       .order('name');
@@ -133,32 +133,32 @@ export const Reports = () => {
   };
 
   const loadAllPortariaEquipment = async () => {
-    const { data, error } = await supabase
-      .from('portaria_equipment')
+    const { data, error } = await (supabase
+      .from('portaria_equipment') as any)
       .select('id, name, type, location, status, is_active')
       .order('name');
     if (!error) setPortariaEquipment(data || []);
   };
 
   const loadShifts = async () => {
-    const { data, error } = await supabase
-      .from('shifts')
+    const { data, error } = await (supabase
+      .from('shifts') as any)
       .select('id, start_time, end_time, shift_start, shift_end, staff_name, created_at')
       .order('shift_start', { ascending: false });
     if (!error) setShifts((data || []) as Shift[]);
   };
 
   const loadIncidents = async () => {
-    const { data, error } = await supabase
-      .from('incidents')
+    const { data, error } = await (supabase
+      .from('incidents') as any)
       .select('id, title, description, incident_date, priority, created_at')
       .order('created_at', { ascending: false });
     if (!error) setIncidents((data || []) as Incident[]);
   };
 
   const checkCurrentShift = async () => {
-    const { data } = await supabase
-      .from('shifts')
+    const { data } = await (supabase
+      .from('shifts') as any)
       .select('id, shift_start, shift_end, staff_name, created_at')
       .is('shift_end', null)
       .order('shift_start', { ascending: false })

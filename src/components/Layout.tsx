@@ -1,4 +1,4 @@
-import { useState, useEffect, ReactNode } from 'react';
+import { useState, useEffect, useRef, ReactNode } from 'react';
 import { Menu, Building2, User, LogOut, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -24,6 +24,7 @@ export const Layout = ({ children }: LayoutProps) => {
   const { user, signOut } = useAuth();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [notifCount, setNotifCount] = useState(0);
+  const notifLoadInFlight = useRef(false);
 
   useEffect(() => {
     if (!user) return;
@@ -32,21 +33,32 @@ export const Layout = ({ children }: LayoutProps) => {
     let lastCount = 0;
 
     const loadNotifs = async () => {
-      const { data, count } = await supabase
-        .from('notifications')
-        .select('*', { count: 'exact' })
-        .eq('user_id', user.id)
-        .eq('read', false)
-        .order('created_at', { ascending: false })
-        .limit(10);
-      const newCount = count || 0;
-      // Play sound if count increased (new notification arrived)
-      if (newCount > lastCount && lastCount >= 0) {
-        playNotificationSound();
+      if (notifLoadInFlight.current) return;
+      notifLoadInFlight.current = true;
+      try {
+        const { data, count, error } = await supabase
+          .from('notifications')
+          .select('id, title, body, created_at', { count: 'exact' })
+          .eq('user_id', user.id)
+          .eq('read', false)
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        if (error) {
+          console.error('Error fetching notifications:', error);
+          return;
+        }
+
+        const newCount = count || 0;
+        if (newCount > lastCount && lastCount > 0) {
+          playNotificationSound();
+        }
+        lastCount = newCount;
+        setNotifications(data || []);
+        setNotifCount(newCount);
+      } finally {
+        notifLoadInFlight.current = false;
       }
-      lastCount = newCount;
-      setNotifications(data || []);
-      setNotifCount(newCount);
     };
     loadNotifs();
 
@@ -61,17 +73,25 @@ export const Layout = ({ children }: LayoutProps) => {
       })
       .subscribe();
 
-    // Polling fallback every 10s to catch missed realtime events
+    const loadIfVisible = () => {
+      if (document.visibilityState === 'visible') loadNotifs();
+    };
+    window.addEventListener('focus', loadIfVisible);
+    document.addEventListener('visibilitychange', loadIfVisible);
+
+    // Slow fallback to catch missed realtime events without burning quota.
     const poll = () => {
       if (!isActive) return;
-      loadNotifs();
-      pollTimeout = setTimeout(poll, 10000);
+      loadIfVisible();
+      pollTimeout = setTimeout(poll, 120000);
     };
-    pollTimeout = setTimeout(poll, 10000);
+    pollTimeout = setTimeout(poll, 120000);
 
     return () => {
       isActive = false;
       clearTimeout(pollTimeout);
+      window.removeEventListener('focus', loadIfVisible);
+      document.removeEventListener('visibilitychange', loadIfVisible);
       supabase.removeChannel(channel);
     };
   }, [user]);

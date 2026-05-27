@@ -61,7 +61,7 @@ const StaffChat = () => {
     // Otimização: usar RPC em vez de N+1 queries
     // Antes: 1 query + (N*3 queries) = 31 queries para 10 threads
     // Depois: 1 query RPC = 1 query
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .rpc('get_chat_threads');
 
     if (error) {

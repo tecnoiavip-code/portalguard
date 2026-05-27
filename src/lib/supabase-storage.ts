@@ -477,6 +477,32 @@ export const supabaseStorage = {
     return devices;
   },
 
+  async getDeviceById(id: string): Promise<Device | null> {
+    const { data, error } = await supabase
+      .from('devices')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error fetching device:', error);
+      return null;
+    }
+
+    if (!data) return null;
+
+    return {
+      id: data.id,
+      name: data.name,
+      type: data.type as any,
+      location: data.location,
+      status: data.status as any,
+      lastSync: data.last_sync,
+      ipAddress: data.ip_address || '',
+      serialNumber: data.serial_number || '',
+    };
+  },
+
   async saveDevice(device: Device): Promise<boolean> {
     const isNew = device.id.startsWith('dev_');
     const deviceData = {

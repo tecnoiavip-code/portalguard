@@ -7,8 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { supabaseStorage } from '@/lib/supabase-storage';
 import { AccessEntry, DashboardStats } from '@/types';
+import { useDevices } from '@/hooks/useDevices';
 
 export const Dashboard = () => {
+  const { devices } = useDevices();
   const [stats, setStats] = useState<DashboardStats>({
     totalResidents: 0,
     pendingMails: 0,
@@ -151,18 +153,25 @@ export const Dashboard = () => {
 
         <Card className="lg:col-span-1 border-2 border-primary/20 shadow-lg">
           <CardHeader className="pb-3 bg-gradient-to-br from-primary/5 to-primary/10">
-            <CardTitle className="flex items-center space-x-2 text-base">
-              <Activity className="h-5 w-5 text-primary" />
-              <span className="text-primary">Dispositivos</span>
-              <Badge variant="secondary" className="ml-auto text-xs">
-                Pausado
+            <CardTitle className="flex items-center justify-between text-base">
+              <div className="flex items-center space-x-2">
+                <Activity className="h-5 w-5 text-primary" />
+                <span className="text-primary">Dispositivos</span>
+              </div>
+              <Badge variant="secondary" className="text-xs bg-success/20 text-success hover:bg-success/30">
+                Otimizado (Event-only)
               </Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground text-center py-8">
-              Integração Control iD temporariamente suspensa para priorizar login, visitantes/prestadores e correspondências.
-            </p>
+            <div className="flex flex-col items-center justify-center space-y-2 py-4">
+              <span className="text-4xl font-bold text-primary">
+                {devices.filter(d => d.status === 'online').length} <span className="text-xl text-muted-foreground font-normal">/ {devices.length}</span>
+              </span>
+              <p className="text-sm text-muted-foreground text-center">
+                Equipamentos ativos reportando eventos em tempo real
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>

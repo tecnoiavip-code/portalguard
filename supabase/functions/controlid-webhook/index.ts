@@ -212,7 +212,7 @@ const getMonitorConfig = () => {
   try {
     hostname = new URL(supabaseUrl).hostname;
   } catch {
-    hostname = 'qasudwuoagblzfkvmyxx.supabase.co';
+    hostname = 'uqbxicxpphcfcofufxca.supabase.co';
   }
 
   return {
@@ -254,7 +254,7 @@ const getPushServerConfig = () => {
   try {
     hostname = new URL(supabaseUrl).hostname;
   } catch {
-    hostname = 'qasudwuoagblzfkvmyxx.supabase.co';
+    hostname = 'uqbxicxpphcfcofufxca.supabase.co';
   }
 
   return {

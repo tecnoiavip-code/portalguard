@@ -217,10 +217,10 @@ const getMonitorConfig = () => {
 
   return {
     monitor: {
-      request_timeout: "120000",
-      hostname: `${hostname}`,
+      request_timeout: "0",
+      hostname: "",
       port: "443",
-      path: getDeviceWebhookPath(),
+      path: "",
       secure: "1"
     }
   };
@@ -260,8 +260,8 @@ const getPushServerConfig = () => {
   return {
     push_server: {
       push_remote_address: getDeviceWebhookUrl(hostname),
-      push_request_timeout: "120000",
-      push_request_period: "120"
+      push_request_timeout: "15000",
+      push_request_period: "0"
     },
     // Blueprint-compatible server stanza for firmwares that use this format.
     network: {

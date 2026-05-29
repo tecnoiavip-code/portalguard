@@ -627,7 +627,7 @@ export const Settings = () => {
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">Timeouts:</p>
-                      <code className="text-xs bg-background p-2 rounded block overflow-x-auto">monitor.request_timeout=15000 • push_request_timeout=120000 • push_request_period=5</code>
+                      <code className="text-xs bg-background p-2 rounded block overflow-x-auto">monitor.request_timeout=30000 • push_request_timeout=30000 • push_request_period=30</code>
                     </div>
                   </div>
                 </div>

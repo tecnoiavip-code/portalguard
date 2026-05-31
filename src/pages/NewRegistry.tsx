@@ -25,7 +25,7 @@ import { ptBR } from 'date-fns/locale';
 import { exportToCSV } from '@/lib/export-csv';
 
 const NEW_REGISTRY_DRAFT_KEY = 'new-registry-form-draft-v1';
-const VEHICLE_SUGGESTIONS_CACHE_KEY = `vehicle_suggestions_cache:${import.meta.env.VITE_SUPABASE_URL || 'local'}:v2`;
+const VEHICLE_SUGGESTIONS_CACHE_KEY = `vehicle_suggestions_cache:${import.meta.env.VITE_SUPABASE_URL || 'local'}:v3`;
 const EMPTY_NEW_REGISTRY_FORM = {
   visitorName: '',
   visitorDocument: '',
@@ -99,10 +99,13 @@ export const NewRegistry = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [vehicleModelSuggestions, setVehicleModelSuggestions] = useState<string[]>([]);
   const [vehicleColorSuggestions, setVehicleColorSuggestions] = useState<string[]>([]);
+  const [companySuggestions, setCompanySuggestions] = useState<string[]>([]);
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
   const [showColorSuggestions, setShowColorSuggestions] = useState(false);
+  const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
   const [allVehicleModels, setAllVehicleModels] = useState<string[]>([]);
   const [allVehicleColors, setAllVehicleColors] = useState<string[]>([]);
+  const [allCompanies, setAllCompanies] = useState<string[]>([]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -219,6 +222,8 @@ export const NewRegistry = () => {
         if (now - timestamp < 3600000) {
           setAllVehicleModels(data.models || []);
           setAllVehicleColors(data.colors || []);
+          setAllCompanies(data.companies || []);
+          setCompanySuggestions((data.companies || []).slice(0, 8));
           return;
         }
       }
@@ -235,6 +240,7 @@ export const NewRegistry = () => {
         data: {
           models: suggestions.models,
           colors: suggestions.colors,
+          companies: suggestions.companies,
         },
         timestamp: now,
       }));
@@ -260,11 +266,12 @@ export const NewRegistry = () => {
   };
 
   const loadVehicleSuggestions = async () => {
-    const [entryModelsRes, entryColorsRes, residentModelsRes, residentColorsRes] = await Promise.all([
+    const [entryModelsRes, entryColorsRes, residentModelsRes, residentColorsRes, companiesRes] = await Promise.all([
       supabase.from('access_entries').select('vehicle_model').not('vehicle_model', 'is', null).not('vehicle_model', 'eq', ''),
       supabase.from('access_entries').select('vehicle_color').not('vehicle_color', 'is', null).not('vehicle_color', 'eq', ''),
       supabase.from('residents').select('vehicle_model').not('vehicle_model', 'is', null).not('vehicle_model', 'eq', ''),
       supabase.from('residents').select('vehicle_color').not('vehicle_color', 'is', null).not('vehicle_color', 'eq', ''),
+      supabase.from('access_entries').select('company').not('company', 'is', null).not('company', 'eq', ''),
     ]);
 
     const models = normalizeVehicleSuggestions([
@@ -275,13 +282,16 @@ export const NewRegistry = () => {
       ...(entryColorsRes.data || []).map(r => r.vehicle_color),
       ...(residentColorsRes.data || []).map(r => r.vehicle_color),
     ]);
+    const companies = normalizeVehicleSuggestions((companiesRes.data || []).map(r => r.company));
 
     setAllVehicleModels(models);
     setAllVehicleColors(colors);
+    setAllCompanies(companies);
     setVehicleModelSuggestions(models.slice(0, 8));
     setVehicleColorSuggestions(colors.slice(0, 8));
+    setCompanySuggestions(companies.slice(0, 8));
 
-    return { models, colors };
+    return { models, colors, companies };
   };
 
   const filterVehicleModels = (query: string) => {
@@ -294,6 +304,12 @@ export const NewRegistry = () => {
     if (!query) { setVehicleColorSuggestions(allVehicleColors.slice(0, 8)); return; }
     const q = query.toUpperCase();
     setVehicleColorSuggestions(allVehicleColors.filter(c => c.includes(q)).slice(0, 8));
+  };
+
+  const filterCompanies = (query: string) => {
+    if (!query) { setCompanySuggestions(allCompanies.slice(0, 8)); return; }
+    const q = query.toUpperCase();
+    setCompanySuggestions(allCompanies.filter(company => company.includes(q)).slice(0, 8));
   };
 
   const isVisitorBlocked = (document: string) => {
@@ -1097,12 +1113,27 @@ export const NewRegistry = () => {
                     </div>}
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-2 relative">
                   <Label htmlFor="company">{formData.visitorType === 'service_provider' ? 'Empresa' : 'Empresa (opcional)'}</Label>
-                  <Input id="co_field" name="co_field" value={formData.company} onChange={e => setFormData({
-                ...formData,
-                company: e.target.value
-              })} placeholder="Nome da empresa" />
+                  <Input
+                    id="co_field"
+                    name="co_field"
+                    value={formData.company}
+                    autoComplete="off"
+                    onFocus={() => { filterCompanies(formData.company); setShowCompanySuggestions(true); }}
+                    onChange={e => { setFormData({ ...formData, company: e.target.value }); filterCompanies(e.target.value); setShowCompanySuggestions(true); }}
+                    onBlur={() => setTimeout(() => setShowCompanySuggestions(false), 150)}
+                    placeholder="Nome da empresa"
+                  />
+                  {showCompanySuggestions && companySuggestions.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                      {companySuggestions.map(company => (
+                        <button key={company} type="button" className="w-full text-left px-3 py-1.5 hover:bg-accent transition-colors text-sm" onMouseDown={(event) => event.preventDefault()} onClick={() => { setFormData({ ...formData, company }); setShowCompanySuggestions(false); }}>
+                          {company}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">

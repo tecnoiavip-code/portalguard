@@ -180,7 +180,7 @@ export const Logs = () => {
             </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="rounded-md border overflow-hidden">
             {paginatedEntries.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">
                 {searchTerm ? 'Nenhum registro encontrado' : 'Nenhum acesso registrado ainda'}
@@ -189,7 +189,7 @@ export const Logs = () => {
               paginatedEntries.map((entry) => (
                 <div
                   key={entry.id}
-                  className="p-4 bg-card rounded-lg border border-border hover:shadow-md hover:border-primary/30 transition-all cursor-pointer"
+                  className={`p-4 border-b last:border-b-0 transition-colors cursor-pointer ${entry.visitorType === 'service_provider' ? 'bg-warning/5 hover:bg-warning/10' : 'bg-success/5 hover:bg-success/10'}`}
                   onClick={() => setSelectedEntry(entry)}
                 >
                   <div className="flex items-start justify-between mb-3">
@@ -202,7 +202,7 @@ export const Logs = () => {
                         </div>
                       )}
                       <div>
-                        <p className="font-semibold text-foreground text-lg">
+                        <p className="font-semibold text-foreground">
                           {entry.visitorName}
                         </p>
                         <p className="text-sm text-muted-foreground">
@@ -212,12 +212,13 @@ export const Logs = () => {
                     </div>
                     <div className="flex items-center gap-2">
                       <Button
-                        variant="destructive"
-                        size="sm"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        title="Bloquear"
                         onClick={(e) => { e.stopPropagation(); setBlockDialog({ open: true, name: entry.visitorName, document: entry.visitorDocument }); }}
                       >
-                        <ShieldBan className="h-4 w-4 mr-1" />
-                        Bloquear
+                        <ShieldBan className="h-4 w-4" />
                       </Button>
                       <Badge
                         variant={entry.exitTime ? 'secondary' : 'default'}

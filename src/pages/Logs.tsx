@@ -56,6 +56,13 @@ export const Logs = () => {
     currentPage * itemsPerPage
   );
 
+  const clearFilters = () => {
+    setSearchTerm('');
+    setDateFrom('');
+    setDateTo('');
+    setCurrentPage(1);
+  };
+
   const handleBlockVisitor = async () => {
     if (!blockDialog.name || !blockDialog.document) return;
     setBlocking(true);
@@ -129,6 +136,9 @@ export const Logs = () => {
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="secondary">{entries.length} registros</Badge>
+              <Button variant="outline" size="sm" onClick={clearFilters}>
+                Limpar Filtros
+              </Button>
               <Button variant="outline" size="sm" onClick={exportLogsToPDF}>
                 <Download className="h-4 w-4 mr-2" />
                 PDF
@@ -173,11 +183,6 @@ export const Logs = () => {
                   className="w-auto"
                 />
               </div>
-              {(dateFrom || dateTo) && (
-                <Button variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); setCurrentPage(1); }}>
-                  Limpar datas
-                </Button>
-              )}
             </div>
           </div>
 

@@ -261,17 +261,18 @@ export const NewRegistry = () => {
       .from('blocked_visitors')
       .select('id, visitor_name, visitor_document, reason, blocked_at, is_active')
       .eq('is_active', true)
-      .order('blocked_at', { ascending: false });
+      .order('blocked_at', { ascending: false })
+      .limit(200);
     if (!error && data) setBlockedVisitors(data as BlockedVisitor[]);
   };
 
   const loadVehicleSuggestions = async () => {
     const [entryModelsRes, entryColorsRes, residentModelsRes, residentColorsRes, companiesRes] = await Promise.all([
-      supabase.from('access_entries').select('vehicle_model').not('vehicle_model', 'is', null).not('vehicle_model', 'eq', ''),
-      supabase.from('access_entries').select('vehicle_color').not('vehicle_color', 'is', null).not('vehicle_color', 'eq', ''),
-      supabase.from('residents').select('vehicle_model').not('vehicle_model', 'is', null).not('vehicle_model', 'eq', ''),
-      supabase.from('residents').select('vehicle_color').not('vehicle_color', 'is', null).not('vehicle_color', 'eq', ''),
-      supabase.from('access_entries').select('company').not('company', 'is', null).not('company', 'eq', ''),
+      supabase.from('access_entries').select('vehicle_model').not('vehicle_model', 'is', null).not('vehicle_model', 'eq', '').order('entry_time', { ascending: false }).limit(300),
+      supabase.from('access_entries').select('vehicle_color').not('vehicle_color', 'is', null).not('vehicle_color', 'eq', '').order('entry_time', { ascending: false }).limit(300),
+      supabase.from('residents').select('vehicle_model').not('vehicle_model', 'is', null).not('vehicle_model', 'eq', '').order('created_at', { ascending: false }).limit(300),
+      supabase.from('residents').select('vehicle_color').not('vehicle_color', 'is', null).not('vehicle_color', 'eq', '').order('created_at', { ascending: false }).limit(300),
+      supabase.from('access_entries').select('company').not('company', 'is', null).not('company', 'eq', '').order('entry_time', { ascending: false }).limit(300),
     ]);
 
     const models = normalizeVehicleSuggestions([

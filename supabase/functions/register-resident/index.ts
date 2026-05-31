@@ -65,6 +65,12 @@ const getClientIp = (req: Request): string => {
   return "unknown";
 };
 
+const getBearerToken = (req: Request): string | null => {
+  const authHeader = req.headers.get("authorization");
+  const match = authHeader?.match(/^Bearer\s+(.+)$/i);
+  return match?.[1] ?? null;
+};
+
 const incrementRate = (
   map: Map<string, { count: number; resetAt: number }>,
   key: string,
@@ -102,6 +108,68 @@ serve(async (req) => {
 
   try {
     const { email, password } = await req.json();
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+
+    if (email === undefined && password === undefined) {
+      const token = getBearerToken(req);
+      if (!token) {
+        return jsonResponse(req, { error: "Nao autenticado" }, 401);
+      }
+
+      const { data: authData, error: userError } = await supabaseAdmin.auth.getUser(token);
+      const authenticatedUser = authData?.user;
+      const authenticatedEmail = sanitizeEmail(authenticatedUser?.email);
+
+      if (userError || !authenticatedUser || !authenticatedEmail) {
+        return jsonResponse(req, { error: "Nao autenticado" }, 401);
+      }
+
+      const { data: resident, error: residentError } = await supabaseAdmin
+        .from("residents")
+        .select("id, name, email, auth_user_id")
+        .ilike("email", authenticatedEmail)
+        .maybeSingle();
+
+      if (residentError || !resident) {
+        return jsonResponse(
+          req,
+          { error: "Email nao encontrado no cadastro de moradores." },
+          400
+        );
+      }
+
+      if (resident.auth_user_id && resident.auth_user_id !== authenticatedUser.id) {
+        return jsonResponse(
+          req,
+          { error: "Este morador ja esta vinculado a outra conta." },
+          400
+        );
+      }
+
+      const { error: roleError } = await supabaseAdmin
+        .from("user_roles")
+        .upsert(
+          { user_id: authenticatedUser.id, role: "resident" },
+          { onConflict: "user_id,role" }
+        );
+
+      if (roleError) throw roleError;
+
+      if (!resident.auth_user_id) {
+        const { error: linkError } = await supabaseAdmin
+          .from("residents")
+          .update({ auth_user_id: authenticatedUser.id })
+          .eq("id", resident.id);
+
+        if (linkError) throw linkError;
+      }
+
+      return jsonResponse(req, { success: true, message: "Conta vinculada com sucesso" });
+    }
+
     const normalizedEmail = sanitizeEmail(email);
     const ip = getClientIp(req);
 
@@ -120,11 +188,6 @@ serve(async (req) => {
     if (password.length < 8) {
       return jsonResponse(req, { error: "A senha deve ter no minimo 8 caracteres" }, 400);
     }
-
-    const supabaseAdmin = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
 
     const { data: resident, error: residentError } = await supabaseAdmin
       .from("residents")

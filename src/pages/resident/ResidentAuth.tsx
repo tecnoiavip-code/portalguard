@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
-import { getUserRole } from '@/lib/auth-role';
+import { clearRoleCache, getUserRole } from '@/lib/auth-role';
 import appLogo from '@/assets/app-icon-v18-preview.png';
 
 const ResidentAuth = () => {
@@ -22,6 +22,20 @@ const ResidentAuth = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const navigate = useNavigate();
   const auth = supabase.auth as any;
+
+  const ensureResidentAccess = async (userId: string) => {
+    clearRoleCache(userId);
+    let role = await getUserRole(userId, true);
+    if (role === 'resident') return true;
+
+    await supabase.functions.invoke('register-resident', {
+      body: { action: 'link-existing' },
+    });
+
+    clearRoleCache(userId);
+    role = await getUserRole(userId, true);
+    return role === 'resident';
+  };
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,14 +68,15 @@ const ResidentAuth = () => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const { data, error } = await auth.signInWithPassword({ email, password });
+      const normalizedEmail = email.trim().toLowerCase();
+      const { data, error } = await auth.signInWithPassword({ email: normalizedEmail, password });
       if (error) {
         toast.error(error.message.includes('Invalid login') ? 'Email ou senha incorretos' : error.message);
         return;
       }
 
-      const role = data.user?.id ? await getUserRole(data.user.id) : null;
-      if (role !== 'resident') {
+      const hasResidentAccess = data.user?.id ? await ensureResidentAccess(data.user.id) : false;
+      if (!hasResidentAccess) {
         toast.success('Login realizado! Redirecionando para a portaria.');
         navigate('/');
         return;
@@ -82,14 +97,15 @@ const ResidentAuth = () => {
       toast.error('As senhas não conferem');
       return;
     }
-    if (password.length < 6) {
-      toast.error('Senha deve ter pelo menos 6 caracteres');
+    if (password.length < 8) {
+      toast.error('Senha deve ter pelo menos 8 caracteres');
       return;
     }
     setIsLoading(true);
     try {
+      const normalizedEmail = email.trim().toLowerCase();
       const { data, error: fnError } = await supabase.functions.invoke('register-resident', {
-        body: { email: email.trim(), password },
+        body: { email: normalizedEmail, password },
       });
 
       if (fnError) {
@@ -108,8 +124,26 @@ const ResidentAuth = () => {
         return;
       }
 
-      toast.success('Conta criada com sucesso! Faça login.');
-      setMode('login');
+      const { data: loginData, error: loginError } = await auth.signInWithPassword({
+        email: normalizedEmail,
+        password,
+      });
+
+      if (loginError || !loginData.user?.id) {
+        toast.success('Conta criada com sucesso! Faça login.');
+        setMode('login');
+        return;
+      }
+
+      const hasResidentAccess = await ensureResidentAccess(loginData.user.id);
+      if (!hasResidentAccess) {
+        toast.success('Conta criada com sucesso! Faça login.');
+        setMode('login');
+        return;
+      }
+
+      toast.success('Conta criada com sucesso!');
+      navigate('/morador');
     } catch {
       toast.error('Erro ao criar conta');
     } finally {
@@ -169,11 +203,11 @@ const ResidentAuth = () => {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="reg-password">Criar senha</Label>
-                <Input id="reg-password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} disabled={isLoading} />
+                <Input id="reg-password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} disabled={isLoading} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="reg-confirm">Confirmar senha</Label>
-                <Input id="reg-confirm" type="password" placeholder="••••••••" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required minLength={6} disabled={isLoading} />
+                <Input id="reg-confirm" type="password" placeholder="••••••••" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required minLength={8} disabled={isLoading} />
               </div>
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Criando...</> : 'Criar Conta'}

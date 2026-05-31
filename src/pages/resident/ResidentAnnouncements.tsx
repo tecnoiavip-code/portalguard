@@ -12,6 +12,7 @@ import { Megaphone, CheckCircle, FileText, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { createDebouncedRunner } from '@/lib/debounce';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -56,13 +57,17 @@ const ResidentAnnouncements = () => {
 
   useEffect(() => {
     loadData();
+    const scheduleLoadData = createDebouncedRunner(loadData, 1500);
 
     const channel = supabase
       .channel('resident-announcements')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'announcements' }, () => loadData())
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'announcements' }, () => scheduleLoadData())
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      scheduleLoadData.cancel();
+      supabase.removeChannel(channel);
+    };
   }, [user]);
 
   const openDetail = async (ann: Announcement) => {

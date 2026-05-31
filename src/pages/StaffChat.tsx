@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { sendPushToUser } from '@/lib/push-subscription';
 import { playNotificationSound } from '@/lib/notification-sound';
+import { createDebouncedRunner } from '@/lib/debounce';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -91,8 +92,9 @@ const StaffChat = () => {
       .from('chat_messages')
       .select('id, sender_type, message, created_at, read')
       .eq('resident_id', rid)
-      .order('created_at', { ascending: true });
-    setMessages((data as any) || []);
+      .order('created_at', { ascending: false })
+      .limit(100);
+    setMessages(((data as any) || []).reverse());
 
     await supabase
       .from('chat_messages')
@@ -106,7 +108,8 @@ const StaffChat = () => {
     const { data } = await supabase
       .from('residents')
       .select('id, name, apartment')
-      .order('name');
+      .order('name')
+      .limit(300);
     if (data) setAllResidents(data as ResidentOption[]);
   };
 
@@ -114,6 +117,7 @@ const StaffChat = () => {
 
   // Global listener: play sound when any resident sends a message (even if not viewing that thread)
   useEffect(() => {
+    const scheduleLoadThreads = createDebouncedRunner(loadThreads, 1500);
     const channel = supabase
       .channel('staff-chat-global-sound')
       .on('postgres_changes', {
@@ -124,11 +128,14 @@ const StaffChat = () => {
         const msg = payload.new as any;
         if (msg.sender_type === 'resident') {
           playNotificationSound();
-          if (!selectedThread) loadThreads();
+          if (!selectedThread) scheduleLoadThreads();
         }
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      scheduleLoadThreads.cancel();
+      supabase.removeChannel(channel);
+    };
   }, [selectedThread]);
 
   useEffect(() => {

@@ -24,6 +24,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { sendPushToUser } from '@/lib/push-subscription';
+import { createDebouncedRunner } from '@/lib/debounce';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -138,20 +139,25 @@ const StaffAnnouncements = () => {
   const loadAnnouncements = async () => {
     const { data } = await supabase
       .from('announcements')
-      .select('id, title, body, created_at, attachments')
-      .order('created_at', { ascending: false });
+      .select('id, title, body, priority, created_by, created_at')
+      .order('created_at', { ascending: false })
+      .limit(100);
     setAnnouncements((data as any) || []);
     setLoading(false);
   };
 
   useEffect(() => {
     loadAnnouncements();
+    const scheduleLoadAnnouncements = createDebouncedRunner(loadAnnouncements, 1500);
 
     const channel = supabase
       .channel('staff-announcements')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => loadAnnouncements())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => scheduleLoadAnnouncements())
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      scheduleLoadAnnouncements.cancel();
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -163,7 +169,7 @@ const StaffAnnouncements = () => {
       const { data: ann, error } = await supabase
         .from('announcements')
         .insert({ title: title.trim(), body: body.trim(), priority, created_by: user.id })
-        .select()
+        .select('id')
         .single();
 
       if (error) throw error;
@@ -249,9 +255,9 @@ const StaffAnnouncements = () => {
     setDetailDialog({ open: true, announcement: ann });
 
     const [{ data: att }, { data: rd }, { count }] = await Promise.all([
-      supabase.from('announcement_attachments').select('id, filename, url, announcement_id').eq('announcement_id', ann.id),
-      supabase.from('announcement_reads').select('id, user_id, read_at').eq('announcement_id', ann.id),
-      supabase.from('residents').select('*', { count: 'exact', head: true }),
+      supabase.from('announcement_attachments').select('id, file_name, file_url, file_size, content_type').eq('announcement_id', ann.id),
+      supabase.from('announcement_reads').select('announcement_id, user_id, read_at').eq('announcement_id', ann.id),
+      supabase.from('residents').select('id', { count: 'exact', head: true }),
     ]);
     setAttachments((att as any) || []);
     setReads((rd as any) || []);

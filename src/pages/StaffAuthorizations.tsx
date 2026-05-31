@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import StandardPagination from '@/components/StandardPagination';
 import { supabase } from '@/integrations/supabase/client';
 import { sendPushToUser } from '@/lib/push-subscription';
+import { createDebouncedRunner } from '@/lib/debounce';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -93,13 +94,15 @@ const StaffAuthorizations = () => {
 
   // Set up realtime subscription to auto-refresh when authorizations change
   useEffect(() => {
+    const scheduleLoadAuths = createDebouncedRunner(loadAuths, 1500);
     const channel = supabase
       .channel('staff-auth-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'visitor_authorizations' }, () => {
-        loadAuths();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'visitor_authorizations' }, () => scheduleLoadAuths())
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      scheduleLoadAuths.cancel();
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleReview = async (id: string, status: 'approved' | 'rejected') => {

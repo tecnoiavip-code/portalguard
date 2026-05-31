@@ -12,6 +12,7 @@ import { setAppBadge } from '@/lib/pwa-badge';
 import { notifyResident, requestNotificationPermission } from '@/lib/pwa-notify';
 import { subscribeToPush } from '@/lib/push-subscription';
 import { clearRoleCache, getUserRole } from '@/lib/auth-role';
+import { createDebouncedRunner } from '@/lib/debounce';
 
 interface ResidentLayoutProps {
   children: ReactNode;
@@ -248,6 +249,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
     };
 
     loadCounts();
+    const scheduleLoadCounts = createDebouncedRunner(loadCounts, 1500);
 
     const channel = supabase
       .channel('resident-notifs')
@@ -265,7 +267,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
         });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => {
-        loadCounts();
+        scheduleLoadCounts();
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
         const msg = payload.new as any;
@@ -283,21 +285,21 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
         }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, () => {
-        loadCounts();
+        scheduleLoadCounts();
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mails' }, () => {
-        loadCounts();
+        scheduleLoadCounts();
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'mails' }, () => {
-        loadCounts();
+        scheduleLoadCounts();
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'announcements' }, () => {
-        loadCounts();
+        scheduleLoadCounts();
       })
       .subscribe();
 
     const loadIfVisible = () => {
-      if (document.visibilityState === 'visible') loadCounts();
+      if (document.visibilityState === 'visible') scheduleLoadCounts();
     };
     window.addEventListener('focus', loadIfVisible);
     document.addEventListener('visibilitychange', loadIfVisible);
@@ -312,6 +314,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
     return () => {
       isActive = false;
       clearTimeout(pollTimeout);
+      scheduleLoadCounts.cancel();
       window.removeEventListener('focus', loadIfVisible);
       document.removeEventListener('visibilitychange', loadIfVisible);
       supabase.removeChannel(channel);

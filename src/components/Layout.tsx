@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { createDebouncedRunner } from '@/lib/debounce';
 import { playNotificationSound } from '@/lib/notification-sound';
 import {
   DropdownMenu,
@@ -61,20 +62,21 @@ export const Layout = ({ children }: LayoutProps) => {
       }
     };
     loadNotifs();
+    const scheduleLoadNotifs = createDebouncedRunner(loadNotifs, 1500);
 
     const channel = supabase
       .channel('staff-header-notifs')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => {
         playNotificationSound();
-        loadNotifs();
+        scheduleLoadNotifs();
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => {
-        loadNotifs();
+        scheduleLoadNotifs();
       })
       .subscribe();
 
     const loadIfVisible = () => {
-      if (document.visibilityState === 'visible') loadNotifs();
+      if (document.visibilityState === 'visible') scheduleLoadNotifs();
     };
     window.addEventListener('focus', loadIfVisible);
     document.addEventListener('visibilitychange', loadIfVisible);
@@ -90,6 +92,7 @@ export const Layout = ({ children }: LayoutProps) => {
     return () => {
       isActive = false;
       clearTimeout(pollTimeout);
+      scheduleLoadNotifs.cancel();
       window.removeEventListener('focus', loadIfVisible);
       document.removeEventListener('visibilitychange', loadIfVisible);
       supabase.removeChannel(channel);

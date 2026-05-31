@@ -58,21 +58,32 @@ const StaffAuthorizations = () => {
   const loadAuths = async () => {
     const { data } = await supabase
       .from('visitor_authorizations')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select('id, resident_id, visitor_name, visitor_document, authorized_date, authorized_until, purpose, vehicle_plate, status, staff_notes, created_at')
+      .order('created_at', { ascending: false })
+      .limit(100);
     
     if (!data) { setLoading(false); return; }
 
-    const enriched = await Promise.all(
-      (data as any[]).map(async (a: Authorization) => {
-        const { data: res } = await supabase
+    const authRows = data as Authorization[];
+    const residentIds = Array.from(new Set(authRows.map((a) => a.resident_id).filter(Boolean)));
+    const { data: residentsData } = residentIds.length > 0
+      ? await supabase
           .from('residents')
-          .select('name, apartment')
-          .eq('id', a.resident_id)
-          .maybeSingle();
-        return { ...a, resident: res || undefined };
-      })
+          .select('id, name, apartment')
+          .in('id', residentIds)
+      : { data: [] };
+
+    const residentsById = new Map(
+      ((residentsData || []) as (ResidentInfo & { id: string })[]).map((resident) => [resident.id, {
+        name: resident.name,
+        apartment: resident.apartment,
+      }])
     );
+
+    const enriched = authRows.map((a) => ({
+      ...a,
+      resident: residentsById.get(a.resident_id),
+    }));
 
     setAuths(enriched);
     setLoading(false);

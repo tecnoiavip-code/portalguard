@@ -173,7 +173,7 @@ export const Reports = () => {
   const loadCurrentShiftChecks = async (shiftId: string) => {
     const { data } = await supabase
       .from('shift_equipment_checks')
-      .select('*')
+      .select('id, shift_id, equipment_id, status, notes, checked_at')
       .eq('shift_id', shiftId);
     if (data) setCurrentShiftChecks(data);
   };
@@ -314,7 +314,7 @@ export const Reports = () => {
     // Load checks for this shift with equipment names
     const { data: checks } = await supabase
       .from('shift_equipment_checks')
-      .select('*, portaria_equipment(name, description)')
+      .select('id, shift_id, equipment_id, status, notes, checked_at, portaria_equipment(name, description)')
       .eq('shift_id', shift.id);
 
     const enrichedChecks = (checks || []).map((c: any) => ({
@@ -327,7 +327,7 @@ export const Reports = () => {
     // Load incidents for this shift
     const { data: shiftIncidents } = await supabase
       .from('incidents')
-      .select('*')
+      .select('id, title, description, severity, status, shift_id, created_at, resolved_at')
       .eq('shift_id', shift.id)
       .order('created_at', { ascending: false });
     setViewingShiftIncidents((shiftIncidents || []) as Incident[]);

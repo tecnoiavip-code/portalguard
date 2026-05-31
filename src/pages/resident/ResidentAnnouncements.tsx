@@ -45,7 +45,7 @@ const ResidentAnnouncements = () => {
     if (!user) return;
 
     const [{ data: anns }, { data: rds }] = await Promise.all([
-      supabase.from('announcements').select('id, title, body, created_at, attachments').order('created_at', { ascending: false }),
+      supabase.from('announcements').select('id, title, body, priority, created_at').order('created_at', { ascending: false }).limit(50),
       supabase.from('announcement_reads').select('announcement_id').eq('user_id', user.id),
     ]);
 
@@ -70,7 +70,7 @@ const ResidentAnnouncements = () => {
 
     const { data: att } = await supabase
       .from('announcement_attachments')
-      .select('*')
+      .select('id, file_name, file_url, file_size')
       .eq('announcement_id', ann.id);
     setAttachments((att as any) || []);
 

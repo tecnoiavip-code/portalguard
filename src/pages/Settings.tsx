@@ -59,6 +59,22 @@ const parseCSV = (text: string): any[] => {
   return rows;
 };
 
+const CLEARABLE_LOCAL_STORAGE_KEYS = [
+  'pg_residents',
+  'pg_mails',
+  'pg_entries',
+  'pg_devices',
+  'pg_events',
+  'portalguard-new-registry-draft-v3',
+  'portalguard-vehicle-suggestions-v3',
+  'portalguard-mail-form-draft-v1',
+  'portalguard-device-form-draft-v1',
+  'portalguard-staff-announcement-draft-v1',
+  'portalguard-staff-active-section',
+  'portalguard-resident-active-tab',
+  'pwa-install-dismissed',
+];
+
 export const Settings = () => {
   const { residents } = useResidents();
   const [isIntegrationsUnlocked, setIsIntegrationsUnlocked] = useState(false);
@@ -473,16 +489,16 @@ export const Settings = () => {
   };
 
   const handleClearData = () => {
-    if (!confirm('ATENÇÃO: Isso removerá TODOS os dados do sistema. Esta ação não pode ser desfeita. Deseja continuar?')) {
+    if (!confirm('ATENÇÃO: isso limpará apenas dados locais, rascunhos e cache deste navegador. Os dados salvos no Supabase serão preservados. Deseja continuar?')) {
       return;
     }
 
-    if (!confirm('Última confirmação: Tem certeza absoluta?')) {
+    if (!confirm('Última confirmação: limpar os dados locais deste navegador agora?')) {
       return;
     }
 
-    localStorage.clear();
-    toast.success('Todos os dados foram removidos. Recarregue a página.');
+    CLEARABLE_LOCAL_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
+    toast.success('Dados locais e cache limpos. Sua sessão foi preservada.');
   };
 
   return (

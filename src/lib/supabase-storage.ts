@@ -29,6 +29,11 @@ const up = (val: string | null | undefined): string | null =>
 const upperValue = (val: string | null | undefined): string =>
   val ? val.toUpperCase() : '';
 
+const MAIL_COLUMNS = 'id, resident_id, sender, package_type, notes, tracking_code, photo_url, received_at, status, delivered_at, withdrawn_by';
+const ACCESS_ENTRY_COLUMNS = 'id, visitor_name, visitor_document, visitor_type, resident_id, resident_name, apartment, purpose, entry_time, exit_time, vehicle_plate, vehicle_model, vehicle_color, photo_url, company, auto_recognized, badge_number';
+const DEVICE_COLUMNS = 'id, name, type, location, status, last_sync, ip_address, serial_number';
+const REALTIME_EVENT_COLUMNS = 'id, type, description, timestamp, priority, related_id';
+
 export const normalizeAccessEntryText = (entry: AccessEntry): AccessEntry => ({
   ...entry,
   visitorName: upperValue(entry.visitorName),
@@ -292,8 +297,9 @@ export const supabaseStorage = {
 
     const { data, error } = await supabase
       .from('mails')
-      .select('*')
-      .order('received_at', { ascending: false });
+      .select(MAIL_COLUMNS)
+      .order('received_at', { ascending: false })
+      .limit(300);
 
     if (error) { console.error('Error fetching mails:', error); return []; }
 
@@ -356,9 +362,9 @@ export const supabaseStorage = {
 
     const { data, error } = await supabase
       .from('access_entries')
-      .select('*')
+      .select(ACCESS_ENTRY_COLUMNS)
       .order('entry_time', { ascending: false })
-      .limit(200); // cap at 200 — avoids unbounded growth
+      .limit(200); // cap at 200 to avoid unbounded growth
 
     if (error) { console.error('Error fetching entries:', error); return []; }
 
@@ -483,7 +489,7 @@ export const supabaseStorage = {
 
     const { data, error } = await supabase
       .from('devices')
-      .select('*')
+      .select(DEVICE_COLUMNS)
       .order('created_at', { ascending: false });
 
     if (error) { console.error('Error fetching devices:', error); return []; }
@@ -506,7 +512,7 @@ export const supabaseStorage = {
   async getDeviceById(id: string): Promise<Device | null> {
     const { data, error } = await supabase
       .from('devices')
-      .select('*')
+      .select(DEVICE_COLUMNS)
       .eq('id', id)
       .maybeSingle();
 
@@ -567,7 +573,7 @@ export const supabaseStorage = {
 
     const { data, error } = await supabase
       .from('realtime_events')
-      .select('*')
+      .select(REALTIME_EVENT_COLUMNS)
       .order('timestamp', { ascending: false })
       .limit(30);
 

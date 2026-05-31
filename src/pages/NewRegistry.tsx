@@ -25,6 +25,7 @@ import { ptBR } from 'date-fns/locale';
 import { exportToCSV } from '@/lib/export-csv';
 
 const NEW_REGISTRY_DRAFT_KEY = 'new-registry-form-draft-v1';
+const VEHICLE_SUGGESTIONS_CACHE_KEY = `vehicle_suggestions_cache:${import.meta.env.VITE_SUPABASE_URL || 'local'}:v2`;
 const EMPTY_NEW_REGISTRY_FORM = {
   visitorName: '',
   visitorDocument: '',
@@ -63,6 +64,12 @@ interface BlockedVisitor {
   blocked_at: string;
   is_active: boolean;
 }
+
+const normalizeVehicleSuggestions = (values: Array<string | null | undefined>) =>
+  [...new Set(values.map(value => String(value ?? '').trim().toUpperCase()))]
+    .filter((value): value is string => Boolean(value))
+    .sort();
+
 export const NewRegistry = () => {
   const { residents } = useResidents();
   const { devices } = useDevices();
@@ -202,11 +209,10 @@ export const NewRegistry = () => {
 
   // Cache de sugestões de veículos para evitar queries desnecessárias
   const loadVehicleSuggestionsWithCache = async () => {
-    const cacheKey = 'vehicle_suggestions_cache';
     const now = Date.now();
     
     try {
-      const cached = localStorage.getItem(cacheKey);
+      const cached = localStorage.getItem(VEHICLE_SUGGESTIONS_CACHE_KEY);
       if (cached) {
         const { data, timestamp } = JSON.parse(cached);
         // Reutilizar cache por 1 hora (3600000ms)
@@ -221,14 +227,14 @@ export const NewRegistry = () => {
     }
 
     // Se cache expirou ou não existe, fazer queries
-    await loadVehicleSuggestions();
+    const suggestions = await loadVehicleSuggestions();
     
     // Salvar novo cache
     try {
-      localStorage.setItem(cacheKey, JSON.stringify({
+      localStorage.setItem(VEHICLE_SUGGESTIONS_CACHE_KEY, JSON.stringify({
         data: {
-          models: allVehicleModels,
-          colors: allVehicleColors,
+          models: suggestions.models,
+          colors: suggestions.colors,
         },
         timestamp: now,
       }));
@@ -254,22 +260,28 @@ export const NewRegistry = () => {
   };
 
   const loadVehicleSuggestions = async () => {
-    const [modelsRes, colorsRes] = await Promise.all([
+    const [entryModelsRes, entryColorsRes, residentModelsRes, residentColorsRes] = await Promise.all([
       supabase.from('access_entries').select('vehicle_model').not('vehicle_model', 'is', null).not('vehicle_model', 'eq', ''),
       supabase.from('access_entries').select('vehicle_color').not('vehicle_color', 'is', null).not('vehicle_color', 'eq', ''),
+      supabase.from('residents').select('vehicle_model').not('vehicle_model', 'is', null).not('vehicle_model', 'eq', ''),
+      supabase.from('residents').select('vehicle_color').not('vehicle_color', 'is', null).not('vehicle_color', 'eq', ''),
     ]);
-    if (modelsRes.data) {
-      const unique = [...new Set(modelsRes.data.map(r => String(r.vehicle_model ?? '').trim().toUpperCase()))]
-        .filter((value): value is string => Boolean(value))
-        .sort();
-      setAllVehicleModels(unique);
-    }
-    if (colorsRes.data) {
-      const unique = [...new Set(colorsRes.data.map(r => String(r.vehicle_color ?? '').trim().toUpperCase()))]
-        .filter((value): value is string => Boolean(value))
-        .sort();
-      setAllVehicleColors(unique);
-    }
+
+    const models = normalizeVehicleSuggestions([
+      ...(entryModelsRes.data || []).map(r => r.vehicle_model),
+      ...(residentModelsRes.data || []).map(r => r.vehicle_model),
+    ]);
+    const colors = normalizeVehicleSuggestions([
+      ...(entryColorsRes.data || []).map(r => r.vehicle_color),
+      ...(residentColorsRes.data || []).map(r => r.vehicle_color),
+    ]);
+
+    setAllVehicleModels(models);
+    setAllVehicleColors(colors);
+    setVehicleModelSuggestions(models.slice(0, 8));
+    setVehicleColorSuggestions(colors.slice(0, 8));
+
+    return { models, colors };
   };
 
   const filterVehicleModels = (query: string) => {
@@ -1117,11 +1129,20 @@ export const NewRegistry = () => {
 
                 <div className="space-y-2 relative">
                   <Label htmlFor="vehicleModel">Modelo</Label>
-                  <Input id="vm_field" name="vm_field" value={formData.vehicleModel} autoComplete="one-time-code" readOnly onFocus={e => { e.currentTarget.removeAttribute('readOnly'); filterVehicleModels(formData.vehicleModel); setShowModelSuggestions(true); }} onChange={e => { setFormData({ ...formData, vehicleModel: e.target.value }); filterVehicleModels(e.target.value); setShowModelSuggestions(true); }} onBlur={() => setTimeout(() => setShowModelSuggestions(false), 150)} placeholder="Honda Civic" />
+                  <Input
+                    id="vm_field"
+                    name="vm_field"
+                    value={formData.vehicleModel}
+                    autoComplete="off"
+                    onFocus={() => { filterVehicleModels(formData.vehicleModel); setShowModelSuggestions(true); }}
+                    onChange={e => { setFormData({ ...formData, vehicleModel: e.target.value }); filterVehicleModels(e.target.value); setShowModelSuggestions(true); }}
+                    onBlur={() => setTimeout(() => setShowModelSuggestions(false), 150)}
+                    placeholder="Honda Civic"
+                  />
                   {showModelSuggestions && vehicleModelSuggestions.length > 0 && (
                     <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg max-h-40 overflow-y-auto">
                       {vehicleModelSuggestions.map(model => (
-                        <button key={model} type="button" className="w-full text-left px-3 py-1.5 hover:bg-accent transition-colors text-sm" onClick={() => { setFormData({ ...formData, vehicleModel: model }); setShowModelSuggestions(false); }}>
+                        <button key={model} type="button" className="w-full text-left px-3 py-1.5 hover:bg-accent transition-colors text-sm" onMouseDown={(event) => event.preventDefault()} onClick={() => { setFormData({ ...formData, vehicleModel: model }); setShowModelSuggestions(false); }}>
                           {model}
                         </button>
                       ))}
@@ -1131,11 +1152,20 @@ export const NewRegistry = () => {
 
                 <div className="space-y-2 relative">
                   <Label htmlFor="vehicleColor">Cor</Label>
-                  <Input id="vc_field" name="vc_field" value={formData.vehicleColor} autoComplete="one-time-code" readOnly onFocus={e => { e.currentTarget.removeAttribute('readOnly'); filterVehicleColors(formData.vehicleColor); setShowColorSuggestions(true); }} onChange={e => { setFormData({ ...formData, vehicleColor: e.target.value }); filterVehicleColors(e.target.value); setShowColorSuggestions(true); }} onBlur={() => setTimeout(() => setShowColorSuggestions(false), 150)} placeholder="Preto" />
+                  <Input
+                    id="vc_field"
+                    name="vc_field"
+                    value={formData.vehicleColor}
+                    autoComplete="off"
+                    onFocus={() => { filterVehicleColors(formData.vehicleColor); setShowColorSuggestions(true); }}
+                    onChange={e => { setFormData({ ...formData, vehicleColor: e.target.value }); filterVehicleColors(e.target.value); setShowColorSuggestions(true); }}
+                    onBlur={() => setTimeout(() => setShowColorSuggestions(false), 150)}
+                    placeholder="Preto"
+                  />
                   {showColorSuggestions && vehicleColorSuggestions.length > 0 && (
                     <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg max-h-40 overflow-y-auto">
                       {vehicleColorSuggestions.map(color => (
-                        <button key={color} type="button" className="w-full text-left px-3 py-1.5 hover:bg-accent transition-colors text-sm" onClick={() => { setFormData({ ...formData, vehicleColor: color }); setShowColorSuggestions(false); }}>
+                        <button key={color} type="button" className="w-full text-left px-3 py-1.5 hover:bg-accent transition-colors text-sm" onMouseDown={(event) => event.preventDefault()} onClick={() => { setFormData({ ...formData, vehicleColor: color }); setShowColorSuggestions(false); }}>
                           {color}
                         </button>
                       ))}

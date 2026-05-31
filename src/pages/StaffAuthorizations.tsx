@@ -3,6 +3,7 @@ import StandardPagination from '@/components/StandardPagination';
 import { supabase } from '@/integrations/supabase/client';
 import { sendPushToUser } from '@/lib/push-subscription';
 import { createDebouncedRunner } from '@/lib/debounce';
+import { recordAuditLog } from '@/lib/audit-log';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -112,6 +113,12 @@ const StaffAuthorizations = () => {
       .update({ status, staff_notes: staffNotes || null, reviewed_by: user?.id } as any)
       .eq('id', id);
 
+    await recordAuditLog('review', 'visitor_authorization', id, `Autorização ${status === 'approved' ? 'aprovada' : 'rejeitada'}: ${auth?.visitor_name || id}`, {
+      status,
+      residentId: auth?.resident_id,
+      hasStaffNotes: Boolean(staffNotes),
+    });
+
     if (auth) {
       const { data: res } = await (supabase.from('residents').select('auth_user_id') as any)
         .eq('id', auth.resident_id)
@@ -149,6 +156,14 @@ const StaffAuthorizations = () => {
 
     // Notify resident
     const first = pendingItems[0];
+    await recordAuditLog('bulk_review', 'visitor_authorization', null, `${pendingItems.length} autorização(ões) ${status === 'approved' ? 'aprovadas' : 'rejeitadas'} em lote`, {
+      status,
+      count: pendingItems.length,
+      residentId: first.resident_id,
+      authorizationIds: pendingItems.map((item) => item.id),
+      hasStaffNotes: Boolean(staffNotes),
+    });
+
     const { data: res } = await (supabase.from('residents').select('auth_user_id') as any)
       .eq('id', first.resident_id)
       .maybeSingle();

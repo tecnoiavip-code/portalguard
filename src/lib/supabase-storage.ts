@@ -26,6 +26,23 @@ export function invalidateCache(...keys: string[]) {
 const up = (val: string | null | undefined): string | null =>
   val ? val.toUpperCase() : (val as null);
 
+const upperValue = (val: string | null | undefined): string =>
+  val ? val.toUpperCase() : '';
+
+export const normalizeAccessEntryText = (entry: AccessEntry): AccessEntry => ({
+  ...entry,
+  visitorName: upperValue(entry.visitorName),
+  visitorDocument: upperValue(entry.visitorDocument),
+  residentName: upperValue(entry.residentName),
+  apartment: upperValue(entry.apartment),
+  purpose: upperValue(entry.purpose),
+  vehiclePlate: upperValue(entry.vehiclePlate),
+  vehicleModel: upperValue(entry.vehicleModel),
+  vehicleColor: upperValue(entry.vehicleColor),
+  company: upperValue(entry.company),
+  badgeNumber: upperValue(entry.badgeNumber),
+});
+
 // ─────────────────────────────────────────────────────────────
 export const supabaseStorage = {
 
@@ -345,7 +362,7 @@ export const supabaseStorage = {
 
     if (error) { console.error('Error fetching entries:', error); return []; }
 
-    const entries = (data || []).map(e => ({
+    const entries = (data || []).map(e => normalizeAccessEntryText({
       id: e.id,
       visitorName: e.visitor_name,
       visitorDocument: e.visitor_document,

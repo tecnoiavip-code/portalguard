@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabaseStorage } from '@/lib/supabase-storage';
+import { normalizeAccessEntryText, supabaseStorage } from '@/lib/supabase-storage';
 import { AccessEntry } from '@/types';
 import { toast } from 'sonner';
 
@@ -21,7 +21,7 @@ export const useAccessEntries = () => {
   const saveEntry = useCallback(async (entry: AccessEntry) => {
     const savedId = await supabaseStorage.saveEntry(entry);
     if (savedId) {
-      const savedEntry = { ...entry, id: savedId };
+      const savedEntry = normalizeAccessEntryText({ ...entry, id: savedId });
       // Otimização: atualizar estado local com dados que temos, sem getEntryById() extra
       setEntries(prev => {
         const index = prev.findIndex(e => e.id === entry.id || e.id === savedId);

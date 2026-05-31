@@ -399,7 +399,7 @@ export const supabaseStorage = {
     return null;
   },
 
-  async saveEntry(entry: AccessEntry): Promise<boolean> {
+  async saveEntry(entry: AccessEntry): Promise<string | null> {
     const isNew = entry.id.startsWith('entry_');
     const excludeId = isNew ? undefined : entry.id;
 
@@ -408,7 +408,7 @@ export const supabaseStorage = {
       if (duplicateMsg) {
         const { toast } = await import('sonner');
         toast.error(duplicateMsg);
-        return false;
+        return null;
       }
     }
 
@@ -431,14 +431,23 @@ export const supabaseStorage = {
     };
 
     if (isNew) {
-      const { error } = await supabase.from('access_entries').insert(entryData);
-      if (error) { console.error('Error inserting entry:', error); return false; }
+      const { data, error } = await supabase
+        .from('access_entries')
+        .insert(entryData)
+        .select('id')
+        .single();
+      if (error || !data) {
+        console.error('Error inserting entry:', error);
+        return null;
+      }
+      invalidateCache('entries_list');
+      return data.id;
     } else {
       const { error } = await supabase.from('access_entries').update(entryData).eq('id', entry.id);
-      if (error) { console.error('Error updating entry:', error); return false; }
+      if (error) { console.error('Error updating entry:', error); return null; }
     }
     invalidateCache('entries_list');
-    return true;
+    return entry.id;
   },
 
   async deleteEntry(id: string): Promise<boolean> {

@@ -19,19 +19,20 @@ export const useAccessEntries = () => {
   }, [loadEntries]);
 
   const saveEntry = useCallback(async (entry: AccessEntry) => {
-    const success = await supabaseStorage.saveEntry(entry);
-    if (success) {
+    const savedId = await supabaseStorage.saveEntry(entry);
+    if (savedId) {
+      const savedEntry = { ...entry, id: savedId };
       // Otimização: atualizar estado local com dados que temos, sem getEntryById() extra
       setEntries(prev => {
-        const index = prev.findIndex(e => e.id === entry.id);
+        const index = prev.findIndex(e => e.id === entry.id || e.id === savedId);
         if (index > -1) {
           // Update existing (for exit time changes)
           const newEntries = [...prev];
-          newEntries[index] = entry;
+          newEntries[index] = savedEntry;
           return newEntries;
         }
         // Add new entry at the beginning
-        return [entry, ...prev];
+        return [savedEntry, ...prev];
       });
       return true;
     }

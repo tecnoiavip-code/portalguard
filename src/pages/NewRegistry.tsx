@@ -25,6 +25,7 @@ import { useNewRegistryDraft } from './new-registry/useNewRegistryDraft';
 import { useRegistryEntryActions } from './new-registry/useRegistryEntryActions';
 import { useRegistryPhotoCapture } from './new-registry/useRegistryPhotoCapture';
 import { useVehicleSuggestions } from './new-registry/useVehicleSuggestions';
+import { useVisitorSuggestions } from './new-registry/useVisitorSuggestions';
 
 export const NewRegistry = () => {
   const { residents } = useResidents();
@@ -44,8 +45,6 @@ export const NewRegistry = () => {
   const itemsPerPage = 12;
   const itemsPerPageTable = 10;
   const [formData, setFormData] = useState({ ...EMPTY_NEW_REGISTRY_FORM });
-  const [suggestions, setSuggestions] = useState<AccessEntry[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
   const [showColorSuggestions, setShowColorSuggestions] = useState(false);
   const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
@@ -61,6 +60,16 @@ export const NewRegistry = () => {
     filterVehicleColors,
     filterCompanies,
   } = useVehicleSuggestions();
+  const {
+    suggestions,
+    showSuggestions,
+    findSimilarEntries,
+    applySuggestion,
+    clearSuggestions,
+  } = useVisitorSuggestions({
+    allEntries,
+    setFormData,
+  });
   const {
     blockedVisitors,
     blockingEntry,
@@ -165,54 +174,6 @@ export const NewRegistry = () => {
     setShowResidentSuggestions(false);
   };
   
-  const findSimilarEntries = (name: string, document: string, plate?: string) => {
-    const nameReady = name && name.trim().length >= 5;
-    const docReady = document && document.replace(/\D/g, '').length >= 5;
-    const plateReady = plate && plate.replace(/[^a-zA-Z0-9]/g, '').length >= 3;
-    if (!nameReady && !docReady && !plateReady) {
-      setSuggestions([]);
-      setShowSuggestions(false);
-      return;
-    }
-    const similar = allEntries.filter(entry => {
-      const nameMatch = nameReady && entry.visitorName.toLowerCase().includes(name.toLowerCase());
-      const docMatch = docReady && entry.visitorDocument.includes(document);
-      const plateMatch = plateReady && entry.vehiclePlate && entry.vehiclePlate.toLowerCase().includes(plate!.toLowerCase());
-      return nameMatch || docMatch || plateMatch;
-    });
-    // Deduplicate: keep only the most recent entry per visitor document
-    const uniqueMap = new Map<string, AccessEntry>();
-    for (const entry of similar) {
-      const key = entry.visitorDocument || entry.visitorName;
-      if (!uniqueMap.has(key)) {
-        uniqueMap.set(key, entry);
-      }
-    }
-    const unique = Array.from(uniqueMap.values());
-    if (unique.length > 0) {
-      setSuggestions(unique.slice(0, 3));
-      setShowSuggestions(true);
-    } else {
-      setShowSuggestions(false);
-    }
-  };
-  
-  const applySuggestion = (entry: AccessEntry) => {
-    setFormData({
-      ...formData,
-      visitorName: entry.visitorName,
-      visitorDocument: entry.visitorDocument,
-      visitorType: entry.visitorType,
-      company: entry.company || '',
-      vehiclePlate: entry.vehiclePlate || '',
-      vehicleModel: entry.vehicleModel || '',
-      vehicleColor: entry.vehicleColor || '',
-      photo: entry.photo || '',
-      badgeNumber: '',
-    });
-    setShowSuggestions(false);
-    toast.success('Dados preenchidos automaticamente! Atribua um novo crachá.');
-  };
   const handleEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     const registered = await registerEntry();
@@ -307,8 +268,7 @@ export const NewRegistry = () => {
     setEditingId('');
     setFormData({ ...EMPTY_NEW_REGISTRY_FORM });
     setVisitedLocationSearch('');
-    setSuggestions([]);
-    setShowSuggestions(false);
+    clearSuggestions();
     setIsDialogOpen(false);
     clearRegistryDraft();
     stopCamera();

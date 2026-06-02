@@ -8,7 +8,7 @@ interface ActiveEntryDetailsDialogProps {
   entry: AccessEntry | null;
   onClose: () => void;
   onEditEntry: (entry: AccessEntry) => void;
-  onExitEntry: (id: string) => void;
+  onExitEntry: (entry: AccessEntry) => void;
 }
 
 export function ActiveEntryDetailsDialog({
@@ -108,7 +108,7 @@ export function ActiveEntryDetailsDialog({
                 <Pencil className="h-4 w-4 mr-2" />
                 Editar
               </Button>
-              <Button size="sm" onClick={() => { onClose(); onExitEntry(entry.id); }}>
+              <Button size="sm" onClick={() => { onClose(); onExitEntry(entry); }}>
                 <LogOut className="h-4 w-4 mr-2" />
                 Registrar Saída
               </Button>

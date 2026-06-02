@@ -40,6 +40,24 @@ export const useAccessEntries = () => {
     return false;
   }, []);
 
+  const registerExit = useCallback(async (entry: AccessEntry) => {
+    const exitTime = new Date().toISOString();
+    const success = await supabaseStorage.registerEntryExit(entry, exitTime);
+
+    if (success) {
+      setEntries(prev => prev.map(item => (
+        item.id === entry.id
+          ? normalizeAccessEntryText({ ...item, exitTime })
+          : item
+      )));
+      return true;
+    }
+
+    toast.error('Erro ao registrar saída');
+    await loadEntries();
+    return false;
+  }, [loadEntries]);
+
   const deleteEntry = useCallback(async (id: string) => {
     const success = await supabaseStorage.deleteEntry(id);
     if (success) {
@@ -55,6 +73,7 @@ export const useAccessEntries = () => {
     entries,
     loading,
     saveEntry,
+    registerExit,
     deleteEntry,
     refresh: loadEntries,
   };

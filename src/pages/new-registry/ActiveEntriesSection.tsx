@@ -21,7 +21,7 @@ interface ActiveEntriesSectionProps {
   onEditEntry: (entry: AccessEntry) => void;
   onBlockEntry: (entry: AccessEntry) => void;
   onDeleteEntry: (id: string) => void;
-  onExitEntry: (id: string) => void;
+  onExitEntry: (entry: AccessEntry) => void;
 }
 
 export function ActiveEntriesSection({
@@ -154,7 +154,7 @@ export function ActiveEntriesSection({
                         <Button size="icon" variant="ghost" onClick={(event) => { event.stopPropagation(); onDeleteEntry(entry.id); }} className="h-8 w-8 text-destructive hover:text-destructive" title="Excluir">
                           <Trash2 className="h-4 w-4" />
                         </Button>
-                        <Button size="sm" onClick={(event) => { event.stopPropagation(); onExitEntry(entry.id); }} className="h-8">
+                        <Button size="sm" onClick={(event) => { event.stopPropagation(); onExitEntry(entry); }} className="h-8">
                           <LogOut className="h-4 w-4 mr-1" />
                           Saída
                         </Button>

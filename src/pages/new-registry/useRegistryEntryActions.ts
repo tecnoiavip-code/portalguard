@@ -17,6 +17,7 @@ interface UseRegistryEntryActionsParams {
   suggestions: AccessEntry[];
   isVisitorBlocked: (document: string) => boolean;
   saveEntry: (entry: AccessEntry) => Promise<boolean>;
+  registerExit: (entry: AccessEntry) => Promise<boolean>;
 }
 
 export const useRegistryEntryActions = ({
@@ -29,6 +30,7 @@ export const useRegistryEntryActions = ({
   suggestions,
   isVisitorBlocked,
   saveEntry,
+  registerExit,
 }: UseRegistryEntryActionsParams) => {
   const [badgeError, setBadgeError] = useState<string | null>(null);
 
@@ -181,18 +183,17 @@ export const useRegistryEntryActions = ({
   ]);
 
   const exitEntry = useCallback(
-    async (entryId: string) => {
-      const entry = allEntries.find(item => item.id === entryId);
-      if (!entry) return;
+    async (entry: AccessEntry) => {
+      if (entry.exitTime) {
+        toast.info('Saída já registrada para este cadastro');
+        return false;
+      }
 
-      const updatedEntry: AccessEntry = {
-        ...entry,
-        exitTime: new Date().toISOString(),
-      };
-
-      await saveEntry(updatedEntry);
+      const exited = await registerExit(entry);
+      if (exited) toast.success('Saída registrada com sucesso');
+      return exited;
     },
-    [allEntries, saveEntry]
+    [registerExit]
   );
 
   return {

@@ -26,7 +26,7 @@ import { useVisitorSuggestions } from './new-registry/useVisitorSuggestions';
 export const NewRegistry = () => {
   const { residents } = useResidents();
   const { devices } = useDevices();
-  const { entries: allEntries, saveEntry, deleteEntry } = useAccessEntries();
+  const { entries: allEntries, saveEntry, registerExit, deleteEntry } = useAccessEntries();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string>('');
   const [visitedLocationSearch, setVisitedLocationSearch] = useState('');
@@ -98,6 +98,7 @@ export const NewRegistry = () => {
     suggestions,
     isVisitorBlocked,
     saveEntry,
+    registerExit,
   });
   const {
     videoRef,
@@ -204,8 +205,8 @@ export const NewRegistry = () => {
     clearRegistryDraft();
     stopCamera();
   };
-  const handleExit = async (entryId: string) => {
-    await exitEntry(entryId);
+  const handleExit = async (entry: AccessEntry) => {
+    await exitEntry(entry);
   };
   return <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">

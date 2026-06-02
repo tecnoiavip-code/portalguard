@@ -498,6 +498,34 @@ export const supabaseStorage = {
     return entry.id;
   },
 
+  async registerEntryExit(entry: AccessEntry, exitTime: string): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('access_entries')
+      .update({ exit_time: exitTime })
+      .eq('id', entry.id)
+      .is('exit_time', null)
+      .select('id')
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error registering entry exit:', error);
+      return false;
+    }
+
+    if (!data) {
+      console.warn('Access entry exit not updated; entry may already be closed:', entry.id);
+      invalidateCache('entries_list');
+      return false;
+    }
+
+    await recordAuditLog('register_exit', 'access_entry', entry.id, `Saída registrada: ${up(entry.visitorName) || entry.visitorName}`, {
+      apartment: up(entry.apartment) || entry.apartment,
+      exitTime,
+    });
+    invalidateCache('entries_list');
+    return true;
+  },
+
   async deleteEntry(id: string): Promise<boolean> {
     const { error } = await supabase.from('access_entries').delete().eq('id', id);
     if (error) { console.error('Error deleting entry:', error); return false; }

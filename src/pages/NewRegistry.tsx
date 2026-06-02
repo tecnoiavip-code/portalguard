@@ -1,18 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Camera, Plus, ShieldBan, ShieldCheck, Ban, ScanFace, Loader2, Wifi, WifiOff } from 'lucide-react';
-import { DeviceCaptureStatus } from '@/components/DeviceCaptureStatus';
-import { AccessEntry, Resident, Device } from '@/types';
+import { Plus, ShieldBan } from 'lucide-react';
+import { AccessEntry } from '@/types';
 import { useAccessEntries } from '@/hooks/useAccessEntries';
 import { useResidents } from '@/hooks/useResidents';
 import { useDevices } from '@/hooks/useDevices';
 import { toast } from 'sonner';
 import { capturePhotoFromDevice, syncBiometricToAllDevices } from '@/lib/device-capture';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import jsPDF from 'jspdf';
@@ -23,6 +17,10 @@ import { exportToCSV } from '@/lib/export-csv';
 import { ActiveEntriesSection } from './new-registry/ActiveEntriesSection';
 import { ActiveEntryDetailsDialog } from './new-registry/ActiveEntryDetailsDialog';
 import { RegistryFormDialog } from './new-registry/RegistryFormDialog';
+import { CameraCaptureDialog } from './new-registry/CameraCaptureDialog';
+import { BlockedVisitorsDialog } from './new-registry/BlockedVisitorsDialog';
+import { BlockReasonDialog } from './new-registry/BlockReasonDialog';
+import { DeviceFacialCaptureDialog } from './new-registry/DeviceFacialCaptureDialog';
 import { EMPTY_NEW_REGISTRY_FORM, BlockedVisitor } from './new-registry/registry-form';
 import { useNewRegistryDraft } from './new-registry/useNewRegistryDraft';
 import { useVehicleSuggestions } from './new-registry/useVehicleSuggestions';
@@ -643,162 +641,42 @@ export const NewRegistry = () => {
         onPhotoUpload={handlePhotoUpload}
       />
 
-      {/* Camera Capture Dialog */}
-      <Dialog open={showCameraDialog} onOpenChange={(open) => {
-        if (!open) stopCamera();
-      }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Camera className="h-5 w-5" />
-              Capturar Foto do Visitante
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="relative rounded-lg overflow-hidden border-2 border-primary/20 bg-black">
-              <video ref={videoRef} autoPlay playsInline className="w-full rounded-lg" />
-              <canvas ref={canvasRef} className="hidden" />
-            </div>
-            <div className="flex gap-3">
-              <Button type="button" onClick={capturePhoto} className="flex-1 gap-2">
-                <Camera className="h-4 w-4" />
-                Capturar Foto
-              </Button>
-              <Button type="button" variant="secondary" onClick={stopCamera}>
-                Cancelar
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <CameraCaptureDialog
+        open={showCameraDialog}
+        videoRef={videoRef}
+        canvasRef={canvasRef}
+        onClose={stopCamera}
+        onCapture={capturePhoto}
+      />
 
+      <BlockedVisitorsDialog
+        open={showBlockedDialog}
+        onOpenChange={setShowBlockedDialog}
+        blockedVisitors={blockedVisitors}
+        onUnblockVisitor={handleUnblockVisitor}
+      />
 
-      <Dialog open={showBlockedDialog} onOpenChange={setShowBlockedDialog}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ShieldBan className="h-5 w-5 text-destructive" />
-              Visitantes/Prestadores Bloqueados
-            </DialogTitle>
-          </DialogHeader>
-          {blockedVisitors.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">Nenhum visitante bloqueado</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Documento</TableHead>
-                  <TableHead>Motivo</TableHead>
-                  <TableHead>Data</TableHead>
-                  <TableHead className="text-right">Ação</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {blockedVisitors.map(bv => (
-                  <TableRow key={bv.id}>
-                    <TableCell className="font-medium">{bv.visitor_name}</TableCell>
-                    <TableCell>{bv.visitor_document}</TableCell>
-                    <TableCell className="text-muted-foreground text-sm">{bv.reason || '-'}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {format(new Date(bv.blocked_at), 'dd/MM/yyyy', { locale: ptBR })}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button size="sm" variant="outline" onClick={() => handleUnblockVisitor(bv.id)} className="gap-1">
-                        <ShieldCheck className="h-4 w-4" />
-                        Desbloquear
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </DialogContent>
-      </Dialog>
+      <BlockReasonDialog
+        open={showBlockReasonDialog}
+        onOpenChange={setShowBlockReasonDialog}
+        entry={blockingEntry}
+        reason={blockReason}
+        setReason={setBlockReason}
+        onConfirm={confirmBlockVisitor}
+      />
 
-      {/* Block Reason Dialog */}
-      <Dialog open={showBlockReasonDialog} onOpenChange={setShowBlockReasonDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Ban className="h-5 w-5 text-destructive" />
-              Bloquear {blockingEntry?.visitorName}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Motivo do bloqueio (opcional)</Label>
-              <Textarea
-                value={blockReason}
-                onChange={e => setBlockReason(e.target.value)}
-                placeholder="Informe o motivo do bloqueio..."
-                rows={3}
-              />
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setShowBlockReasonDialog(false)}>Cancelar</Button>
-              <Button variant="destructive" onClick={confirmBlockVisitor}>
-                <Ban className="h-4 w-4 mr-2" />
-                Confirmar Bloqueio
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Device Facial Capture Dialog */}
-      <Dialog open={showDeviceFacialDialog} onOpenChange={setShowDeviceFacialDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ScanFace className="h-5 w-5 text-primary" />
-              Captura Facial pelo Dispositivo
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Dispositivo Facial</Label>
-              <Select value={selectedFacialDeviceId} onValueChange={setSelectedFacialDeviceId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione o dispositivo..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {facialDevices.map(d => (
-                    <SelectItem key={d.id} value={d.id}>
-                      <div className="flex items-center gap-2">
-                        {d.status === 'online' ? <Wifi className="h-3 w-3 text-green-500" /> : <WifiOff className="h-3 w-3 text-destructive" />}
-                        {d.name} - {d.location}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <DeviceCaptureStatus
-              status={deviceCaptureStatus}
-              step={deviceCaptureStep}
-              progress={deviceCaptureProgress}
-              loading={deviceCaptureLoading}
-              onCancel={() => captureAbortController?.abort()}
-            />
-
-            <div className="flex gap-2">
-              <Button
-                onClick={handleDeviceCapture}
-                disabled={!selectedFacialDeviceId || deviceCaptureLoading}
-                className="flex-1 gap-2"
-              >
-                {deviceCaptureLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanFace className="h-4 w-4" />}
-                Capturar Foto
-              </Button>
-              <Button variant="secondary" onClick={() => setShowDeviceFacialDialog(false)}>
-                Cancelar
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <DeviceFacialCaptureDialog
+        open={showDeviceFacialDialog}
+        onOpenChange={setShowDeviceFacialDialog}
+        facialDevices={facialDevices}
+        selectedFacialDeviceId={selectedFacialDeviceId}
+        setSelectedFacialDeviceId={setSelectedFacialDeviceId}
+        status={deviceCaptureStatus}
+        step={deviceCaptureStep}
+        progress={deviceCaptureProgress}
+        loading={deviceCaptureLoading}
+        onCancelCapture={() => captureAbortController?.abort()}
+        onCapture={handleDeviceCapture}
+      />
     </div>;
 };

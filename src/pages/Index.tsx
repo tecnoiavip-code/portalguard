@@ -108,7 +108,11 @@ const Index = () => {
   };
 
   return (
-    <Layout>
+    <Layout
+      sidebarOpen={sidebarOpen}
+      onToggleSidebar={() => setSidebarOpen(open => !open)}
+      onCloseSidebar={() => setSidebarOpen(false)}
+    >
       <Helmet>
         <title>Painel da equipe — PortalGuard Pro</title>
         <meta name="description" content="Painel da equipe do condomínio: gerencie moradores, visitantes, prestadores, correspondências e dispositivos no PortalGuard Pro." />

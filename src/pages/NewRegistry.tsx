@@ -209,20 +209,20 @@ export const NewRegistry = () => {
     await exitEntry(entry);
   };
   return <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h2 className="text-3xl font-bold text-foreground mb-2">Novo Cadastro</h2>
-          <p className="text-muted-foreground">Registre entradas e saídas de visitantes e prestadores</p>
+          <p className="max-w-xl text-muted-foreground">Registre entradas e saídas de visitantes e prestadores</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowBlockedDialog(true)} className="gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => setShowBlockedDialog(true)} className="flex-1 gap-2 sm:flex-none">
             <ShieldBan className="h-5 w-5" />
             Bloqueados
             {blockedVisitors.length > 0 && (
               <Badge variant="destructive" className="ml-1">{blockedVisitors.length}</Badge>
             )}
           </Button>
-          <Button onClick={() => { setBadgeError(null); setIsDialogOpen(true); }} size="lg" className="gap-2 text-primary-foreground">
+          <Button onClick={() => { setBadgeError(null); setIsDialogOpen(true); }} size="lg" className="flex-1 gap-2 text-primary-foreground sm:flex-none">
             <Plus className="h-5 w-5" />
             Nova Entrada
           </Button>

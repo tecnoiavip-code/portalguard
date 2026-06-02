@@ -38,6 +38,8 @@ const tabTitles: Record<string, string> = {
   chat: 'Chat com Portaria',
 };
 
+const RESIDENT_EXTENDED_REALTIME_ENABLED = import.meta.env.VITE_RESIDENT_EXTENDED_REALTIME_ENABLED === 'true';
+
 const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }: ResidentLayoutProps) => {
   const { user, isLoading } = useAuth();
   const navigate = useNavigate();
@@ -251,7 +253,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
     loadCounts();
     const scheduleLoadCounts = createDebouncedRunner(loadCounts, 1500);
 
-    const channel = supabase
+    let channel = supabase
       .channel('resident-notifs')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (payload) => {
         const notif = payload.new as any;
@@ -268,35 +270,40 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => {
         scheduleLoadCounts();
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
-        const msg = payload.new as any;
-        if (msg.sender_type === 'staff' && msg.resident_id === residentIdRef.current) {
-          setCounts(prev => {
-            const next = { ...prev, chat: prev.chat + 1 };
-            const total = next.chat + next.notif + next.mails + next.announcements;
-            notifyResident('Nova mensagem da portaria', msg.message?.substring(0, 100) || '', {
-              tag: `chat-${msg.id}`,
-              totalBadge: total,
+      });
+
+    if (RESIDENT_EXTENDED_REALTIME_ENABLED) {
+      channel = channel
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
+          const msg = payload.new as any;
+          if (msg.sender_type === 'staff' && msg.resident_id === residentIdRef.current) {
+            setCounts(prev => {
+              const next = { ...prev, chat: prev.chat + 1 };
+              const total = next.chat + next.notif + next.mails + next.announcements;
+              notifyResident('Nova mensagem da portaria', msg.message?.substring(0, 100) || '', {
+                tag: `chat-${msg.id}`,
+                totalBadge: total,
+              });
+              prevCountsRef.current = next;
+              return next;
             });
-            prevCountsRef.current = next;
-            return next;
-          });
-        }
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, () => {
-        scheduleLoadCounts();
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mails' }, () => {
-        scheduleLoadCounts();
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'mails' }, () => {
-        scheduleLoadCounts();
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'announcements' }, () => {
-        scheduleLoadCounts();
-      })
-      .subscribe();
+          }
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, () => {
+          scheduleLoadCounts();
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mails' }, () => {
+          scheduleLoadCounts();
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'mails' }, () => {
+          scheduleLoadCounts();
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'announcements' }, () => {
+          scheduleLoadCounts();
+        });
+    }
+
+    channel.subscribe();
 
     const loadIfVisible = () => {
       if (document.visibilityState === 'visible') scheduleLoadCounts();

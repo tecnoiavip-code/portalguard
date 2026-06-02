@@ -23,52 +23,9 @@ import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { exportToCSV } from '@/lib/export-csv';
-
-const NEW_REGISTRY_DRAFT_KEY = 'new-registry-form-draft-v1';
-const VEHICLE_SUGGESTIONS_CACHE_KEY = `vehicle_suggestions_cache:${import.meta.env.VITE_SUPABASE_URL || 'local'}:v3`;
-const EMPTY_NEW_REGISTRY_FORM = {
-  visitorName: '',
-  visitorDocument: '',
-  visitorType: 'visitor' as 'visitor' | 'service_provider',
-  residentId: '',
-  purpose: '',
-  company: '',
-  vehiclePlate: '',
-  vehicleModel: '',
-  vehicleColor: '',
-  photo: '',
-  badgeNumber: '',
-};
-
-const hasRegistryFormContent = (form: typeof EMPTY_NEW_REGISTRY_FORM, visited: string) =>
-  Boolean(
-    visited ||
-    form.visitorName ||
-    form.visitorDocument ||
-    form.residentId ||
-    form.purpose ||
-    form.company ||
-    form.vehiclePlate ||
-    form.vehicleModel ||
-    form.vehicleColor ||
-    form.photo ||
-    form.badgeNumber ||
-    form.visitorType !== 'visitor'
-  );
-
-interface BlockedVisitor {
-  id: string;
-  visitor_name: string;
-  visitor_document: string;
-  reason: string | null;
-  blocked_at: string;
-  is_active: boolean;
-}
-
-const normalizeVehicleSuggestions = (values: Array<string | null | undefined>) =>
-  [...new Set(values.map(value => String(value ?? '').trim().toUpperCase()))]
-    .filter((value): value is string => Boolean(value))
-    .sort();
+import { EMPTY_NEW_REGISTRY_FORM, BlockedVisitor } from './new-registry/registry-form';
+import { useNewRegistryDraft } from './new-registry/useNewRegistryDraft';
+import { useVehicleSuggestions } from './new-registry/useVehicleSuggestions';
 
 export const NewRegistry = () => {
   const { residents } = useResidents();
@@ -97,17 +54,19 @@ export const NewRegistry = () => {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [suggestions, setSuggestions] = useState<AccessEntry[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [vehicleModelSuggestions, setVehicleModelSuggestions] = useState<string[]>([]);
-  const [vehicleColorSuggestions, setVehicleColorSuggestions] = useState<string[]>([]);
-  const [companySuggestions, setCompanySuggestions] = useState<string[]>([]);
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
   const [showColorSuggestions, setShowColorSuggestions] = useState(false);
   const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
-  const [allVehicleModels, setAllVehicleModels] = useState<string[]>([]);
-  const [allVehicleColors, setAllVehicleColors] = useState<string[]>([]);
-  const [allCompanies, setAllCompanies] = useState<string[]>([]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const {
+    vehicleModelSuggestions,
+    vehicleColorSuggestions,
+    companySuggestions,
+    filterVehicleModels,
+    filterVehicleColors,
+    filterCompanies,
+  } = useVehicleSuggestions();
 
   // Device capture states
   const [deviceCaptureLoading, setDeviceCaptureLoading] = useState(false);
@@ -119,135 +78,20 @@ export const NewRegistry = () => {
   const [showDeviceFacialDialog, setShowDeviceFacialDialog] = useState(false);
   const facialDevices = devices.filter(d => d.type === 'facial_recognition');
 
-  const clearRegistryDraft = () => {
-    try {
-      localStorage.removeItem(NEW_REGISTRY_DRAFT_KEY);
-    } catch {
-      // ignore storage errors
-    }
-  };
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(NEW_REGISTRY_DRAFT_KEY);
-      if (!raw) return;
-
-      const draft = JSON.parse(raw) as {
-        isOpen?: boolean;
-        editingId?: string;
-        visitedLocationSearch?: string;
-        formData?: Partial<typeof EMPTY_NEW_REGISTRY_FORM>;
-      };
-      const mergedForm = {
-        ...EMPTY_NEW_REGISTRY_FORM,
-        ...(draft.formData || {}),
-      };
-      const savedVisited = draft.visitedLocationSearch || '';
-      if (!draft?.isOpen && !hasRegistryFormContent(mergedForm, savedVisited)) return;
-
-      setEditingId(draft.editingId || '');
-      setVisitedLocationSearch(savedVisited);
-      setFormData(mergedForm);
-      setIsDialogOpen(true);
-    } catch {
-      // ignore invalid drafts
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isDialogOpen && !hasRegistryFormContent(formData, visitedLocationSearch)) return;
-    try {
-      localStorage.setItem(
-        NEW_REGISTRY_DRAFT_KEY,
-        JSON.stringify({
-          isOpen: isDialogOpen,
-          editingId,
-          visitedLocationSearch,
-          formData,
-        })
-      );
-    } catch {
-      // ignore storage errors
-    }
-  }, [isDialogOpen, editingId, visitedLocationSearch, formData]);
-
-  useEffect(() => {
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!isDialogOpen && !hasRegistryFormContent(formData, visitedLocationSearch)) return;
-      event.preventDefault();
-      event.returnValue = '';
-    };
-
-    const persistDraftNow = () => {
-      if (!isDialogOpen && !hasRegistryFormContent(formData, visitedLocationSearch)) return;
-      try {
-        localStorage.setItem(
-          NEW_REGISTRY_DRAFT_KEY,
-          JSON.stringify({
-            isOpen: isDialogOpen,
-            editingId,
-            visitedLocationSearch,
-            formData,
-          })
-        );
-      } catch {
-        // ignore storage errors
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    window.addEventListener('pagehide', persistDraftNow);
-    document.addEventListener('visibilitychange', persistDraftNow);
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      window.removeEventListener('pagehide', persistDraftNow);
-      document.removeEventListener('visibilitychange', persistDraftNow);
-    };
-  }, [isDialogOpen, editingId, visitedLocationSearch, formData]);
+  const { clearRegistryDraft } = useNewRegistryDraft({
+    isDialogOpen,
+    editingId,
+    visitedLocationSearch,
+    formData,
+    setIsDialogOpen,
+    setEditingId,
+    setVisitedLocationSearch,
+    setFormData,
+  });
 
   useEffect(() => {
     loadBlockedVisitors();
-    loadVehicleSuggestionsWithCache();
   }, []);
-
-  // Cache de sugestões de veículos para evitar queries desnecessárias
-  const loadVehicleSuggestionsWithCache = async () => {
-    const now = Date.now();
-    
-    try {
-      const cached = localStorage.getItem(VEHICLE_SUGGESTIONS_CACHE_KEY);
-      if (cached) {
-        const { data, timestamp } = JSON.parse(cached);
-        // Reutilizar cache por 1 hora (3600000ms)
-        if (now - timestamp < 3600000) {
-          setAllVehicleModels(data.models || []);
-          setAllVehicleColors(data.colors || []);
-          setAllCompanies(data.companies || []);
-          setCompanySuggestions((data.companies || []).slice(0, 8));
-          return;
-        }
-      }
-    } catch {
-      // ignore cache errors
-    }
-
-    // Se cache expirou ou não existe, fazer queries
-    const suggestions = await loadVehicleSuggestions();
-    
-    // Salvar novo cache
-    try {
-      localStorage.setItem(VEHICLE_SUGGESTIONS_CACHE_KEY, JSON.stringify({
-        data: {
-          models: suggestions.models,
-          colors: suggestions.colors,
-          companies: suggestions.companies,
-        },
-        timestamp: now,
-      }));
-    } catch {
-      // ignore cache save errors
-    }
-  };
 
   useEffect(() => {
     const total = Math.ceil(entries.filter(e => !e.exitTime).length / itemsPerPage);
@@ -264,53 +108,6 @@ export const NewRegistry = () => {
       .order('blocked_at', { ascending: false })
       .limit(200);
     if (!error && data) setBlockedVisitors(data as BlockedVisitor[]);
-  };
-
-  const loadVehicleSuggestions = async () => {
-    const [entryModelsRes, entryColorsRes, residentModelsRes, residentColorsRes, companiesRes] = await Promise.all([
-      supabase.from('access_entries').select('vehicle_model').not('vehicle_model', 'is', null).not('vehicle_model', 'eq', '').order('entry_time', { ascending: false }).limit(300),
-      supabase.from('access_entries').select('vehicle_color').not('vehicle_color', 'is', null).not('vehicle_color', 'eq', '').order('entry_time', { ascending: false }).limit(300),
-      supabase.from('residents').select('vehicle_model').not('vehicle_model', 'is', null).not('vehicle_model', 'eq', '').order('created_at', { ascending: false }).limit(300),
-      supabase.from('residents').select('vehicle_color').not('vehicle_color', 'is', null).not('vehicle_color', 'eq', '').order('created_at', { ascending: false }).limit(300),
-      supabase.from('access_entries').select('company').not('company', 'is', null).not('company', 'eq', '').order('entry_time', { ascending: false }).limit(300),
-    ]);
-
-    const models = normalizeVehicleSuggestions([
-      ...(entryModelsRes.data || []).map(r => r.vehicle_model),
-      ...(residentModelsRes.data || []).map(r => r.vehicle_model),
-    ]);
-    const colors = normalizeVehicleSuggestions([
-      ...(entryColorsRes.data || []).map(r => r.vehicle_color),
-      ...(residentColorsRes.data || []).map(r => r.vehicle_color),
-    ]);
-    const companies = normalizeVehicleSuggestions((companiesRes.data || []).map(r => r.company));
-
-    setAllVehicleModels(models);
-    setAllVehicleColors(colors);
-    setAllCompanies(companies);
-    setVehicleModelSuggestions(models.slice(0, 8));
-    setVehicleColorSuggestions(colors.slice(0, 8));
-    setCompanySuggestions(companies.slice(0, 8));
-
-    return { models, colors, companies };
-  };
-
-  const filterVehicleModels = (query: string) => {
-    if (!query) { setVehicleModelSuggestions(allVehicleModels.slice(0, 8)); return; }
-    const q = query.toUpperCase();
-    setVehicleModelSuggestions(allVehicleModels.filter(m => m.includes(q)).slice(0, 8));
-  };
-
-  const filterVehicleColors = (query: string) => {
-    if (!query) { setVehicleColorSuggestions(allVehicleColors.slice(0, 8)); return; }
-    const q = query.toUpperCase();
-    setVehicleColorSuggestions(allVehicleColors.filter(c => c.includes(q)).slice(0, 8));
-  };
-
-  const filterCompanies = (query: string) => {
-    if (!query) { setCompanySuggestions(allCompanies.slice(0, 8)); return; }
-    const q = query.toUpperCase();
-    setCompanySuggestions(allCompanies.filter(company => company.includes(q)).slice(0, 8));
   };
 
   const isVisitorBlocked = (document: string) => {

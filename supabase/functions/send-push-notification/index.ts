@@ -336,7 +336,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { action, user_id, title, body, tag, data } = await req.json();
+    const { action, user_id, user_ids, title, body, tag, data } = await req.json();
 
     const { data: residentRole } = await supabase
       .from("user_roles")
@@ -446,6 +446,51 @@ Deno.serve(async (req) => {
         .from("push_subscriptions")
         .select("endpoint, p256dh, auth")
         .eq("user_id", user_id);
+
+      if (!subs || subs.length === 0) {
+        return new Response(JSON.stringify({ sent: 0, message: "No subscriptions" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const payload = JSON.stringify({ title, body: body || "", tag: tag || "", data: data || {} });
+      const privateKeyJwk = JSON.parse(vapidData.private_key);
+      const result = await sendToSubscriptions(subs, payload, vapidData.public_key, privateKeyJwk);
+
+      return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Action: send-to-users - send the same push to a specific list of users
+    if (action === "send-to-users") {
+      const userIds = Array.isArray(user_ids)
+        ? Array.from(
+            new Set(
+              user_ids.filter((id: unknown): id is string => typeof id === "string" && id.length > 0)
+            )
+          )
+        : [];
+
+      if (userIds.length === 0 || !title) {
+        return new Response(JSON.stringify({ error: "user_ids and title required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const vapidData = await getVapidKeys();
+      if (!vapidData) {
+        return new Response(JSON.stringify({ error: "VAPID keys not configured" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data: subs } = await supabase
+        .from("push_subscriptions")
+        .select("endpoint, p256dh, auth, user_id")
+        .in("user_id", userIds);
 
       if (!subs || subs.length === 0) {
         return new Response(JSON.stringify({ sent: 0, message: "No subscriptions" }), {

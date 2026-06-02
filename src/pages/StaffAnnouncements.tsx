@@ -23,12 +23,13 @@ import { Megaphone, Send, Paperclip, X, Eye, FileText, Loader2, Trash2, ChevronL
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { sendPushToUser } from '@/lib/push-subscription';
+import { sendPushToUsers } from '@/lib/push-subscription';
 import { createDebouncedRunner } from '@/lib/debounce';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 const STAFF_ANNOUNCEMENT_DRAFT_KEY = 'staff-announcement-draft-v1';
+const NOTIFICATION_INSERT_CHUNK_SIZE = 500;
 
 interface Announcement {
   id: string;
@@ -200,26 +201,33 @@ const StaffAnnouncements = () => {
         }
       }
 
-      // Notify all residents via push
+      // Notify all residents via in-app notification and push
       const { data: residents } = await supabase
         .from('residents')
         .select('auth_user_id');
       if (residents) {
-        const pushTitle = priority === 'urgent' ? '🚨 Comunicado urgente' : '📢 Novo comunicado';
-        for (const r of residents) {
-          if (r.auth_user_id) {
-            // In-app notification
-            await supabase.from('notifications').insert({
-              user_id: r.auth_user_id,
-              title: pushTitle,
-              body: title.trim().substring(0, 100),
-              type: 'announcement',
-              related_id: ann?.id,
-            });
-            // Push notification
-            sendPushToUser(r.auth_user_id, pushTitle, title.trim().substring(0, 100), 'announcement');
-          }
+        const recipientIds = Array.from(new Set(
+          residents
+            .map((resident) => resident.auth_user_id)
+            .filter(Boolean) as string[]
+        ));
+        const pushTitle = priority === 'urgent' ? 'Comunicado urgente' : 'Novo comunicado';
+        const notificationBody = title.trim().substring(0, 100);
+        const notificationRows = recipientIds.map((userId) => ({
+          user_id: userId,
+          title: pushTitle,
+          body: notificationBody,
+          type: 'announcement',
+          related_id: ann?.id,
+        }));
+
+        for (let i = 0; i < notificationRows.length; i += NOTIFICATION_INSERT_CHUNK_SIZE) {
+          const chunk = notificationRows.slice(i, i + NOTIFICATION_INSERT_CHUNK_SIZE);
+          const { error: notificationError } = await supabase.from('notifications').insert(chunk);
+          if (notificationError) throw notificationError;
         }
+
+        sendPushToUsers(recipientIds, pushTitle, notificationBody, 'announcement');
       }
 
       toast.success('Comunicado enviado para todos os moradores!');

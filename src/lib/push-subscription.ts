@@ -137,6 +137,27 @@ export async function sendPushToUser(
 }
 
 /**
+ * Send the same push notification to many users in a single Edge Function call
+ */
+export async function sendPushToUsers(
+  userIds: string[],
+  title: string,
+  body: string,
+  tag?: string
+): Promise<void> {
+  const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)));
+  if (uniqueUserIds.length === 0) return;
+
+  try {
+    await supabase.functions.invoke('send-push-notification', {
+      body: { action: 'send-to-users', user_ids: uniqueUserIds, title, body, tag },
+    });
+  } catch (e) {
+    console.warn('Failed to send push to users:', e);
+  }
+}
+
+/**
  * Send a push notification to all staff
  */
 export async function sendPushToStaff(

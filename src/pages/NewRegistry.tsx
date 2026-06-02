@@ -21,7 +21,8 @@ import { CameraCaptureDialog } from './new-registry/CameraCaptureDialog';
 import { BlockedVisitorsDialog } from './new-registry/BlockedVisitorsDialog';
 import { BlockReasonDialog } from './new-registry/BlockReasonDialog';
 import { DeviceFacialCaptureDialog } from './new-registry/DeviceFacialCaptureDialog';
-import { EMPTY_NEW_REGISTRY_FORM, BlockedVisitor } from './new-registry/registry-form';
+import { EMPTY_NEW_REGISTRY_FORM } from './new-registry/registry-form';
+import { useBlockedVisitors } from './new-registry/useBlockedVisitors';
 import { useNewRegistryDraft } from './new-registry/useNewRegistryDraft';
 import { useVehicleSuggestions } from './new-registry/useVehicleSuggestions';
 
@@ -37,11 +38,8 @@ export const NewRegistry = () => {
   const [visitedLocationSearch, setVisitedLocationSearch] = useState('');
   const [showResidentSuggestions, setShowResidentSuggestions] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [blockedVisitors, setBlockedVisitors] = useState<BlockedVisitor[]>([]);
   const [showBlockedDialog, setShowBlockedDialog] = useState(false);
-  const [blockReason, setBlockReason] = useState('');
   const [badgeError, setBadgeError] = useState<string | null>(null);
-  const [blockingEntry, setBlockingEntry] = useState<AccessEntry | null>(null);
   const [showBlockReasonDialog, setShowBlockReasonDialog] = useState(false);
   const [selectedDetailEntry, setSelectedDetailEntry] = useState<AccessEntry | null>(null);
   const itemsPerPage = 12;
@@ -65,6 +63,17 @@ export const NewRegistry = () => {
     filterVehicleColors,
     filterCompanies,
   } = useVehicleSuggestions();
+  const {
+    blockedVisitors,
+    blockingEntry,
+    blockReason,
+    setBlockReason,
+    isVisitorBlocked,
+    getBlockedReason,
+    beginBlockVisitor,
+    confirmBlockVisitor,
+    unblockVisitor,
+  } = useBlockedVisitors();
 
   // Device capture states
   const [deviceCaptureLoading, setDeviceCaptureLoading] = useState(false);
@@ -88,64 +97,20 @@ export const NewRegistry = () => {
   });
 
   useEffect(() => {
-    loadBlockedVisitors();
-  }, []);
-
-  useEffect(() => {
     const total = Math.ceil(entries.filter(e => !e.exitTime).length / itemsPerPage);
     if (total > 0 && currentPage > total) {
       setCurrentPage(total);
     }
   }, [entries, currentPage]);
 
-  const loadBlockedVisitors = async () => {
-    const { data, error } = await supabase
-      .from('blocked_visitors')
-      .select('id, visitor_name, visitor_document, reason, blocked_at, is_active')
-      .eq('is_active', true)
-      .order('blocked_at', { ascending: false })
-      .limit(200);
-    if (!error && data) setBlockedVisitors(data as BlockedVisitor[]);
-  };
-
-  const isVisitorBlocked = (document: string) => {
-    return blockedVisitors.some(b => b.visitor_document === document && b.is_active);
-  };
-
-  const handleBlockVisitor = async (entry: AccessEntry) => {
-    setBlockingEntry(entry);
-    setBlockReason('');
+  const handleBlockVisitor = (entry: AccessEntry) => {
+    beginBlockVisitor(entry);
     setShowBlockReasonDialog(true);
   };
 
-  const confirmBlockVisitor = async () => {
-    if (!blockingEntry) return;
-    const { error } = await supabase.from('blocked_visitors').insert({
-      visitor_name: blockingEntry.visitorName,
-      visitor_document: blockingEntry.visitorDocument,
-      reason: blockReason || null,
-    });
-    if (error) {
-      toast.error('Erro ao bloquear visitante');
-      return;
-    }
-    toast.success(`${blockingEntry.visitorName} foi bloqueado`);
-    setShowBlockReasonDialog(false);
-    setBlockingEntry(null);
-    loadBlockedVisitors();
-  };
-
-  const handleUnblockVisitor = async (id: string) => {
-    const { error } = await supabase
-      .from('blocked_visitors')
-      .update({ is_active: false })
-      .eq('id', id);
-    if (error) {
-      toast.error('Erro ao desbloquear visitante');
-      return;
-    }
-    toast.success('Visitante desbloqueado');
-    loadBlockedVisitors();
+  const handleConfirmBlockVisitor = async () => {
+    const blocked = await confirmBlockVisitor();
+    if (blocked) setShowBlockReasonDialog(false);
   };
 
   const activeEntries = entries.filter(e => !e.exitTime);
@@ -610,7 +575,7 @@ export const NewRegistry = () => {
         onCancel={resetForm}
         onKeepOpen={() => setIsDialogOpen(true)}
         isVisitorBlocked={isVisitorBlocked}
-        blockedReason={blockedVisitors.find(b => b.visitor_document === formData.visitorDocument)?.reason || null}
+        blockedReason={getBlockedReason(formData.visitorDocument)}
         badgeError={badgeError}
         onClearBadgeError={() => setBadgeError(null)}
         showSuggestions={showSuggestions}
@@ -653,7 +618,7 @@ export const NewRegistry = () => {
         open={showBlockedDialog}
         onOpenChange={setShowBlockedDialog}
         blockedVisitors={blockedVisitors}
-        onUnblockVisitor={handleUnblockVisitor}
+        onUnblockVisitor={unblockVisitor}
       />
 
       <BlockReasonDialog
@@ -662,7 +627,7 @@ export const NewRegistry = () => {
         entry={blockingEntry}
         reason={blockReason}
         setReason={setBlockReason}
-        onConfirm={confirmBlockVisitor}
+        onConfirm={handleConfirmBlockVisitor}
       />
 
       <DeviceFacialCaptureDialog

@@ -45,6 +45,8 @@ const formatDateLabel = (dateStr: string) => {
   return format(date, "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
 };
 
+const STAFF_CHAT_GLOBAL_REALTIME_ENABLED = import.meta.env.VITE_STAFF_CHAT_GLOBAL_REALTIME_ENABLED !== 'false';
+
 const StaffChat = () => {
   const { user } = useAuth();
   const [threads, setThreads] = useState<ChatThread[]>([]);
@@ -118,23 +120,35 @@ const StaffChat = () => {
   // Global listener: play sound when any resident sends a message (even if not viewing that thread)
   useEffect(() => {
     const scheduleLoadThreads = createDebouncedRunner(loadThreads, 1500);
-    const channel = supabase
-      .channel('staff-chat-global-sound')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'chat_messages',
-      }, (payload) => {
-        const msg = payload.new as any;
-        if (msg.sender_type === 'resident') {
-          playNotificationSound();
-          if (!selectedThread) scheduleLoadThreads();
-        }
-      })
-      .subscribe();
+    const loadIfVisible = () => {
+      if (document.visibilityState === 'visible' && !selectedThread) {
+        scheduleLoadThreads();
+      }
+    };
+
+    window.addEventListener('focus', loadIfVisible);
+    document.addEventListener('visibilitychange', loadIfVisible);
+
+    const channel = STAFF_CHAT_GLOBAL_REALTIME_ENABLED
+      ? supabase
+          .channel('staff-chat-global-sound')
+          .on('postgres_changes', {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'chat_messages',
+            filter: 'sender_type=eq.resident',
+          }, () => {
+            playNotificationSound();
+            if (!selectedThread) scheduleLoadThreads();
+          })
+          .subscribe()
+      : null;
+
     return () => {
       scheduleLoadThreads.cancel();
-      supabase.removeChannel(channel);
+      window.removeEventListener('focus', loadIfVisible);
+      document.removeEventListener('visibilitychange', loadIfVisible);
+      if (channel) supabase.removeChannel(channel);
     };
   }, [selectedThread]);
 

@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 import { NewRegistryFormData } from '../registry-form';
+import { AutocompleteField } from './AutocompleteField';
 
 interface VehicleDetailsSectionProps {
   formData: NewRegistryFormData;
@@ -45,51 +46,37 @@ export function VehicleDetailsSection({
         }} placeholder="ABC-1234" />
       </div>
 
-      <div className="space-y-2 relative">
-        <Label htmlFor="vehicleModel">Modelo</Label>
-        <Input
-          id="vm_field"
-          name="vm_field"
-          value={formData.vehicleModel}
-          autoComplete="off"
-          onFocus={() => { filterVehicleModels(formData.vehicleModel); setShowModelSuggestions(true); }}
-          onChange={event => { setFormData({ ...formData, vehicleModel: event.target.value }); filterVehicleModels(event.target.value); setShowModelSuggestions(true); }}
-          onBlur={() => setTimeout(() => setShowModelSuggestions(false), 150)}
-          placeholder="Honda Civic"
-        />
-        {showModelSuggestions && vehicleModelSuggestions.length > 0 && (
-          <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg max-h-40 overflow-y-auto">
-            {vehicleModelSuggestions.map(model => (
-              <button key={model} type="button" className="w-full text-left px-3 py-1.5 hover:bg-accent transition-colors text-sm" onMouseDown={(event) => event.preventDefault()} onClick={() => { setFormData({ ...formData, vehicleModel: model }); setShowModelSuggestions(false); }}>
-                {model}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      <AutocompleteField
+        id="vm_field"
+        name="vm_field"
+        label="Modelo"
+        value={formData.vehicleModel}
+        placeholder="Honda Civic"
+        suggestions={vehicleModelSuggestions}
+        showSuggestions={showModelSuggestions}
+        setShowSuggestions={setShowModelSuggestions}
+        onBeforeOpen={filterVehicleModels}
+        onValueChange={(vehicleModel) => setFormData(current => ({ ...current, vehicleModel }))}
+        onSuggestionSelect={(vehicleModel) => setFormData(current => ({ ...current, vehicleModel }))}
+        getSuggestionKey={(vehicleModel) => vehicleModel}
+        renderSuggestion={(vehicleModel) => vehicleModel}
+      />
 
-      <div className="space-y-2 relative">
-        <Label htmlFor="vehicleColor">Cor</Label>
-        <Input
-          id="vc_field"
-          name="vc_field"
-          value={formData.vehicleColor}
-          autoComplete="off"
-          onFocus={() => { filterVehicleColors(formData.vehicleColor); setShowColorSuggestions(true); }}
-          onChange={event => { setFormData({ ...formData, vehicleColor: event.target.value }); filterVehicleColors(event.target.value); setShowColorSuggestions(true); }}
-          onBlur={() => setTimeout(() => setShowColorSuggestions(false), 150)}
-          placeholder="Preto"
-        />
-        {showColorSuggestions && vehicleColorSuggestions.length > 0 && (
-          <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg max-h-40 overflow-y-auto">
-            {vehicleColorSuggestions.map(color => (
-              <button key={color} type="button" className="w-full text-left px-3 py-1.5 hover:bg-accent transition-colors text-sm" onMouseDown={(event) => event.preventDefault()} onClick={() => { setFormData({ ...formData, vehicleColor: color }); setShowColorSuggestions(false); }}>
-                {color}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      <AutocompleteField
+        id="vc_field"
+        name="vc_field"
+        label="Cor"
+        value={formData.vehicleColor}
+        placeholder="Preto"
+        suggestions={vehicleColorSuggestions}
+        showSuggestions={showColorSuggestions}
+        setShowSuggestions={setShowColorSuggestions}
+        onBeforeOpen={filterVehicleColors}
+        onValueChange={(vehicleColor) => setFormData(current => ({ ...current, vehicleColor }))}
+        onSuggestionSelect={(vehicleColor) => setFormData(current => ({ ...current, vehicleColor }))}
+        getSuggestionKey={(vehicleColor) => vehicleColor}
+        renderSuggestion={(vehicleColor) => vehicleColor}
+      />
 
       <div className="space-y-2">
         <Label htmlFor="purpose">Motivo</Label>

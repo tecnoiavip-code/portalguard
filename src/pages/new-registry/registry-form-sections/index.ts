@@ -1,3 +1,4 @@
+export { AutocompleteField } from './AutocompleteField';
 export { FormActions } from './FormActions';
 export { PhotoSection } from './PhotoSection';
 export { RegistryFormAlerts } from './RegistryFormAlerts';

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Plus, ShieldBan } from 'lucide-react';
 import { AccessEntry } from '@/types';
@@ -6,7 +6,6 @@ import { useAccessEntries } from '@/hooks/useAccessEntries';
 import { useResidents } from '@/hooks/useResidents';
 import { useDevices } from '@/hooks/useDevices';
 import { toast } from 'sonner';
-import { capturePhotoFromDevice } from '@/lib/device-capture';
 import { Badge } from '@/components/ui/badge';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -24,6 +23,7 @@ import { EMPTY_NEW_REGISTRY_FORM } from './new-registry/registry-form';
 import { useBlockedVisitors } from './new-registry/useBlockedVisitors';
 import { useNewRegistryDraft } from './new-registry/useNewRegistryDraft';
 import { useRegistryEntryActions } from './new-registry/useRegistryEntryActions';
+import { useRegistryPhotoCapture } from './new-registry/useRegistryPhotoCapture';
 import { useVehicleSuggestions } from './new-registry/useVehicleSuggestions';
 
 export const NewRegistry = () => {
@@ -44,16 +44,11 @@ export const NewRegistry = () => {
   const itemsPerPage = 12;
   const itemsPerPageTable = 10;
   const [formData, setFormData] = useState({ ...EMPTY_NEW_REGISTRY_FORM });
-  const [showCamera, setShowCamera] = useState(false);
-  const [showCameraDialog, setShowCameraDialog] = useState(false);
-  const [stream, setStream] = useState<MediaStream | null>(null);
   const [suggestions, setSuggestions] = useState<AccessEntry[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
   const [showColorSuggestions, setShowColorSuggestions] = useState(false);
   const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const facialDevices = useMemo(
     () => devices.filter(d => d.type === 'facial_recognition'),
     [devices]
@@ -78,14 +73,6 @@ export const NewRegistry = () => {
     unblockVisitor,
   } = useBlockedVisitors();
 
-  // Device capture states
-  const [deviceCaptureLoading, setDeviceCaptureLoading] = useState(false);
-  const [deviceCaptureStatus, setDeviceCaptureStatus] = useState('');
-  const [deviceCaptureStep, setDeviceCaptureStep] = useState<import('@/lib/device-capture').CaptureStep | undefined>();
-  const [deviceCaptureProgress, setDeviceCaptureProgress] = useState(0);
-  const [captureAbortController, setCaptureAbortController] = useState<AbortController | null>(null);
-  const [selectedFacialDeviceId, setSelectedFacialDeviceId] = useState('');
-  const [showDeviceFacialDialog, setShowDeviceFacialDialog] = useState(false);
   const {
     badgeError,
     setBadgeError,
@@ -101,6 +88,31 @@ export const NewRegistry = () => {
     suggestions,
     isVisitorBlocked,
     saveEntry,
+  });
+  const {
+    videoRef,
+    canvasRef,
+    showCameraDialog,
+    startCamera,
+    stopCamera,
+    capturePhoto,
+    handlePhotoUpload,
+    showDeviceFacialDialog,
+    setShowDeviceFacialDialog,
+    selectedFacialDeviceId,
+    setSelectedFacialDeviceId,
+    deviceCaptureStatus,
+    deviceCaptureStep,
+    deviceCaptureProgress,
+    deviceCaptureLoading,
+    openDeviceFacialDialog,
+    cancelDeviceCapture,
+    handleDeviceCapture,
+  } = useRegistryPhotoCapture({
+    devices,
+    residents,
+    formData,
+    setFormData,
   });
 
   const { clearRegistryDraft } = useNewRegistryDraft({
@@ -201,107 +213,6 @@ export const NewRegistry = () => {
     setShowSuggestions(false);
     toast.success('Dados preenchidos automaticamente! Atribua um novo crachá.');
   };
-  const startCamera = async () => {
-    try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
-      });
-      setStream(mediaStream);
-      setShowCamera(true);
-      setShowCameraDialog(true);
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = mediaStream;
-        }
-      }, 200);
-    } catch (error) {
-      toast.error('Não foi possível acessar a câmera');
-    }
-  };
-  const stopCamera = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
-    }
-    setShowCamera(false);
-    setShowCameraDialog(false);
-  };
-  const capturePhoto = () => {
-    if (videoRef.current && canvasRef.current) {
-      const context = canvasRef.current.getContext('2d');
-      if (context) {
-        canvasRef.current.width = videoRef.current.videoWidth;
-        canvasRef.current.height = videoRef.current.videoHeight;
-        context.drawImage(videoRef.current, 0, 0);
-        const photoData = canvasRef.current.toDataURL('image/jpeg');
-        setFormData({
-          ...formData,
-          photo: photoData
-        });
-        stopCamera();
-        toast.success('Foto capturada com sucesso!');
-      }
-    }
-  };
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData({
-          ...formData,
-          photo: reader.result as string
-        });
-        toast.success('Foto carregada com sucesso!');
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleDeviceCapture = async () => {
-    const device = devices.find(d => d.id === selectedFacialDeviceId);
-    if (!device) {
-      toast.error('Selecione um dispositivo facial.');
-      return;
-    }
-    const abortCtrl = new AbortController();
-    setCaptureAbortController(abortCtrl);
-    setDeviceCaptureLoading(true);
-    setDeviceCaptureStatus('Iniciando...');
-    setDeviceCaptureStep('preparing');
-    setDeviceCaptureProgress(5);
-    try {
-      const resident = residents.find(r => r.id === formData.residentId);
-      const personInfo = formData.visitorName && formData.visitorDocument ? {
-        name: formData.visitorName,
-        apartment: resident?.apartment,
-        document: formData.visitorDocument,
-        identifier: `sp-${formData.visitorDocument}`,
-        registration: formData.visitorDocument,
-      } : undefined;
-      const photo = await capturePhotoFromDevice(device, (msg, step, progress) => {
-        setDeviceCaptureStatus(msg);
-        if (step) setDeviceCaptureStep(step);
-        if (progress !== undefined) setDeviceCaptureProgress(progress);
-      }, abortCtrl.signal, personInfo);
-      if (photo) {
-        setFormData(prev => ({ ...prev, photo }));
-        setShowDeviceFacialDialog(false);
-        setDeviceCaptureStatus('');
-        setDeviceCaptureStep(undefined);
-        setDeviceCaptureProgress(0);
-        toast.success('Foto capturada pelo dispositivo!');
-      }
-    } catch (err: any) {
-      if (err.name === 'AbortError') return;
-      const isNetworkError = err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError');
-      toast.error(isNetworkError ? 'Não foi possível conectar ao dispositivo.' : `Erro: ${err.message}`);
-    } finally {
-      setDeviceCaptureLoading(false);
-      setCaptureAbortController(null);
-    }
-  };
-
   const handleEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     const registered = await registerEntry();
@@ -490,7 +401,7 @@ export const NewRegistry = () => {
         filterVehicleColors={filterVehicleColors}
         onStartCamera={startCamera}
         facialDevices={facialDevices}
-        onOpenDeviceFacialDialog={() => setShowDeviceFacialDialog(true)}
+        onOpenDeviceFacialDialog={openDeviceFacialDialog}
         onPhotoUpload={handlePhotoUpload}
       />
 
@@ -528,7 +439,7 @@ export const NewRegistry = () => {
         step={deviceCaptureStep}
         progress={deviceCaptureProgress}
         loading={deviceCaptureLoading}
-        onCancelCapture={() => captureAbortController?.abort()}
+        onCancelCapture={cancelDeviceCapture}
         onCapture={handleDeviceCapture}
       />
     </div>;

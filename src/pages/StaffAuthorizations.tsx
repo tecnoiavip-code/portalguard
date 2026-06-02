@@ -108,10 +108,16 @@ const StaffAuthorizations = () => {
 
   const handleReview = async (id: string, status: 'approved' | 'rejected') => {
     const auth = auths.find(a => a.id === id);
-    await supabase
+    const { error } = await supabase
       .from('visitor_authorizations')
       .update({ status, staff_notes: staffNotes || null, reviewed_by: user?.id } as any)
       .eq('id', id);
+
+    if (error) {
+      console.error('Error reviewing authorization:', error);
+      toast.error('Erro ao revisar autorização');
+      return;
+    }
 
     await recordAuditLog('review', 'visitor_authorization', id, `Autorização ${status === 'approved' ? 'aprovada' : 'rejeitada'}: ${auth?.visitor_name || id}`, {
       status,
@@ -146,12 +152,17 @@ const StaffAuthorizations = () => {
   const handleBulkReview = async (items: (Authorization & { resident?: ResidentInfo })[], status: 'approved' | 'rejected') => {
     const pendingItems = items.filter(a => a.status === 'pending');
     if (pendingItems.length === 0) return;
+    const pendingIds = pendingItems.map((item) => item.id);
 
-    for (const item of pendingItems) {
-      await supabase
-        .from('visitor_authorizations')
-        .update({ status, staff_notes: staffNotes || null, reviewed_by: user?.id } as any)
-        .eq('id', item.id);
+    const { error } = await supabase
+      .from('visitor_authorizations')
+      .update({ status, staff_notes: staffNotes || null, reviewed_by: user?.id } as any)
+      .in('id', pendingIds);
+
+    if (error) {
+      console.error('Error bulk reviewing authorizations:', error);
+      toast.error('Erro ao revisar lista de convidados');
+      return;
     }
 
     // Notify resident
@@ -160,7 +171,7 @@ const StaffAuthorizations = () => {
       status,
       count: pendingItems.length,
       residentId: first.resident_id,
-      authorizationIds: pendingItems.map((item) => item.id),
+      authorizationIds: pendingIds,
       hasStaffNotes: Boolean(staffNotes),
     });
 

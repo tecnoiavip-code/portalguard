@@ -5,13 +5,7 @@ import { AccessEntry } from '@/types';
 import { useAccessEntries } from '@/hooks/useAccessEntries';
 import { useResidents } from '@/hooks/useResidents';
 import { useDevices } from '@/hooks/useDevices';
-import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import { exportToCSV } from '@/lib/export-csv';
 import { ActiveEntriesSection } from './new-registry/ActiveEntriesSection';
 import { ActiveEntryDetailsDialog } from './new-registry/ActiveEntryDetailsDialog';
 import { RegistryFormDialog } from './new-registry/RegistryFormDialog';
@@ -23,6 +17,7 @@ import { EMPTY_NEW_REGISTRY_FORM } from './new-registry/registry-form';
 import { useBlockedVisitors } from './new-registry/useBlockedVisitors';
 import { useNewRegistryDraft } from './new-registry/useNewRegistryDraft';
 import { useRegistryEntryActions } from './new-registry/useRegistryEntryActions';
+import { useRegistryExports } from './new-registry/useRegistryExports';
 import { useRegistryPhotoCapture } from './new-registry/useRegistryPhotoCapture';
 import { useVehicleSuggestions } from './new-registry/useVehicleSuggestions';
 import { useVisitorSuggestions } from './new-registry/useVisitorSuggestions';
@@ -164,6 +159,14 @@ export const NewRegistry = () => {
   const totalPagesAll = Math.ceil(filteredAllEntries.length / itemsPerPageTable);
   const paginatedAllEntries = filteredAllEntries.slice((currentPageAll - 1) * itemsPerPageTable, currentPageAll * itemsPerPageTable);
   const filteredResidents = residents.filter(r => r.name.toLowerCase().includes(visitedLocationSearch.toLowerCase()) || r.apartment.toLowerCase().includes(visitedLocationSearch.toLowerCase()));
+  const {
+    exportActiveEntriesToPDF,
+    exportActiveEntriesToCSV,
+  } = useRegistryExports({
+    filteredActiveEntries,
+    filteredAllEntries,
+    residents,
+  });
   
   const handleVisitedLocationSelect = (residentId: string, residentName: string, apartment: string) => {
     setVisitedLocationSearch(`${residentName} - ${apartment}`);
@@ -203,66 +206,6 @@ export const NewRegistry = () => {
   const handleDelete = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir este cadastro?')) return;
     await deleteEntry(id);
-  };
-  const exportActiveEntriesToPDF = () => {
-    const doc = new jsPDF();
-    doc.text('Cadastros Ativos', 14, 15);
-    doc.text(`Data: ${format(new Date(), 'dd/MM/yyyy HH:mm', {
-      locale: ptBR
-    })}`, 14, 22);
-    const tableData = filteredActiveEntries.map(entry => {
-      const resident = residents.find(r => r.id === entry.residentId);
-      return [entry.visitorName, entry.visitorDocument, resident?.name || '-', resident?.apartment || '-', entry.visitorType === 'visitor' ? 'Visitante' : 'Prestador', entry.badgeNumber || '-', format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', {
-        locale: ptBR
-      })];
-    });
-    autoTable(doc, {
-      head: [['Nome', 'Documento', 'Morador', 'Apt', 'Tipo', 'Crachá', 'Entrada']],
-      body: tableData,
-      startY: 28
-    });
-    doc.save(`cadastros-ativos-${format(new Date(), 'dd-MM-yyyy')}.pdf`);
-    toast.success('PDF gerado com sucesso');
-  };
-  const exportActiveEntriesToCSV = () => {
-    const headers = ['Nome', 'Documento', 'Morador', 'Apt', 'Tipo', 'Crachá', 'Entrada'];
-    const rows = filteredActiveEntries.map(entry => {
-      const resident = residents.find(r => r.id === entry.residentId);
-      return [entry.visitorName, entry.visitorDocument, resident?.name || '-', resident?.apartment || '-', entry.visitorType === 'visitor' ? 'Visitante' : 'Prestador', entry.badgeNumber || '-', format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', { locale: ptBR })];
-    });
-    exportToCSV(`cadastros-ativos-${format(new Date(), 'dd-MM-yyyy')}`, headers, rows);
-    toast.success('CSV gerado com sucesso');
-  };
-  const exportAllEntriesToPDF = () => {
-    const doc = new jsPDF();
-    doc.text('Todos os Cadastros', 14, 15);
-    doc.text(`Data: ${format(new Date(), 'dd/MM/yyyy HH:mm', {
-      locale: ptBR
-    })}`, 14, 22);
-    const tableData = filteredAllEntries.map(entry => {
-      const resident = residents.find(r => r.id === entry.residentId);
-      return [entry.visitorName, entry.visitorDocument, resident?.name || '-', resident?.apartment || '-', entry.badgeNumber || '-', format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', {
-        locale: ptBR
-      }), entry.exitTime ? format(new Date(entry.exitTime), 'dd/MM/yyyy HH:mm', {
-        locale: ptBR
-      }) : 'Ativo'];
-    });
-    autoTable(doc, {
-      head: [['Nome', 'Documento', 'Morador', 'Apt', 'Crachá', 'Entrada', 'Saída']],
-      body: tableData,
-      startY: 28
-    });
-    doc.save(`todos-cadastros-${format(new Date(), 'dd-MM-yyyy')}.pdf`);
-    toast.success('PDF gerado com sucesso');
-  };
-  const exportAllEntriesToCSV = () => {
-    const headers = ['Nome', 'Documento', 'Morador', 'Apt', 'Crachá', 'Entrada', 'Saída'];
-    const rows = filteredAllEntries.map(entry => {
-      const resident = residents.find(r => r.id === entry.residentId);
-      return [entry.visitorName, entry.visitorDocument, resident?.name || '-', resident?.apartment || '-', entry.badgeNumber || '-', format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', { locale: ptBR }), entry.exitTime ? format(new Date(entry.exitTime), 'dd/MM/yyyy HH:mm', { locale: ptBR }) : 'Ativo'];
-    });
-    exportToCSV(`todos-cadastros-${format(new Date(), 'dd-MM-yyyy')}`, headers, rows);
-    toast.success('CSV gerado com sucesso');
   };
   const resetForm = () => {
     setEditingId('');

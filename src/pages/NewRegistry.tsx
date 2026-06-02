@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Plus, ShieldBan } from 'lucide-react';
 import { AccessEntry } from '@/types';
@@ -18,6 +18,7 @@ import { useBlockedVisitors } from './new-registry/useBlockedVisitors';
 import { useNewRegistryDraft } from './new-registry/useNewRegistryDraft';
 import { useRegistryEntryActions } from './new-registry/useRegistryEntryActions';
 import { useRegistryExports } from './new-registry/useRegistryExports';
+import { useRegistryListState } from './new-registry/useRegistryListState';
 import { useRegistryPhotoCapture } from './new-registry/useRegistryPhotoCapture';
 import { useVehicleSuggestions } from './new-registry/useVehicleSuggestions';
 import { useVisitorSuggestions } from './new-registry/useVisitorSuggestions';
@@ -26,19 +27,13 @@ export const NewRegistry = () => {
   const { residents } = useResidents();
   const { devices } = useDevices();
   const { entries: allEntries, saveEntry, deleteEntry } = useAccessEntries();
-  const entries = allEntries.filter(e => !e.exitTime);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string>('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [currentPageAll, setCurrentPageAll] = useState(1);
   const [visitedLocationSearch, setVisitedLocationSearch] = useState('');
   const [showResidentSuggestions, setShowResidentSuggestions] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
   const [showBlockedDialog, setShowBlockedDialog] = useState(false);
   const [showBlockReasonDialog, setShowBlockReasonDialog] = useState(false);
   const [selectedDetailEntry, setSelectedDetailEntry] = useState<AccessEntry | null>(null);
-  const itemsPerPage = 12;
-  const itemsPerPageTable = 10;
   const [formData, setFormData] = useState({ ...EMPTY_NEW_REGISTRY_FORM });
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
   const [showColorSuggestions, setShowColorSuggestions] = useState(false);
@@ -55,6 +50,17 @@ export const NewRegistry = () => {
     filterVehicleColors,
     filterCompanies,
   } = useVehicleSuggestions();
+  const {
+    activeEntries,
+    filteredActiveEntries,
+    filteredAllEntries,
+    paginatedEntries,
+    searchTerm,
+    currentPage,
+    totalPages,
+    setCurrentPage,
+    handleSearchChange,
+  } = useRegistryListState(allEntries);
   const {
     suggestions,
     showSuggestions,
@@ -130,13 +136,6 @@ export const NewRegistry = () => {
     setFormData,
   });
 
-  useEffect(() => {
-    const total = Math.ceil(entries.filter(e => !e.exitTime).length / itemsPerPage);
-    if (total > 0 && currentPage > total) {
-      setCurrentPage(total);
-    }
-  }, [entries, currentPage]);
-
   const handleBlockVisitor = (entry: AccessEntry) => {
     beginBlockVisitor(entry);
     setShowBlockReasonDialog(true);
@@ -147,17 +146,6 @@ export const NewRegistry = () => {
     if (blocked) setShowBlockReasonDialog(false);
   };
 
-  const activeEntries = entries.filter(e => !e.exitTime);
-  const filteredActiveEntries = activeEntries.filter(entry => entry.visitorName.toLowerCase().includes(searchTerm.toLowerCase()) || entry.apartment.toLowerCase().includes(searchTerm.toLowerCase()) || entry.visitorDocument.toLowerCase().includes(searchTerm.toLowerCase()));
-  const totalPages = Math.ceil(filteredActiveEntries.length / itemsPerPage);
-  const safePage = Math.max(1, Math.min(currentPage, totalPages || 1));
-  if (safePage !== currentPage && totalPages > 0) {
-    // Will be corrected on next render via useEffect below
-  }
-  const paginatedEntries = filteredActiveEntries.slice((safePage - 1) * itemsPerPage, safePage * itemsPerPage);
-  const filteredAllEntries = allEntries.filter(entry => entry.visitorName.toLowerCase().includes(searchTerm.toLowerCase()) || entry.apartment.toLowerCase().includes(searchTerm.toLowerCase()) || entry.visitorDocument.toLowerCase().includes(searchTerm.toLowerCase()));
-  const totalPagesAll = Math.ceil(filteredAllEntries.length / itemsPerPageTable);
-  const paginatedAllEntries = filteredAllEntries.slice((currentPageAll - 1) * itemsPerPageTable, currentPageAll * itemsPerPageTable);
   const filteredResidents = residents.filter(r => r.name.toLowerCase().includes(visitedLocationSearch.toLowerCase()) || r.apartment.toLowerCase().includes(visitedLocationSearch.toLowerCase()));
   const {
     exportActiveEntriesToPDF,
@@ -246,11 +234,7 @@ export const NewRegistry = () => {
         searchTerm={searchTerm}
         currentPage={currentPage}
         totalPages={totalPages}
-        onSearchChange={(value) => {
-          setSearchTerm(value);
-          setCurrentPage(1);
-          setCurrentPageAll(1);
-        }}
+        onSearchChange={handleSearchChange}
         onPageChange={setCurrentPage}
         onExportPDF={exportActiveEntriesToPDF}
         onExportCSV={exportActiveEntriesToCSV}

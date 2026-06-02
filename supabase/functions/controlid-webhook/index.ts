@@ -140,12 +140,17 @@ const MAX_REQUESTS_PER_WINDOW = 200;
 // Throttle status writes to keep push responses fast and stable
 const lastDeviceStatusWriteMap = new Map<string, number>();
 const deviceTypeCache = new Map<string, string | null>();
+const lastStaleRequeueCheckMap = new Map<string, number>();
+const lastImageFetchQueueMap = new Map<string, number>();
 
-// Throttle config refresh checks (check DB at most every 1 min per device)
+// Throttle DB-heavy maintenance checks to preserve Supabase free-plan quota.
 const lastConfigRefreshCheckMap = new Map<string, number>();
-const CONFIG_REFRESH_CHECK_INTERVAL_MS = 60000; // 1 minute
-const CONFIG_REFRESH_INTERVAL_MS = 1800000; // 30 minutes
-const DEVICE_STATUS_WRITE_INTERVAL_MS = 10000;
+const CONFIG_REFRESH_CHECK_INTERVAL_MS = 1800000; // 30 minutes
+const CONFIG_REFRESH_INTERVAL_MS = 14400000; // 4 hours
+const DEVICE_STATUS_WRITE_INTERVAL_MS = 120000; // 2 minutes
+const STALE_REQUEUE_CHECK_INTERVAL_MS = 60000; // 1 minute
+const NO_COMMAND_PUSH_DELAY_MS = Number.parseInt(Deno.env.get('CONTROLID_NO_COMMAND_DELAY_MS') ?? '2500', 10);
+const IMAGE_FETCH_REQUEUE_INTERVAL_MS = Number.parseInt(Deno.env.get('CONTROLID_IMAGE_FETCH_REQUEUE_INTERVAL_MS') ?? '1800000', 10);
 const STALE_EXECUTING_THRESHOLD_MS = 120000; // 120 seconds
 const MAX_STALE_REQUEUE_RETRIES = 3;
 
@@ -176,6 +181,19 @@ const runBackground = (label: string, task: Promise<unknown> | unknown) => {
 
   // Fallback for runtimes without waitUntil support.
   promise;
+};
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isFinitePositiveNumber = (value: number) => Number.isFinite(value) && value > 0;
+
+const shouldRunThrottled = (map: Map<string, number>, key: string, intervalMs: number): boolean => {
+  if (!key || !isFinitePositiveNumber(intervalMs)) return true;
+  const now = Date.now();
+  const lastRun = map.get(key) || 0;
+  if (now - lastRun < intervalMs) return false;
+  map.set(key, now);
+  return true;
 };
 
 const getWebhookSecretQueryParam = (): string => {
@@ -261,7 +279,7 @@ const getPushServerConfig = () => {
     push_server: {
       push_remote_address: getDeviceWebhookUrl(hostname),
       push_request_timeout: "15000",
-      push_request_period: "0"
+      push_request_period: "5000"
     },
     // Blueprint-compatible server stanza for firmwares that use this format.
     network: {
@@ -557,7 +575,11 @@ const getQueuedCommandMeta = (queuedCommand: any): Record<string, unknown> | nul
   return null;
 };
 
-const buildNoCommandPushResponse = () => {
+const buildNoCommandPushResponse = async () => {
+  if (isFinitePositiveNumber(NO_COMMAND_PUSH_DELAY_MS)) {
+    await sleep(Math.min(NO_COMMAND_PUSH_DELAY_MS, 10000));
+  }
+
   const forceEmptyObject = (Deno.env.get('CONTROLID_PUSH_EMPTY_OBJECT_RESPONSE') ?? '0') === '1';
   if (forceEmptyObject) {
     return new Response(
@@ -810,7 +832,7 @@ Deno.serve(async (req) => {
       }
 
       // Auto-expire stale executing commands (>120s old) to prevent queue blockage
-      if (deviceId) {
+      if (deviceId && shouldRunThrottled(lastStaleRequeueCheckMap, deviceId, STALE_REQUEUE_CHECK_INTERVAL_MS)) {
         runBackground(
           'requeueStaleCommandsViaPushRequest',
           requeueStaleExecutingCommands(supabaseClient, deviceId)
@@ -928,7 +950,7 @@ Deno.serve(async (req) => {
 
         if (markExecutingError || !markedCmd) {
           console.error('Failed to mark push command as executing:', markExecutingError ?? 'command already claimed');
-          return buildNoCommandPushResponse();
+          return await buildNoCommandPushResponse();
         }
 
         // Blueprint protocol: return a flat object { command, parameters }.
@@ -992,7 +1014,7 @@ Deno.serve(async (req) => {
         }
       }
 
-      return buildNoCommandPushResponse();
+      return await buildNoCommandPushResponse();
     }
 
     // ===== PUSH RESULT: Device sends back result of executed command =====
@@ -1002,7 +1024,7 @@ Deno.serve(async (req) => {
       console.log('Push result from device:', deviceId, JSON.stringify(pushResultPayload).substring(0, 300));
 
       // Auto-expire stale executing commands before matching
-      if (deviceId) {
+      if (deviceId && shouldRunThrottled(lastStaleRequeueCheckMap, deviceId, STALE_REQUEUE_CHECK_INTERVAL_MS)) {
         runBackground(
           'requeueStaleCommandsViaPushResult',
           requeueStaleExecutingCommands(supabaseClient, deviceId)
@@ -1265,8 +1287,12 @@ Deno.serve(async (req) => {
       runBackground('identificationPostProcess', (async () => {
         let enrichedPayload: any = payload;
         try {
+          let resolvedDeviceType = deviceTypeCache.get(effectiveDeviceId) ?? null;
+
           // Refresh cache asynchronously for subsequent requests.
-          runBackground('warmDeviceTypeCache', resolveDeviceType(supabaseClient, effectiveDeviceId));
+          if (!resolvedDeviceType) {
+            runBackground('warmDeviceTypeCache', resolveDeviceType(supabaseClient, effectiveDeviceId));
+          }
 
           // 1. Save photo if present in payload
           let savedPhotoPath: string | null = null;
@@ -1290,14 +1316,11 @@ Deno.serve(async (req) => {
           const identUserName = String(payload.user_name || '');
           if (cardValue && identUserName) {
             try {
-              const { data: deviceRow } = await supabaseClient
-                .from('devices')
-                .select('type')
-                .or(`serial_number.eq.${effectiveDeviceId},ip_address.eq.${effectiveDeviceId}`)
-                .limit(1)
-                .maybeSingle();
+              if (!resolvedDeviceType) {
+                resolvedDeviceType = await resolveDeviceType(supabaseClient, effectiveDeviceId);
+              }
 
-              if (deviceRow?.type === 'vehicle_tag') {
+              if (resolvedDeviceType === 'vehicle_tag') {
                 const aptMatch = identUserName.match(/^(\d+\w?)\s*[-–]\s*(.+)$/i);
                 if (aptMatch) {
                   const [, apt, extractedName] = aptMatch;
@@ -1335,42 +1358,60 @@ Deno.serve(async (req) => {
             || payload?.user_has_image === true || payload?.user_has_image === 'true';
 
           if (hasImage && Number.isFinite(userId) && userId > 0 && !savedPhotoPath) {
-            const { data: queuedImageCommands } = await supabaseClient
-              .from('push_command_queue')
-              .select('id, command, status')
-              .eq('device_id', effectiveDeviceId)
-              .in('status', ['pending', 'executing'])
-              .order('created_at', { ascending: false })
-              .limit(10);
+            const imageFetchKey = `${effectiveDeviceId}:${userId}`;
+            const nowMs = Date.now();
+            const lastImageFetchMs = lastImageFetchQueueMap.get(imageFetchKey) || 0;
+            const imageFetchIntervalMs = isFinitePositiveNumber(IMAGE_FETCH_REQUEUE_INTERVAL_MS)
+              ? IMAGE_FETCH_REQUEUE_INTERVAL_MS
+              : 1800000;
 
-            const alreadyQueued = queuedImageCommands?.some((row: any) => {
-              const command = row.command as any;
-              const commandName = getQueuedCommandName(command);
-              const queuedUserId = Number.parseInt(
-                String(command?.body?.user_id ?? command?.parameters?.user_id ?? '0'),
-                10
-              );
-              return commandName === 'user_get_image' && queuedUserId === userId;
-            }) ?? false;
-
-            if (!alreadyQueued) {
-              const { error: queueErr } = await supabaseClient
+            if (nowMs - lastImageFetchMs < imageFetchIntervalMs) {
+              console.log('Skipping recently queued user image fetch:', imageFetchKey);
+            } else {
+              const imageCutoff = new Date(nowMs - imageFetchIntervalMs).toISOString();
+              const { data: queuedImageCommands } = await supabaseClient
                 .from('push_command_queue')
-                .insert({
-                  device_id: effectiveDeviceId,
-                  command: {
-                    verb: 'POST',
-                    endpoint: 'user_get_image?get_timestamp=1',
-                    body: { user_id: userId, technology: 'visible_light', get_timestamp: 1, raw: false },
-                    contentType: 'application/json',
-                    meta: { log_id: logEntryId, user_id: userId },
-                  },
-                  status: 'pending',
-                });
-              if (queueErr) {
-                console.error('Failed to queue user_get_image:', queueErr);
-              } else {
-                console.log(`Queued user_get_image for user ${userId} on device ${effectiveDeviceId}, log_id: ${logEntryId}`);
+                .select('id, command, status, created_at')
+                .eq('device_id', effectiveDeviceId)
+                .gte('created_at', imageCutoff)
+                .in('status', ['pending', 'executing', 'done'])
+                .order('created_at', { ascending: false })
+                .limit(10);
+
+              const alreadyQueued = queuedImageCommands?.some((row: any) => {
+                const command = row.command as any;
+                const commandName = getQueuedCommandName(command);
+                const queuedUserId = Number.parseInt(
+                  String(command?.body?.user_id ?? command?.parameters?.user_id ?? '0'),
+                  10
+                );
+                return commandName === 'user_get_image' && queuedUserId === userId;
+              }) ?? false;
+
+              if (alreadyQueued) {
+                lastImageFetchQueueMap.set(imageFetchKey, nowMs);
+              }
+
+              if (!alreadyQueued) {
+                const { error: queueErr } = await supabaseClient
+                  .from('push_command_queue')
+                  .insert({
+                    device_id: effectiveDeviceId,
+                    command: {
+                      verb: 'POST',
+                      endpoint: 'user_get_image?get_timestamp=1',
+                      body: { user_id: userId, technology: 'visible_light', get_timestamp: 1, raw: false },
+                      contentType: 'application/json',
+                      meta: { log_id: logEntryId, user_id: userId },
+                    },
+                    status: 'pending',
+                  });
+                if (queueErr) {
+                  console.error('Failed to queue user_get_image:', queueErr);
+                } else {
+                  lastImageFetchQueueMap.set(imageFetchKey, nowMs);
+                  console.log(`Queued user_get_image for user ${userId} on device ${effectiveDeviceId}, log_id: ${logEntryId}`);
+                }
               }
             }
           }
@@ -1592,8 +1633,6 @@ async function saveAccessPhoto(supabaseClient: any, deviceId: string, base64Data
 }
 
 async function updateDeviceStatus(supabaseClient: any, deviceId: string) {
-  console.log('Updating device status - alive:', deviceId);
-
   const nowMs = Date.now();
   const lastWriteMs = lastDeviceStatusWriteMap.get(deviceId) || 0;
   if (nowMs - lastWriteMs < DEVICE_STATUS_WRITE_INTERVAL_MS) {
@@ -1603,45 +1642,22 @@ async function updateDeviceStatus(supabaseClient: any, deviceId: string) {
 
   const now = new Date(nowMs).toISOString();
 
-  const { data: deviceBySerial } = await supabaseClient
+  console.log('Updating throttled device status:', deviceId);
+
+  const { data: deviceRow } = await supabaseClient
     .from('devices')
     .select('id')
-    .eq('serial_number', deviceId)
+    .or(`serial_number.eq.${deviceId},ip_address.eq.${deviceId}`)
+    .limit(1)
     .maybeSingle();
 
-  if (deviceBySerial) {
+  if (deviceRow) {
     await supabaseClient
       .from('devices')
       .update({ last_sync: now, status: 'online' })
-      .eq('id', deviceBySerial.id);
+      .eq('id', deviceRow.id);
   } else {
-    const { data: deviceByIp } = await supabaseClient
-      .from('devices')
-      .select('id')
-      .eq('ip_address', deviceId)
-      .maybeSingle();
-
-    if (deviceByIp) {
-      await supabaseClient
-        .from('devices')
-        .update({ last_sync: now, status: 'online' })
-        .eq('id', deviceByIp.id);
-    } else {
-      const { data: deviceByName } = await supabaseClient
-        .from('devices')
-        .select('id')
-        .ilike('name', `%${deviceId}%`)
-        .maybeSingle();
-
-      if (deviceByName) {
-        await supabaseClient
-          .from('devices')
-          .update({ last_sync: now, status: 'online' })
-          .eq('id', deviceByName.id);
-      } else {
-        console.log('No matching device found for:', deviceId);
-      }
-    }
+    console.log('No matching device found for status update:', deviceId);
   }
 
   await supabaseClient

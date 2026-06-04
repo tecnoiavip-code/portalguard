@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, Clock, Mail, UserCheck, Users } from 'lucide-react';
+import { Activity, Car, Clock, Mail, UserCheck, Users } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { StatsCard } from '@/components/StatsCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,6 +17,7 @@ type ControlIdPayload = {
   portal_id?: string | number;
   user_id?: string | number;
   user_name?: string;
+  access_granted?: boolean | string;
 };
 
 type ControlIdDashboardEvent = {
@@ -58,6 +59,14 @@ const formatControlIdTime = (receivedAt: string | null) => {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
+  });
+};
+
+const formatControlIdDate = (receivedAt: string | null) => {
+  if (!receivedAt) return '--/--';
+  return new Date(receivedAt).toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
   });
 };
 
@@ -187,6 +196,34 @@ export const Dashboard = () => {
     return `Porta ${portal}${incomingEvent ? ` - Evento ${incomingEvent}` : ''}`;
   };
 
+  const isControlIdEventGranted = (event: ControlIdDashboardEvent) => {
+    const incomingEvent = Number.parseInt(readPayloadValue(event.payload, 'event') || '0', 10);
+    const accessGranted = event.payload?.access_granted;
+    const title = getControlIdEventTitle(event).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+    if (accessGranted === false || accessGranted === 'false') return false;
+    if (accessGranted === true || accessGranted === 'true') return true;
+    if (event.processed === false || incomingEvent === 3 || incomingEvent === 6) return false;
+    if (title.includes('desconhecido') || title.includes('unknown') || title.includes('negado')) return false;
+
+    return event.processed === true || incomingEvent === 7 || incomingEvent === 8;
+  };
+
+  const getControlIdStatusLabel = (event: ControlIdDashboardEvent) => (
+    isControlIdEventGranted(event) ? 'Liberado' : 'Negado'
+  );
+
+  const getControlIdEventTypeLabel = (event: ControlIdDashboardEvent) => {
+    const hasTag = Boolean(
+      readPayloadValue(event.payload, 'uhf_tag')
+      || readPayloadValue(event.payload, 'card_value')
+      || readPayloadValue(event.payload, 'qrcode_value')
+    );
+
+    if (hasTag) return 'TAG Identificada';
+    return isControlIdEventGranted(event) ? 'Identificacao positiva' : 'Nao identificado';
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div>
@@ -256,30 +293,61 @@ export const Dashboard = () => {
                 Aguardando novos eventos dos dispositivos
               </div>
             ) : (
-              <div className="max-h-[430px] space-y-3 overflow-y-auto pr-1">
-                {controlIdEvents.map((event) => (
-                  <div
-                    key={event.id}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background/60 px-3 py-2.5"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {getControlIdEventTitle(event)}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {getControlIdEventDetails(event)}
-                      </p>
+              <div className="max-h-[430px] space-y-2 overflow-y-auto pr-1">
+                {controlIdEvents.map((event, index) => {
+                  const granted = isControlIdEventGranted(event);
+                  const accentClass = granted ? 'text-success' : 'text-destructive';
+                  const rowClass = granted
+                    ? 'border-success/10 bg-success/5'
+                    : 'border-destructive/10 bg-destructive/5';
+                  const iconClass = granted
+                    ? 'border-success bg-success/10 text-success'
+                    : 'border-destructive bg-destructive/10 text-destructive';
+                  const badgeClass = granted
+                    ? 'border-success/30 bg-success/10 text-success'
+                    : 'border-destructive/30 bg-destructive/10 text-destructive';
+
+                  return (
+                    <div
+                      key={event.id}
+                      className={`relative grid grid-cols-[54px_52px_minmax(0,1fr)] items-center gap-2 rounded-lg border px-2 py-3 ${rowClass}`}
+                    >
+                      {index < controlIdEvents.length - 1 && (
+                        <span className="absolute bottom-[-10px] left-[81px] top-[50px] w-px bg-border" />
+                      )}
+
+                      <div className="text-right leading-none">
+                        <p className="text-[11px] font-medium text-muted-foreground">
+                          {formatControlIdDate(event.received_at)}
+                        </p>
+                        <p className={`mt-1 text-lg font-bold ${accentClass}`}>
+                          {formatControlIdTime(event.received_at).slice(0, 5)}
+                        </p>
+                      </div>
+
+                      <div className={`relative z-10 flex h-11 w-11 items-center justify-center rounded-full border-2 ${iconClass}`}>
+                        <Car className="h-5 w-5" />
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <p className="truncate text-sm font-semibold text-foreground">
+                            {getControlIdEventTitle(event)}
+                          </p>
+                          <Badge variant="outline" className={`shrink-0 text-[10px] ${badgeClass}`}>
+                            {getControlIdStatusLabel(event)}
+                          </Badge>
+                        </div>
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {getControlIdEventTypeLabel(event)} - {getControlIdEventDetails(event)}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
+                          {formatControlIdTime(event.received_at)}
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <Badge variant={event.processed ? 'default' : 'outline'} className="text-xs">
-                        {event.processed ? 'Liberado' : 'Recebido'}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">
-                        {formatControlIdTime(event.received_at)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </CardContent>

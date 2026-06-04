@@ -236,6 +236,7 @@ const compactControlIdPayload = (payload: any): Record<string, unknown> => {
     'qrcode_value',
     'identifier_id',
     'time',
+    'access_granted',
   ];
 
   const compact: Record<string, unknown> = {};
@@ -257,8 +258,8 @@ const buildControlIdDashboardEvent = (
   id: crypto.randomUUID(),
   device_id: sanitizeString(deviceId || 'unknown-device', 100),
   event_type: sanitizeString(eventType || 'unknown', 100),
-  payload: compactControlIdPayload(payload),
-  processed,
+  payload: { ...compactControlIdPayload(payload), access_granted: processed },
+  processed: true,
   received_at: new Date().toISOString(),
 });
 
@@ -495,6 +496,21 @@ const buildIdentificationActions = (payload: any, deviceType?: string | null) =>
   return [buildDoorAction(resolvedPortal), buildSecBoxAction()];
 };
 
+const isIdentificationPayloadGranted = (
+  payload: any,
+  options?: { forceGranted?: boolean }
+) => {
+  const userId = Number.parseInt(String(payload?.user_id ?? '0'), 10);
+  const incomingEvent = Number.parseInt(String(payload?.event ?? '0'), 10);
+  const userName = sanitizeString(payload?.user_name || payload?.name || '', 200);
+
+  const isIdentified = (Number.isFinite(userId) && userId > 0) || userName.length > 0;
+  // Event 3/6 = device-side denial (unknown card, etc.). Don't grant.
+  const isDeniedByDevice = incomingEvent === 3 || incomingEvent === 6;
+
+  return options?.forceGranted === true ? true : isIdentified && !isDeniedByDevice;
+};
+
 const buildIdentificationResponse = (
   payload: any,
   url: URL,
@@ -503,13 +519,8 @@ const buildIdentificationResponse = (
 ) => {
   const userId = Number.parseInt(String(payload?.user_id ?? '0'), 10);
   const portalId = Number.parseInt(String(payload?.portal_id ?? '1'), 10);
-  const incomingEvent = Number.parseInt(String(payload?.event ?? '0'), 10);
   const userName = sanitizeString(payload?.user_name || payload?.name || '', 200);
-
-  const isIdentified = (Number.isFinite(userId) && userId > 0) || userName.length > 0;
-  // Event 3/6 = device-side denial (unknown card, etc.). Don't grant.
-  const isDeniedByDevice = incomingEvent === 3 || incomingEvent === 6;
-  const granted = options?.forceGranted === true ? true : isIdentified && !isDeniedByDevice;
+  const granted = isIdentificationPayloadGranted(payload, options);
 
   const resolvedPortal = Number.isFinite(portalId) && portalId > 0 ? portalId : 1;
 
@@ -1314,6 +1325,7 @@ Deno.serve(async (req) => {
     // the response is delayed by database operations.
     if (eventType === 'identification_event' || eventType === 'enterprise_identification_event') {
       const cachedType = deviceTypeCache.get(effectiveDeviceId) ?? null;
+      const identificationGranted = isIdentificationPayloadGranted(payload);
       const identResponse = buildIdentificationResponse(payload, url, cachedType);
 
       console.log('Identification event received (autonomous device):', {
@@ -1461,7 +1473,7 @@ Deno.serve(async (req) => {
         }
 
         // 5. Send event to frontend without persisting noisy device logs.
-        await broadcastControlIdDashboardEvent(supabaseClient, effectiveDeviceId, eventType, enrichedPayload, true);
+        await broadcastControlIdDashboardEvent(supabaseClient, effectiveDeviceId, eventType, enrichedPayload, identificationGranted);
       })());
 
       return new Response(

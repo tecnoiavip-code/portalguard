@@ -9,6 +9,8 @@ import { supabaseStorage } from '@/lib/supabase-storage';
 import { AccessEntry, DashboardStats } from '@/types';
 import { useDevices } from '@/hooks/useDevices';
 
+const CONTROLID_EVENT_LIMIT = 10;
+
 type ControlIdPayload = {
   [key: string]: unknown;
   event?: string | number;
@@ -71,7 +73,6 @@ export const Dashboard = () => {
   const [allEntries, setAllEntries] = useState<AccessEntry[]>([]);
   const [controlIdEvents, setControlIdEvents] = useState<ControlIdDashboardEvent[]>([]);
   const statsLoadInFlight = useRef(false);
-  const controlIdLoadInFlight = useRef(false);
 
   const loadStats = async () => {
     if (statsLoadInFlight.current) return;
@@ -103,31 +104,6 @@ export const Dashboard = () => {
     }
   };
 
-  const loadControlIdEvents = async () => {
-    if (controlIdLoadInFlight.current) return;
-    controlIdLoadInFlight.current = true;
-
-    try {
-      const { data, error } = await supabase
-        .from('controlid_logs')
-        .select('id, device_id, event_type, payload, processed, received_at')
-        .order('received_at', { ascending: false })
-        .limit(8);
-
-      if (error) throw error;
-
-      const events = (data || [])
-        .map(normalizeControlIdEvent)
-        .filter((event): event is ControlIdDashboardEvent => Boolean(event?.id));
-
-      setControlIdEvents(events);
-    } catch (error) {
-      console.error('Error loading Control iD events:', error);
-    } finally {
-      controlIdLoadInFlight.current = false;
-    }
-  };
-
   useEffect(() => {
     loadStats();
 
@@ -147,29 +123,28 @@ export const Dashboard = () => {
   }, []);
 
   useEffect(() => {
-    loadControlIdEvents();
-
     const channel = supabase
-      .channel('dashboard-controlid-logs')
+      .channel('controlid-dashboard', {
+        config: {
+          broadcast: { self: false },
+        },
+      })
       .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'controlid_logs' },
-        (payload) => {
-          const nextEvent = normalizeControlIdEvent(payload.new);
+        'broadcast',
+        { event: 'controlid-event' },
+        (message) => {
+          const nextEvent = normalizeControlIdEvent(message.payload);
           if (!nextEvent?.id) return;
 
           setControlIdEvents((current) => {
             const deduped = current.filter((event) => event.id !== nextEvent.id);
-            return [nextEvent, ...deduped].slice(0, 8);
+            return [nextEvent, ...deduped].slice(0, CONTROLID_EVENT_LIMIT);
           });
         }
       )
       .subscribe();
 
-    const interval = window.setInterval(loadControlIdEvents, 60000);
-
     return () => {
-      window.clearInterval(interval);
       supabase.removeChannel(channel);
     };
   }, []);
@@ -302,13 +277,13 @@ export const Dashboard = () => {
               <div className="mb-3 flex items-center justify-between">
                 <span className="text-sm font-medium text-foreground">Eventos Control iD</span>
                 <Badge variant="secondary" className="text-xs">
-                  Tempo real
+                  Ultimos 10
                 </Badge>
               </div>
 
               {controlIdEvents.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-border py-6 text-center text-sm text-muted-foreground">
-                  Nenhum evento recente recebido dos dispositivos
+                  Aguardando novos eventos dos dispositivos
                 </div>
               ) : (
                 <div className="max-h-[320px] space-y-3 overflow-y-auto pr-1">

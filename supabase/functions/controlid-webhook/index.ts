@@ -221,6 +221,74 @@ const getDeviceServerUrl = (hostname: string): string => {
   return getDeviceWebhookUrl(hostname);
 };
 
+const CONTROLID_DASHBOARD_TOPIC = 'controlid-dashboard';
+const CONTROLID_DASHBOARD_EVENT = 'controlid-event';
+
+const compactControlIdPayload = (payload: any): Record<string, unknown> => {
+  const allowedKeys = [
+    'event',
+    'name',
+    'portal_id',
+    'user_id',
+    'user_name',
+    'card_value',
+    'uhf_tag',
+    'qrcode_value',
+    'identifier_id',
+    'time',
+  ];
+
+  const compact: Record<string, unknown> = {};
+  for (const key of allowedKeys) {
+    const value = payload?.[key];
+    if (value === undefined || value === null) continue;
+    compact[key] = typeof value === 'string' ? sanitizeString(value, 250) : value;
+  }
+
+  return compact;
+};
+
+const buildControlIdDashboardEvent = (
+  deviceId: string,
+  eventType: string,
+  payload: any,
+  processed = true
+) => ({
+  id: crypto.randomUUID(),
+  device_id: sanitizeString(deviceId || 'unknown-device', 100),
+  event_type: sanitizeString(eventType || 'unknown', 100),
+  payload: compactControlIdPayload(payload),
+  processed,
+  received_at: new Date().toISOString(),
+});
+
+const broadcastControlIdDashboardEvent = async (
+  supabaseClient: any,
+  deviceId: string,
+  eventType: string,
+  payload: any,
+  processed = true
+) => {
+  const eventPayload = buildControlIdDashboardEvent(deviceId, eventType, payload, processed);
+  const channel = supabaseClient.channel(CONTROLID_DASHBOARD_TOPIC);
+
+  try {
+    const response = await channel.send({
+      type: 'broadcast',
+      event: CONTROLID_DASHBOARD_EVENT,
+      payload: eventPayload,
+    });
+
+    if (response !== 'ok') {
+      console.error('Error broadcasting Control iD dashboard event:', response);
+    }
+  } catch (error) {
+    console.error('Error broadcasting Control iD dashboard event:', error);
+  } finally {
+    await supabaseClient.removeChannel(channel).catch(() => undefined);
+  }
+};
+
 const getDeviceConfiguration = () => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   let hostname = '';
@@ -563,21 +631,6 @@ const getQueuedCommandName = (queuedCommand: any): string => {
   return sanitizeString(endpoint, 160);
 };
 
-const getQueuedCommandMeta = (queuedCommand: any): Record<string, unknown> | null => {
-  if (!queuedCommand || typeof queuedCommand !== 'object') return null;
-
-  if (queuedCommand.meta && typeof queuedCommand.meta === 'object') {
-    return queuedCommand.meta as Record<string, unknown>;
-  }
-
-  const parameters = queuedCommand.parameters;
-  if (parameters && typeof parameters === 'object' && (parameters as any).meta && typeof (parameters as any).meta === 'object') {
-    return (parameters as any).meta as Record<string, unknown>;
-  }
-
-  return null;
-};
-
 const buildNoCommandPushResponse = async () => {
   const forceEmptyObject = (Deno.env.get('CONTROLID_PUSH_EMPTY_OBJECT_RESPONSE') ?? '0') === '1';
   if (forceEmptyObject) {
@@ -874,7 +927,6 @@ Deno.serve(async (req) => {
             // Check if this is a user_get_image result — extract and save photo
             const cmd = executingCmd.command as any;
             const commandName = getQueuedCommandName(cmd);
-            const commandMeta = getQueuedCommandMeta(cmd);
             const isImageResult = commandName === 'user_get_image';
             let photoUpdatePromise: Promise<unknown> = Promise.resolve();
 
@@ -883,20 +935,8 @@ Deno.serve(async (req) => {
               if (imageBase64) {
                 photoUpdatePromise = (async () => {
                   const photoPath = await saveAccessPhoto(supabaseClient, deviceId, imageBase64);
-                  const logId = commandMeta?.log_id;
-                  if (photoPath && typeof logId === 'string' && logId.length > 0) {
-                    const { data: origLog } = await supabaseClient
-                      .from('controlid_logs')
-                      .select('payload')
-                      .eq('id', logId)
-                      .maybeSingle();
-                    if (origLog) {
-                      await supabaseClient
-                        .from('controlid_logs')
-                        .update({ payload: { ...origLog.payload, saved_photo_path: photoPath } })
-                        .eq('id', logId);
-                      console.log('Photo linked to identification log:', logId, photoPath);
-                    }
+                  if (photoPath) {
+                    console.log('Access photo fetched from device:', photoPath);
                   }
                 })();
               }
@@ -1060,7 +1100,6 @@ Deno.serve(async (req) => {
       if (executingCmd) {
         const cmd = executingCmd.command as any;
         const commandName = getQueuedCommandName(cmd);
-        const commandMeta = getQueuedCommandMeta(cmd);
         const isImageResult = commandName === 'user_get_image';
         let photoUpdatePromise: Promise<unknown> = Promise.resolve();
 
@@ -1069,20 +1108,8 @@ Deno.serve(async (req) => {
           if (imageBase64) {
             photoUpdatePromise = (async () => {
               const photoPath = await saveAccessPhoto(supabaseClient, deviceId, imageBase64);
-              const logId = commandMeta?.log_id;
-              if (photoPath && typeof logId === 'string' && logId.length > 0) {
-                const { data: origLog } = await supabaseClient
-                  .from('controlid_logs')
-                  .select('payload')
-                  .eq('id', logId)
-                  .maybeSingle();
-                if (origLog) {
-                  await supabaseClient
-                    .from('controlid_logs')
-                    .update({ payload: { ...origLog.payload, saved_photo_path: photoPath } })
-                    .eq('id', logId);
-                  console.log('Photo linked to identification log:', logId, photoPath);
-                }
+              if (photoPath) {
+                console.log('Access photo fetched from device:', photoPath);
               }
             })();
           }
@@ -1325,8 +1352,6 @@ Deno.serve(async (req) => {
             ? { ...payload, saved_photo_path: savedPhotoPath }
             : payload;
 
-          const logEntryId = null;
-
           // 3. Auto-sync vehicle tag
           const cardValue = String(payload.card_value || '');
           const identUserName = String(payload.user_name || '');
@@ -1418,7 +1443,7 @@ Deno.serve(async (req) => {
                       endpoint: 'user_get_image?get_timestamp=1',
                       body: { user_id: userId, technology: 'visible_light', get_timestamp: 1, raw: false },
                       contentType: 'application/json',
-                      meta: { log_id: logEntryId, user_id: userId },
+                      meta: { user_id: userId },
                     },
                     status: 'pending',
                   });
@@ -1426,7 +1451,7 @@ Deno.serve(async (req) => {
                   console.error('Failed to queue user_get_image:', queueErr);
                 } else {
                   lastImageFetchQueueMap.set(imageFetchKey, nowMs);
-                  console.log(`Queued user_get_image for user ${userId} on device ${effectiveDeviceId}, log_id: ${logEntryId}`);
+                  console.log(`Queued user_get_image for user ${userId} on device ${effectiveDeviceId}`);
                 }
               }
             }
@@ -1435,17 +1460,8 @@ Deno.serve(async (req) => {
           console.error('Error in identification post-processing:', e);
         }
 
-        // 5. Send event to frontend by saving to controlid_logs
-        try {
-          await supabaseClient.from('controlid_logs').insert({
-            device_id: effectiveDeviceId,
-            event_type: eventType,
-            payload: enrichedPayload,
-            processed: true
-          });
-        } catch (e) {
-          console.error('Error inserting identification log:', e);
-        }
+        // 5. Send event to frontend without persisting noisy device logs.
+        await broadcastControlIdDashboardEvent(supabaseClient, effectiveDeviceId, eventType, enrichedPayload, true);
       })());
 
       return new Response(
@@ -1483,18 +1499,12 @@ Deno.serve(async (req) => {
       await processAccessLogs(supabaseClient, payload.object_changes, effectiveDeviceId);
     }
 
-    // Ensure non-identification events also reach the frontend
+    // Ensure non-identification events also reach the frontend without DB storage.
     if (['dao', 'access_photo', 'catra_event', 'door', 'secbox', 'operation_mode', 'access_event', 'user_event', 'photo_event'].includes(eventType)) {
-      try {
-        await supabaseClient.from('controlid_logs').insert({
-          device_id: effectiveDeviceId,
-          event_type: eventType,
-          payload: enrichedPayload,
-          processed: true
-        });
-      } catch (e) {
-        console.error('Error inserting event log:', e);
-      }
+      runBackground(
+        'broadcastControlIdEvent',
+        broadcastControlIdDashboardEvent(supabaseClient, effectiveDeviceId, eventType, enrichedPayload, true)
+      );
     }
 
     // Other Control iD .fcgi callbacks expect empty 200 acknowledgements

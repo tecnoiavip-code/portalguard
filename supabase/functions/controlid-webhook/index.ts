@@ -1237,18 +1237,12 @@ Deno.serve(async (req) => {
     // Critical: the device has a short timeout (~15s) and will NOT open the door if
     // the response is delayed by database operations.
     if (eventType === 'identification_event' || eventType === 'enterprise_identification_event') {
-      // Never block the immediate response on DB lookup.
-      const cachedType = deviceTypeCache.get(effectiveDeviceId) ?? null;
-      const deviceType = cachedType;
-      const identResponse = buildIdentificationResponse(payload, url, deviceType);
-      console.log('Identification response (immediate):', {
+      console.log('Identification event received (autonomous device):', {
         device_id: effectiveDeviceId,
-        device_type: deviceType,
         event_type: eventType,
         path: url.pathname,
         portal_id: payload?.portal_id,
         event_in: payload?.event,
-        response: identResponse,
       });
 
       // ALL database work runs in background AFTER response is sent
@@ -1400,11 +1394,8 @@ Deno.serve(async (req) => {
         }
       })());
 
-      // Return door-open response IMMEDIATELY (< 50ms)
-      return new Response(
-        JSON.stringify(identResponse),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      // Acknowledge the event without controlling the equipment (Visualization Only)
+      return new Response('', { status: 200, headers: corsHeaders });
     }
 
     if (!checkRateLimit(effectiveDeviceId)) {

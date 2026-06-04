@@ -235,6 +235,13 @@ const getDeviceConfiguration = () => {
   const opMode = Deno.env.get('CONTROLID_OPERATION_MODE') ?? defaultOperationMode;
 
   return {
+    monitor: {
+      request_timeout: Deno.env.get('CONTROLID_MONITOR_REQUEST_TIMEOUT') ?? "15000",
+      hostname,
+      port: "443",
+      path: getDeviceWebhookPath(),
+      secure: "1"
+    },
     general: {
       language: lang,
       operation_mode: opMode
@@ -1237,12 +1244,17 @@ Deno.serve(async (req) => {
     // Critical: the device has a short timeout (~15s) and will NOT open the door if
     // the response is delayed by database operations.
     if (eventType === 'identification_event' || eventType === 'enterprise_identification_event') {
+      const cachedType = deviceTypeCache.get(effectiveDeviceId) ?? null;
+      const identResponse = buildIdentificationResponse(payload, url, cachedType);
+
       console.log('Identification event received (autonomous device):', {
         device_id: effectiveDeviceId,
+        device_type: cachedType,
         event_type: eventType,
         path: url.pathname,
         portal_id: payload?.portal_id,
         event_in: payload?.event,
+        response: identResponse,
       });
 
       // ALL database work runs in background AFTER response is sent
@@ -1394,8 +1406,10 @@ Deno.serve(async (req) => {
         }
       })());
 
-      // Acknowledge the event without controlling the equipment (Visualization Only)
-      return new Response('', { status: 200, headers: corsHeaders });
+      return new Response(
+        JSON.stringify(identResponse),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     if (!checkRateLimit(effectiveDeviceId)) {

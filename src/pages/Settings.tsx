@@ -90,6 +90,7 @@ export const Settings = () => {
   }
   const monitorPath = '/functions/v1/controlid-webhook';
   const pushAddress = `https://${webhookHost}${monitorPath}`;
+  const serverAddress = `${webhookHost}${monitorPath}`;
   const acceptedPushRoutes = `${monitorPath} e ${monitorPath}/push`;
 
   const handleUnlockIntegrations = () => {
@@ -638,12 +639,16 @@ export const Settings = () => {
                       <code className="text-xs bg-background p-2 rounded block overflow-x-auto">{pushAddress}</code>
                     </div>
                     <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Equipamento servidor:</p>
+                      <code className="text-xs bg-background p-2 rounded block overflow-x-auto">{serverAddress}</code>
+                    </div>
+                    <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">Rotas aceitas pelo webhook:</p>
                       <code className="text-xs bg-background p-2 rounded block overflow-x-auto">{acceptedPushRoutes}</code>
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">Timeouts:</p>
-                      <code className="text-xs bg-background p-2 rounded block overflow-x-auto">monitor.request_timeout=0 • push_request_timeout=15000 • push_request_period=5000</code>
+                      <code className="text-xs bg-background p-2 rounded block overflow-x-auto">monitor.request_timeout=15000 • push_request_timeout=15000 • push_request_period=5000</code>
                     </div>
                   </div>
                 </div>

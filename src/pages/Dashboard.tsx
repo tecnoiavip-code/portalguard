@@ -7,7 +7,6 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { supabaseStorage } from '@/lib/supabase-storage';
 import { AccessEntry, DashboardStats } from '@/types';
-import { useDevices } from '@/hooks/useDevices';
 
 const CONTROLID_EVENT_LIMIT = 10;
 
@@ -63,7 +62,6 @@ const formatControlIdTime = (receivedAt: string | null) => {
 };
 
 export const Dashboard = () => {
-  const { devices } = useDevices();
   const [stats, setStats] = useState<DashboardStats>({
     totalResidents: 0,
     pendingMails: 0,
@@ -183,16 +181,10 @@ export const Dashboard = () => {
   };
 
   const getControlIdEventDetails = (event: ControlIdDashboardEvent) => {
-    const device = devices.find((item) => (
-      item.serialNumber === event.device_id
-      || item.id === event.device_id
-      || item.ipAddress === event.device_id
-    ));
     const portal = readPayloadValue(event.payload, 'portal_id') || '1';
     const incomingEvent = readPayloadValue(event.payload, 'event');
-    const deviceName = device?.name || event.device_id || 'Dispositivo';
 
-    return `${deviceName} - Porta ${portal}${incomingEvent ? ` - Evento ${incomingEvent}` : ''}`;
+    return `Porta ${portal}${incomingEvent ? ` - Evento ${incomingEvent}` : ''}`;
   };
 
   return (
@@ -253,66 +245,43 @@ export const Dashboard = () => {
 
         <Card className="lg:col-span-1 border-2 border-primary/20 shadow-lg">
           <CardHeader className="pb-3 bg-gradient-to-br from-primary/5 to-primary/10">
-            <CardTitle className="flex items-center justify-between text-base">
-              <div className="flex items-center space-x-2">
-                <Activity className="h-5 w-5 text-primary" />
-                <span className="text-primary">Dispositivos</span>
-              </div>
-              <Badge variant="secondary" className="text-xs bg-success/20 text-success hover:bg-success/30">
-                Otimizado (Event-only)
-              </Badge>
+            <CardTitle className="flex items-center space-x-2 text-base">
+              <Activity className="h-5 w-5 text-primary" />
+              <span className="text-primary">Dispositivos</span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="pt-6">
-            <div className="flex flex-col items-center justify-center space-y-2 py-4">
-              <span className="text-4xl font-bold text-primary">
-                {devices.filter(d => d.status === 'online').length} <span className="text-xl text-muted-foreground font-normal">/ {devices.length}</span>
-              </span>
-              <p className="text-sm text-muted-foreground text-center">
-                Equipamentos ativos reportando eventos em tempo real
-              </p>
-            </div>
-
-            <div className="mt-4 border-t border-border pt-4">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-sm font-medium text-foreground">Eventos Control iD</span>
-                <Badge variant="secondary" className="text-xs">
-                  Ultimos 10
-                </Badge>
+          <CardContent className="pt-4">
+            {controlIdEvents.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
+                Aguardando novos eventos dos dispositivos
               </div>
-
-              {controlIdEvents.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-border py-6 text-center text-sm text-muted-foreground">
-                  Aguardando novos eventos dos dispositivos
-                </div>
-              ) : (
-                <div className="max-h-[320px] space-y-3 overflow-y-auto pr-1">
-                  {controlIdEvents.map((event) => (
-                    <div
-                      key={event.id}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background/60 px-3 py-2.5"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {getControlIdEventTitle(event)}
-                        </p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {getControlIdEventDetails(event)}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <Badge variant={event.processed ? 'default' : 'outline'} className="text-xs">
-                          {event.processed ? 'Liberado' : 'Recebido'}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {formatControlIdTime(event.received_at)}
-                        </span>
-                      </div>
+            ) : (
+              <div className="max-h-[430px] space-y-3 overflow-y-auto pr-1">
+                {controlIdEvents.map((event) => (
+                  <div
+                    key={event.id}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background/60 px-3 py-2.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">
+                        {getControlIdEventTitle(event)}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {getControlIdEventDetails(event)}
+                      </p>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Badge variant={event.processed ? 'default' : 'outline'} className="text-xs">
+                        {event.processed ? 'Liberado' : 'Recebido'}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {formatControlIdTime(event.received_at)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

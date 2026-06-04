@@ -397,6 +397,9 @@ const isRegisteredDeviceId = async (supabaseClient: any, deviceId: string): Prom
   return allowed;
 };
 
+const buildDoorAction = (portal: number) => ({ action: 'door', parameters: `door=${portal}` });
+const buildSecBoxAction = () => ({ action: 'sec_box', parameters: 'id=65793, reason=1' });
+
 const buildIdentificationActions = (payload: any, deviceType?: string | null) => {
   const portalId = Number.parseInt(String(payload?.portal_id ?? '1'), 10);
   const resolvedPortal = Number.isFinite(portalId) && portalId > 0 ? portalId : 1;
@@ -404,21 +407,24 @@ const buildIdentificationActions = (payload: any, deviceType?: string | null) =>
   // Device-specific action mapping (Control iD docs):
   // - iDFlex / iDAccess Pro / iDAccess Nano / iDFace => sec_box
   // - iDAccess / iDFit / iDBox / iDUHF (relay) => door
+  // Many condominium installations wire the gate to the relay even on facial devices.
+  // Return both actions for facial/unknown users so identification stays compatible
+  // with sec_box setups and also pulses the physical relay.
   if (deviceType === 'facial_recognition') {
-    return [{ action: 'sec_box', parameters: 'id=65793, reason=1' }];
+    return [buildDoorAction(resolvedPortal), buildSecBoxAction()];
   }
 
   if (deviceType === 'vehicle_tag' || deviceType === 'card_reader') {
-    return [{ action: 'door', parameters: `door=${resolvedPortal}` }];
+    return [buildDoorAction(resolvedPortal)];
   }
 
   // Unknown device fallback: UHF/card payloads are usually relay/door devices.
   if (payload?.uhf_tag || payload?.card_value || payload?.qrcode_value) {
-    return [{ action: 'door', parameters: `door=${resolvedPortal}` }];
+    return [buildDoorAction(resolvedPortal)];
   }
 
   // Unknown facial/identified-user fallback.
-  return [{ action: 'sec_box', parameters: 'id=65793, reason=1' }];
+  return [buildDoorAction(resolvedPortal), buildSecBoxAction()];
 };
 
 const buildIdentificationResponse = (

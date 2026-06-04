@@ -297,54 +297,51 @@ export const Dashboard = () => {
                 Equipamentos ativos reportando eventos em tempo real
               </p>
             </div>
+
+            <div className="mt-4 border-t border-border pt-4">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-sm font-medium text-foreground">Eventos Control iD</span>
+                <Badge variant="secondary" className="text-xs">
+                  Tempo real
+                </Badge>
+              </div>
+
+              {controlIdEvents.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-border py-6 text-center text-sm text-muted-foreground">
+                  Nenhum evento recente recebido dos dispositivos
+                </div>
+              ) : (
+                <div className="max-h-[320px] space-y-3 overflow-y-auto pr-1">
+                  {controlIdEvents.map((event) => (
+                    <div
+                      key={event.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background/60 px-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {getControlIdEventTitle(event)}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {getControlIdEventDetails(event)}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Badge variant={event.processed ? 'default' : 'outline'} className="text-xs">
+                          {event.processed ? 'Liberado' : 'Recebido'}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {formatControlIdTime(event.received_at)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center space-x-2 text-base">
-            <Activity className="h-4 w-4 text-primary" />
-            <span>Eventos Control iD</span>
-            <Badge variant="secondary" className="ml-auto text-xs">
-              Tempo real
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {controlIdEvents.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
-              Nenhum evento recente recebido dos dispositivos
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {controlIdEvents.map((event) => (
-                <div
-                  key={event.id}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {getControlIdEventTitle(event)}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {getControlIdEventDetails(event)}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Badge variant={event.processed ? 'default' : 'outline'} className="text-xs">
-                      {event.processed ? 'Liberado' : 'Recebido'}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {formatControlIdTime(event.received_at)}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 };

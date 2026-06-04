@@ -217,10 +217,10 @@ const getMonitorConfig = () => {
 
   return {
     monitor: {
-      request_timeout: "0",
-      hostname: "",
+      request_timeout: "120000",
+      hostname: `${hostname}`,
       port: "443",
-      path: "",
+      path: getDeviceWebhookPath(),
       secure: "1"
     }
   };
@@ -260,8 +260,8 @@ const getPushServerConfig = () => {
   return {
     push_server: {
       push_remote_address: getDeviceWebhookUrl(hostname),
-      push_request_timeout: "15000",
-      push_request_period: "0"
+      push_request_timeout: "30000",
+      push_request_period: "120"
     },
     // Blueprint-compatible server stanza for firmwares that use this format.
     network: {
@@ -271,7 +271,8 @@ const getPushServerConfig = () => {
       url: getDeviceServerUrl(hostname),
       ssl: true,
       port: 443,
-      request_timeout: 120,
+      // 15s timeout per Control iD protocol docs — edge fn responds in <50ms for heartbeat
+      request_timeout: 15,
       send_user_events: true,
       send_device_events: true,
       send_photo: true,
@@ -710,7 +711,9 @@ Deno.serve(async (req) => {
   const url = new URL(req.url);
   const pathLower = url.pathname.toLowerCase();
 
-  const controlIdEnabled = (Deno.env.get('CONTROLID_WEBHOOK_ENABLED') ?? '0') === '1';
+  // CONTROLID_WEBHOOK_ENABLED defaults to '1' — security is enforced via CONTROLID_WEBHOOK_SECRET.
+  // Set CONTROLID_WEBHOOK_ENABLED=0 in Supabase secrets to temporarily suspend the integration.
+  const controlIdEnabled = (Deno.env.get('CONTROLID_WEBHOOK_ENABLED') ?? '1') !== '0';
   if (!controlIdEnabled) {
     const isFcgiCallback = pathLower.includes('.fcgi');
     if (isFcgiCallback || pathLower.endsWith('/push') || pathLower.includes('/push/')) {
@@ -1592,60 +1595,60 @@ async function saveAccessPhoto(supabaseClient: any, deviceId: string, base64Data
 }
 
 async function updateDeviceStatus(supabaseClient: any, deviceId: string) {
-  console.log('Updating device status - alive:', deviceId);
-
   const nowMs = Date.now();
   const lastWriteMs = lastDeviceStatusWriteMap.get(deviceId) || 0;
   if (nowMs - lastWriteMs < DEVICE_STATUS_WRITE_INTERVAL_MS) {
-    return;
+    return; // Throttled — already updated recently
   }
   lastDeviceStatusWriteMap.set(deviceId, nowMs);
 
   const now = new Date(nowMs).toISOString();
 
-  const { data: deviceBySerial } = await supabaseClient
+  // Single query: match by serial_number OR ip_address (covers both identification methods)
+  const { data: deviceRow } = await supabaseClient
     .from('devices')
-    .select('id')
-    .eq('serial_number', deviceId)
+    .select('id, serial_number, ip_address')
+    .or(`serial_number.eq.${deviceId},ip_address.eq.${deviceId}`)
+    .limit(1)
     .maybeSingle();
 
-  if (deviceBySerial) {
+  if (deviceRow) {
     await supabaseClient
       .from('devices')
       .update({ last_sync: now, status: 'online' })
-      .eq('id', deviceBySerial.id);
+      .eq('id', deviceRow.id);
+    console.log('Device status updated → online:', deviceId);
   } else {
-    const { data: deviceByIp } = await supabaseClient
+    // Fallback: partial name match (slower, only used when serial/ip not registered)
+    const { data: deviceByName } = await supabaseClient
       .from('devices')
       .select('id')
-      .eq('ip_address', deviceId)
+      .ilike('name', `%${deviceId}%`)
+      .limit(1)
       .maybeSingle();
 
-    if (deviceByIp) {
+    if (deviceByName) {
       await supabaseClient
         .from('devices')
         .update({ last_sync: now, status: 'online' })
-        .eq('id', deviceByIp.id);
+        .eq('id', deviceByName.id);
+      console.log('Device status updated via name match → online:', deviceId);
     } else {
-      const { data: deviceByName } = await supabaseClient
-        .from('devices')
-        .select('id')
-        .ilike('name', `%${deviceId}%`)
-        .maybeSingle();
-
-      if (deviceByName) {
-        await supabaseClient
-          .from('devices')
-          .update({ last_sync: now, status: 'online' })
-          .eq('id', deviceByName.id);
-      } else {
-        console.log('No matching device found for:', deviceId);
-      }
+      console.log('No matching device found in DB for deviceId:', deviceId,
+        '— register the device with this serial_number or ip_address in the Devices page.');
     }
   }
 
-  await supabaseClient
+  // Update controlid_config only if a matching entry exists (avoid pointless upsert)
+  const { count } = await supabaseClient
     .from('controlid_config')
-    .update({ last_sync: now, is_active: true })
+    .select('id', { count: 'exact', head: true })
     .eq('device_id', deviceId);
+
+  if (count && count > 0) {
+    await supabaseClient
+      .from('controlid_config')
+      .update({ last_sync: now, is_active: true })
+      .eq('device_id', deviceId);
+  }
 }

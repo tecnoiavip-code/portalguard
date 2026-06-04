@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { createDebouncedRunner } from '@/lib/debounce';
 import { playNotificationSound } from '@/lib/notification-sound';
 import {
   DropdownMenu,
@@ -17,10 +18,12 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface LayoutProps {
   children: ReactNode;
+  sidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
+  onCloseSidebar?: () => void;
 }
 
-export const Layout = ({ children }: LayoutProps) => {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+export const Layout = ({ children, sidebarOpen = false, onToggleSidebar, onCloseSidebar }: LayoutProps) => {
   const { user, signOut } = useAuth();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [notifCount, setNotifCount] = useState(0);
@@ -61,20 +64,21 @@ export const Layout = ({ children }: LayoutProps) => {
       }
     };
     loadNotifs();
+    const scheduleLoadNotifs = createDebouncedRunner(loadNotifs, 1500);
 
     const channel = supabase
       .channel('staff-header-notifs')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => {
         playNotificationSound();
-        loadNotifs();
+        scheduleLoadNotifs();
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => {
-        loadNotifs();
+        scheduleLoadNotifs();
       })
       .subscribe();
 
     const loadIfVisible = () => {
-      if (document.visibilityState === 'visible') loadNotifs();
+      if (document.visibilityState === 'visible') scheduleLoadNotifs();
     };
     window.addEventListener('focus', loadIfVisible);
     document.addEventListener('visibilitychange', loadIfVisible);
@@ -90,6 +94,7 @@ export const Layout = ({ children }: LayoutProps) => {
     return () => {
       isActive = false;
       clearTimeout(pollTimeout);
+      scheduleLoadNotifs.cancel();
       window.removeEventListener('focus', loadIfVisible);
       document.removeEventListener('visibilitychange', loadIfVisible);
       supabase.removeChannel(channel);
@@ -112,28 +117,28 @@ export const Layout = ({ children }: LayoutProps) => {
   return (
     <div className="min-h-screen bg-background">
       <header className="bg-primary text-primary-foreground shadow-elegant sticky top-0 z-30">
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
+        <div className="container mx-auto px-3 py-4 md:px-4 md:py-6">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2 md:gap-4">
               <Button
                 variant="ghost"
                 size="icon"
-                className="md:hidden text-white hover:bg-white/20"
-                onClick={() => setSidebarOpen(!sidebarOpen)}
+                className="shrink-0 text-white hover:bg-white/20 md:hidden"
+                onClick={onToggleSidebar}
               >
                 <Menu className="h-6 w-6" />
               </Button>
-              <div className="flex items-center space-x-3">
-                <Building2 className="h-12 w-12" />
-                <div>
-                  <h1 className="text-2xl md:text-3xl font-bold">CondoGuard Pro</h1>
+              <div className="flex min-w-0 items-center gap-2 md:gap-3">
+                <Building2 className="h-9 w-9 shrink-0 md:h-12 md:w-12" />
+                <div className="min-w-0">
+                  <h1 className="truncate text-lg font-bold leading-tight sm:text-2xl md:text-3xl">PortalGuard Pro</h1>
                   <p className="text-primary-foreground/80 text-sm hidden md:block">
                     Sistema Profissional de Controle de Acesso
                   </p>
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1.5 md:gap-2">
               <ThemeToggle />
               
               {/* Notification Bell */}
@@ -178,7 +183,7 @@ export const Layout = ({ children }: LayoutProps) => {
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <div className="flex items-center space-x-2 bg-primary-foreground/10 px-4 py-2 rounded-full backdrop-blur-sm">
+              <div className="hidden items-center space-x-2 rounded-full bg-primary-foreground/10 px-4 py-2 backdrop-blur-sm sm:flex">
                 <div className="w-2.5 h-2.5 rounded-full bg-success animate-pulse" />
                 <span className="text-sm font-medium">Sistema Online</span>
               </div>
@@ -207,7 +212,7 @@ export const Layout = ({ children }: LayoutProps) => {
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-40 md:hidden"
-          onClick={() => setSidebarOpen(false)}
+          onClick={onCloseSidebar}
         />
       )}
 

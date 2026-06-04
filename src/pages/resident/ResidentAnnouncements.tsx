@@ -12,6 +12,7 @@ import { Megaphone, CheckCircle, FileText, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { createDebouncedRunner } from '@/lib/debounce';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -45,7 +46,7 @@ const ResidentAnnouncements = () => {
     if (!user) return;
 
     const [{ data: anns }, { data: rds }] = await Promise.all([
-      supabase.from('announcements').select('id, title, body, created_at, attachments').order('created_at', { ascending: false }),
+      supabase.from('announcements').select('id, title, body, priority, created_at').order('created_at', { ascending: false }).limit(50),
       supabase.from('announcement_reads').select('announcement_id').eq('user_id', user.id),
     ]);
 
@@ -56,13 +57,17 @@ const ResidentAnnouncements = () => {
 
   useEffect(() => {
     loadData();
+    const scheduleLoadData = createDebouncedRunner(loadData, 1500);
 
     const channel = supabase
       .channel('resident-announcements')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'announcements' }, () => loadData())
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'announcements' }, () => scheduleLoadData())
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      scheduleLoadData.cancel();
+      supabase.removeChannel(channel);
+    };
   }, [user]);
 
   const openDetail = async (ann: Announcement) => {
@@ -70,7 +75,7 @@ const ResidentAnnouncements = () => {
 
     const { data: att } = await supabase
       .from('announcement_attachments')
-      .select('*')
+      .select('id, file_name, file_url, file_size')
       .eq('announcement_id', ann.id);
     setAttachments((att as any) || []);
 

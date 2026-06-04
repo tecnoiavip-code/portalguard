@@ -23,11 +23,13 @@ import { Megaphone, Send, Paperclip, X, Eye, FileText, Loader2, Trash2, ChevronL
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { sendPushToUser } from '@/lib/push-subscription';
+import { sendPushToUsers } from '@/lib/push-subscription';
+import { createDebouncedRunner } from '@/lib/debounce';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 const STAFF_ANNOUNCEMENT_DRAFT_KEY = 'staff-announcement-draft-v1';
+const NOTIFICATION_INSERT_CHUNK_SIZE = 500;
 
 interface Announcement {
   id: string;
@@ -138,20 +140,25 @@ const StaffAnnouncements = () => {
   const loadAnnouncements = async () => {
     const { data } = await supabase
       .from('announcements')
-      .select('id, title, body, created_at, attachments')
-      .order('created_at', { ascending: false });
+      .select('id, title, body, priority, created_by, created_at')
+      .order('created_at', { ascending: false })
+      .limit(100);
     setAnnouncements((data as any) || []);
     setLoading(false);
   };
 
   useEffect(() => {
     loadAnnouncements();
+    const scheduleLoadAnnouncements = createDebouncedRunner(loadAnnouncements, 1500);
 
     const channel = supabase
       .channel('staff-announcements')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => loadAnnouncements())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => scheduleLoadAnnouncements())
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      scheduleLoadAnnouncements.cancel();
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -163,7 +170,7 @@ const StaffAnnouncements = () => {
       const { data: ann, error } = await supabase
         .from('announcements')
         .insert({ title: title.trim(), body: body.trim(), priority, created_by: user.id })
-        .select()
+        .select('id')
         .single();
 
       if (error) throw error;
@@ -194,26 +201,33 @@ const StaffAnnouncements = () => {
         }
       }
 
-      // Notify all residents via push
+      // Notify all residents via in-app notification and push
       const { data: residents } = await supabase
         .from('residents')
         .select('auth_user_id');
       if (residents) {
-        const pushTitle = priority === 'urgent' ? '🚨 Comunicado urgente' : '📢 Novo comunicado';
-        for (const r of residents) {
-          if (r.auth_user_id) {
-            // In-app notification
-            await supabase.from('notifications').insert({
-              user_id: r.auth_user_id,
-              title: pushTitle,
-              body: title.trim().substring(0, 100),
-              type: 'announcement',
-              related_id: ann?.id,
-            });
-            // Push notification
-            sendPushToUser(r.auth_user_id, pushTitle, title.trim().substring(0, 100), 'announcement');
-          }
+        const recipientIds = Array.from(new Set(
+          residents
+            .map((resident) => resident.auth_user_id)
+            .filter(Boolean) as string[]
+        ));
+        const pushTitle = priority === 'urgent' ? 'Comunicado urgente' : 'Novo comunicado';
+        const notificationBody = title.trim().substring(0, 100);
+        const notificationRows = recipientIds.map((userId) => ({
+          user_id: userId,
+          title: pushTitle,
+          body: notificationBody,
+          type: 'announcement',
+          related_id: ann?.id,
+        }));
+
+        for (let i = 0; i < notificationRows.length; i += NOTIFICATION_INSERT_CHUNK_SIZE) {
+          const chunk = notificationRows.slice(i, i + NOTIFICATION_INSERT_CHUNK_SIZE);
+          const { error: notificationError } = await supabase.from('notifications').insert(chunk);
+          if (notificationError) throw notificationError;
         }
+
+        sendPushToUsers(recipientIds, pushTitle, notificationBody, 'announcement');
       }
 
       toast.success('Comunicado enviado para todos os moradores!');
@@ -249,9 +263,9 @@ const StaffAnnouncements = () => {
     setDetailDialog({ open: true, announcement: ann });
 
     const [{ data: att }, { data: rd }, { count }] = await Promise.all([
-      supabase.from('announcement_attachments').select('id, filename, url, announcement_id').eq('announcement_id', ann.id),
-      supabase.from('announcement_reads').select('id, user_id, read_at').eq('announcement_id', ann.id),
-      supabase.from('residents').select('*', { count: 'exact', head: true }),
+      supabase.from('announcement_attachments').select('id, file_name, file_url, file_size, content_type').eq('announcement_id', ann.id),
+      supabase.from('announcement_reads').select('announcement_id, user_id, read_at').eq('announcement_id', ann.id),
+      supabase.from('residents').select('id', { count: 'exact', head: true }),
     ]);
     setAttachments((att as any) || []);
     setReads((rd as any) || []);

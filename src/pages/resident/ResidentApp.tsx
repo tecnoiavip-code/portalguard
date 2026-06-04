@@ -1,12 +1,20 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import ResidentLayout, { type Counts } from './ResidentLayout';
-import ResidentDashboard from './ResidentDashboard';
-import ResidentMails from './ResidentMails';
-import ResidentVisitors from './ResidentVisitors';
-import ResidentAuthorizations from './ResidentAuthorizations';
-import ResidentChat from './ResidentChat';
-import ResidentAnnouncements from './ResidentAnnouncements';
+import { Loader2 } from 'lucide-react';
+
+const ResidentDashboard = lazy(() => import('./ResidentDashboard'));
+const ResidentMails = lazy(() => import('./ResidentMails'));
+const ResidentVisitors = lazy(() => import('./ResidentVisitors'));
+const ResidentAuthorizations = lazy(() => import('./ResidentAuthorizations'));
+const ResidentChat = lazy(() => import('./ResidentChat'));
+const ResidentAnnouncements = lazy(() => import('./ResidentAnnouncements'));
+
+const ResidentTabLoading = () => (
+  <div className="min-h-[280px] flex items-center justify-center">
+    <Loader2 className="w-7 h-7 animate-spin text-primary" />
+  </div>
+);
 
 const RESIDENT_ACTIVE_TAB_KEY = 'resident-active-tab-v1';
 const RESIDENT_TABS = new Set(['home', 'mails', 'announcements', 'visitors', 'authorizations', 'chat']);
@@ -83,7 +91,9 @@ const ResidentApp = () => {
         <meta property="og:url" content="https://portalguard.lovable.app/morador" />
         <meta name="robots" content="noindex,nofollow" />
       </Helmet>
-      {renderTab()}
+      <Suspense fallback={<ResidentTabLoading />}>
+        {renderTab()}
+      </Suspense>
     </ResidentLayout>
   );
 };

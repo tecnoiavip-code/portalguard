@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { recordAuditLog } from '@/lib/audit-log';
 import { Resident, Mail, AccessEntry, Device, RealtimeEvent } from '@/types';
 
 // ─────────────────────────────────────────────────────────────
@@ -25,6 +26,28 @@ export function invalidateCache(...keys: string[]) {
 // ─────────────────────────────────────────────────────────────
 const up = (val: string | null | undefined): string | null =>
   val ? val.toUpperCase() : (val as null);
+
+const upperValue = (val: string | null | undefined): string =>
+  val ? val.toUpperCase() : '';
+
+const MAIL_COLUMNS = 'id, resident_id, sender, package_type, notes, tracking_code, photo_url, received_at, status, delivered_at, withdrawn_by';
+const ACCESS_ENTRY_COLUMNS = 'id, visitor_name, visitor_document, visitor_type, resident_id, resident_name, apartment, purpose, entry_time, exit_time, vehicle_plate, vehicle_model, vehicle_color, photo_url, company, auto_recognized, badge_number';
+const DEVICE_COLUMNS = 'id, name, type, location, status, last_sync, ip_address, serial_number';
+const REALTIME_EVENT_COLUMNS = 'id, type, description, timestamp, priority, related_id';
+
+export const normalizeAccessEntryText = (entry: AccessEntry): AccessEntry => ({
+  ...entry,
+  visitorName: upperValue(entry.visitorName),
+  visitorDocument: upperValue(entry.visitorDocument),
+  residentName: upperValue(entry.residentName),
+  apartment: upperValue(entry.apartment),
+  purpose: upperValue(entry.purpose),
+  vehiclePlate: upperValue(entry.vehiclePlate),
+  vehicleModel: upperValue(entry.vehicleModel),
+  vehicleColor: upperValue(entry.vehicleColor),
+  company: upperValue(entry.company),
+  badgeNumber: upperValue(entry.badgeNumber),
+});
 
 // ─────────────────────────────────────────────────────────────
 export const supabaseStorage = {
@@ -234,6 +257,9 @@ export const supabaseStorage = {
         return null;
       }
       savedId = insertedData.id;
+      await recordAuditLog('create', 'resident', savedId, `Morador cadastrado: ${residentData.name}`, {
+        apartment: residentData.apartment,
+      });
     } else {
       const { error } = await supabase
         .from('residents')
@@ -242,6 +268,9 @@ export const supabaseStorage = {
         .select();
       if (error) { console.error('Error updating resident:', error.message); return null; }
       savedId = resident.id;
+      await recordAuditLog('update', 'resident', savedId, `Morador atualizado: ${residentData.name}`, {
+        apartment: residentData.apartment,
+      });
     }
 
     // Handle photo
@@ -262,6 +291,7 @@ export const supabaseStorage = {
     await supabaseStorage.deleteResidentPhoto(id);
     const { error } = await supabase.from('residents').delete().eq('id', id);
     if (error) { console.error('Error deleting resident:', error); return false; }
+    await recordAuditLog('delete', 'resident', id, 'Morador excluído');
     invalidateCache('residents_list', `photo_${id}`);
     return true;
   },
@@ -275,8 +305,9 @@ export const supabaseStorage = {
 
     const { data, error } = await supabase
       .from('mails')
-      .select('*')
-      .order('received_at', { ascending: false });
+      .select(MAIL_COLUMNS)
+      .order('received_at', { ascending: false })
+      .limit(300);
 
     if (error) { console.error('Error fetching mails:', error); return []; }
 
@@ -313,11 +344,19 @@ export const supabaseStorage = {
     };
 
     if (isNew) {
-      const { error } = await supabase.from('mails').insert(mailData);
+      const { data, error } = await supabase.from('mails').insert(mailData).select('id').single();
       if (error) { console.error('Error inserting mail:', error); return false; }
+      await recordAuditLog('create', 'mail', data?.id || mail.id, `Correspondência cadastrada para morador ${mail.residentId}`, {
+        residentId: mail.residentId,
+        packageType: mail.packageType,
+      });
     } else {
       const { error } = await supabase.from('mails').update(mailData).eq('id', mail.id);
       if (error) { console.error('Error updating mail:', error); return false; }
+      await recordAuditLog('update', 'mail', mail.id, `Correspondência atualizada: ${mail.status}`, {
+        residentId: mail.residentId,
+        status: mail.status,
+      });
     }
     invalidateCache('mails_list');
     return true;
@@ -326,6 +365,7 @@ export const supabaseStorage = {
   async deleteMail(id: string): Promise<boolean> {
     const { error } = await supabase.from('mails').delete().eq('id', id);
     if (error) { console.error('Error deleting mail:', error); return false; }
+    await recordAuditLog('delete', 'mail', id, 'Correspondência excluída');
     invalidateCache('mails_list');
     return true;
   },
@@ -339,13 +379,13 @@ export const supabaseStorage = {
 
     const { data, error } = await supabase
       .from('access_entries')
-      .select('*')
+      .select(ACCESS_ENTRY_COLUMNS)
       .order('entry_time', { ascending: false })
-      .limit(200); // cap at 200 — avoids unbounded growth
+      .limit(200); // cap at 200 to avoid unbounded growth
 
     if (error) { console.error('Error fetching entries:', error); return []; }
 
-    const entries = (data || []).map(e => ({
+    const entries = (data || []).map(e => normalizeAccessEntryText({
       id: e.id,
       visitorName: e.visitor_name,
       visitorDocument: e.visitor_document,
@@ -399,7 +439,7 @@ export const supabaseStorage = {
     return null;
   },
 
-  async saveEntry(entry: AccessEntry): Promise<boolean> {
+  async saveEntry(entry: AccessEntry): Promise<string | null> {
     const isNew = entry.id.startsWith('entry_');
     const excludeId = isNew ? undefined : entry.id;
 
@@ -408,7 +448,7 @@ export const supabaseStorage = {
       if (duplicateMsg) {
         const { toast } = await import('sonner');
         toast.error(duplicateMsg);
-        return false;
+        return null;
       }
     }
 
@@ -431,12 +471,57 @@ export const supabaseStorage = {
     };
 
     if (isNew) {
-      const { error } = await supabase.from('access_entries').insert(entryData);
-      if (error) { console.error('Error inserting entry:', error); return false; }
+      const { data, error } = await supabase
+        .from('access_entries')
+        .insert(entryData)
+        .select('id')
+        .single();
+      if (error || !data) {
+        console.error('Error inserting entry:', error);
+        return null;
+      }
+      await recordAuditLog('create', 'access_entry', data.id, `Entrada registrada: ${entryData.visitor_name}`, {
+        apartment: entryData.apartment,
+        visitorType: entryData.visitor_type,
+      });
+      invalidateCache('entries_list');
+      return data.id;
     } else {
       const { error } = await supabase.from('access_entries').update(entryData).eq('id', entry.id);
-      if (error) { console.error('Error updating entry:', error); return false; }
+      if (error) { console.error('Error updating entry:', error); return null; }
+      await recordAuditLog(entry.exitTime ? 'register_exit' : 'update', 'access_entry', entry.id, entry.exitTime ? `Saída registrada: ${entryData.visitor_name}` : `Cadastro de acesso atualizado: ${entryData.visitor_name}`, {
+        apartment: entryData.apartment,
+        exitTime: entry.exitTime,
+      });
     }
+    invalidateCache('entries_list');
+    return entry.id;
+  },
+
+  async registerEntryExit(entry: AccessEntry, exitTime: string): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('access_entries')
+      .update({ exit_time: exitTime })
+      .eq('id', entry.id)
+      .is('exit_time', null)
+      .select('id')
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error registering entry exit:', error);
+      return false;
+    }
+
+    if (!data) {
+      console.warn('Access entry exit not updated; entry may already be closed:', entry.id);
+      invalidateCache('entries_list');
+      return false;
+    }
+
+    await recordAuditLog('register_exit', 'access_entry', entry.id, `Saída registrada: ${up(entry.visitorName) || entry.visitorName}`, {
+      apartment: up(entry.apartment) || entry.apartment,
+      exitTime,
+    });
     invalidateCache('entries_list');
     return true;
   },
@@ -444,6 +529,7 @@ export const supabaseStorage = {
   async deleteEntry(id: string): Promise<boolean> {
     const { error } = await supabase.from('access_entries').delete().eq('id', id);
     if (error) { console.error('Error deleting entry:', error); return false; }
+    await recordAuditLog('delete', 'access_entry', id, 'Cadastro de acesso excluído');
     invalidateCache('entries_list');
     return true;
   },
@@ -457,7 +543,7 @@ export const supabaseStorage = {
 
     const { data, error } = await supabase
       .from('devices')
-      .select('*')
+      .select(DEVICE_COLUMNS)
       .order('created_at', { ascending: false });
 
     if (error) { console.error('Error fetching devices:', error); return []; }
@@ -480,7 +566,7 @@ export const supabaseStorage = {
   async getDeviceById(id: string): Promise<Device | null> {
     const { data, error } = await supabase
       .from('devices')
-      .select('*')
+      .select(DEVICE_COLUMNS)
       .eq('id', id)
       .maybeSingle();
 
@@ -515,11 +601,19 @@ export const supabaseStorage = {
     };
 
     if (isNew) {
-      const { error } = await supabase.from('devices').insert(deviceData);
+      const { data, error } = await supabase.from('devices').insert(deviceData).select('id').single();
       if (error) { console.error('Error inserting device:', error); return false; }
+      await recordAuditLog('create', 'device', data?.id || device.id, `Dispositivo cadastrado: ${device.name}`, {
+        type: device.type,
+        location: device.location,
+      });
     } else {
       const { error } = await supabase.from('devices').update(deviceData).eq('id', device.id);
       if (error) { console.error('Error updating device:', error); return false; }
+      await recordAuditLog('update', 'device', device.id, `Dispositivo atualizado: ${device.name}`, {
+        type: device.type,
+        location: device.location,
+      });
     }
     invalidateCache('devices_list');
     return true;
@@ -528,6 +622,7 @@ export const supabaseStorage = {
   async deleteDevice(id: string): Promise<boolean> {
     const { error } = await supabase.from('devices').delete().eq('id', id);
     if (error) { console.error('Error deleting device:', error); return false; }
+    await recordAuditLog('delete', 'device', id, 'Dispositivo excluído');
     invalidateCache('devices_list');
     return true;
   },
@@ -541,7 +636,7 @@ export const supabaseStorage = {
 
     const { data, error } = await supabase
       .from('realtime_events')
-      .select('*')
+      .select(REALTIME_EVENT_COLUMNS)
       .order('timestamp', { ascending: false })
       .limit(30);
 

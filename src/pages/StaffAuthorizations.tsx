@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import StandardPagination from '@/components/StandardPagination';
 import { supabase } from '@/integrations/supabase/client';
 import { sendPushToUser } from '@/lib/push-subscription';
+import { createDebouncedRunner } from '@/lib/debounce';
+import { recordAuditLog } from '@/lib/audit-log';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -58,21 +60,32 @@ const StaffAuthorizations = () => {
   const loadAuths = async () => {
     const { data } = await supabase
       .from('visitor_authorizations')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select('id, resident_id, visitor_name, visitor_document, authorized_date, authorized_until, purpose, vehicle_plate, status, staff_notes, created_at')
+      .order('created_at', { ascending: false })
+      .limit(100);
     
     if (!data) { setLoading(false); return; }
 
-    const enriched = await Promise.all(
-      (data as any[]).map(async (a: Authorization) => {
-        const { data: res } = await supabase
+    const authRows = data as Authorization[];
+    const residentIds = Array.from(new Set(authRows.map((a) => a.resident_id).filter(Boolean)));
+    const { data: residentsData } = residentIds.length > 0
+      ? await supabase
           .from('residents')
-          .select('name, apartment')
-          .eq('id', a.resident_id)
-          .maybeSingle();
-        return { ...a, resident: res || undefined };
-      })
+          .select('id, name, apartment')
+          .in('id', residentIds)
+      : { data: [] };
+
+    const residentsById = new Map(
+      ((residentsData || []) as (ResidentInfo & { id: string })[]).map((resident) => [resident.id, {
+        name: resident.name,
+        apartment: resident.apartment,
+      }])
     );
+
+    const enriched = authRows.map((a) => ({
+      ...a,
+      resident: residentsById.get(a.resident_id),
+    }));
 
     setAuths(enriched);
     setLoading(false);
@@ -82,21 +95,35 @@ const StaffAuthorizations = () => {
 
   // Set up realtime subscription to auto-refresh when authorizations change
   useEffect(() => {
+    const scheduleLoadAuths = createDebouncedRunner(loadAuths, 1500);
     const channel = supabase
       .channel('staff-auth-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'visitor_authorizations' }, () => {
-        loadAuths();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'visitor_authorizations' }, () => scheduleLoadAuths())
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      scheduleLoadAuths.cancel();
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleReview = async (id: string, status: 'approved' | 'rejected') => {
     const auth = auths.find(a => a.id === id);
-    await supabase
+    const { error } = await supabase
       .from('visitor_authorizations')
       .update({ status, staff_notes: staffNotes || null, reviewed_by: user?.id } as any)
       .eq('id', id);
+
+    if (error) {
+      console.error('Error reviewing authorization:', error);
+      toast.error('Erro ao revisar autorização');
+      return;
+    }
+
+    await recordAuditLog('review', 'visitor_authorization', id, `Autorização ${status === 'approved' ? 'aprovada' : 'rejeitada'}: ${auth?.visitor_name || id}`, {
+      status,
+      residentId: auth?.resident_id,
+      hasStaffNotes: Boolean(staffNotes),
+    });
 
     if (auth) {
       const { data: res } = await (supabase.from('residents').select('auth_user_id') as any)
@@ -125,16 +152,29 @@ const StaffAuthorizations = () => {
   const handleBulkReview = async (items: (Authorization & { resident?: ResidentInfo })[], status: 'approved' | 'rejected') => {
     const pendingItems = items.filter(a => a.status === 'pending');
     if (pendingItems.length === 0) return;
+    const pendingIds = pendingItems.map((item) => item.id);
 
-    for (const item of pendingItems) {
-      await supabase
-        .from('visitor_authorizations')
-        .update({ status, staff_notes: staffNotes || null, reviewed_by: user?.id } as any)
-        .eq('id', item.id);
+    const { error } = await supabase
+      .from('visitor_authorizations')
+      .update({ status, staff_notes: staffNotes || null, reviewed_by: user?.id } as any)
+      .in('id', pendingIds);
+
+    if (error) {
+      console.error('Error bulk reviewing authorizations:', error);
+      toast.error('Erro ao revisar lista de convidados');
+      return;
     }
 
     // Notify resident
     const first = pendingItems[0];
+    await recordAuditLog('bulk_review', 'visitor_authorization', null, `${pendingItems.length} autorização(ões) ${status === 'approved' ? 'aprovadas' : 'rejeitadas'} em lote`, {
+      status,
+      count: pendingItems.length,
+      residentId: first.resident_id,
+      authorizationIds: pendingIds,
+      hasStaffNotes: Boolean(staffNotes),
+    });
+
     const { data: res } = await (supabase.from('residents').select('auth_user_id') as any)
       .eq('id', first.resident_id)
       .maybeSingle();

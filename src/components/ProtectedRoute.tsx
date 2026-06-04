@@ -26,10 +26,7 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
       let active = true;
       setRoleChecked(false);
 
-      Promise.race([
-        getUserRole(user.id),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
-      ]).then((role) => {
+      getUserRole(user.id).then((role) => {
         if (!active) return;
         if (role === 'resident') {
           setIsResident(true);

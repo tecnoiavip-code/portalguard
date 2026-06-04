@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Wifi, WifiOff, Camera, Tag, CreditCard, Pencil, Trash2, Plus, Loader2, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Wifi, WifiOff, Camera, Tag, CreditCard, Pencil, Trash2, Plus, Loader2, RefreshCw, CheckCircle2, AlertCircle, Activity, Clock, ShieldCheck } from 'lucide-react';
 import { Device } from '@/types';
 import { useDevices } from '@/hooks/useDevices';
 import { useResidents } from '@/hooks/useResidents';
@@ -42,17 +42,36 @@ const EMPTY_DEVICE_FORM = {
   serialNumber: '',
 };
 
+type DeviceHealth = {
+  color: string;
+  label: string;
+  status: 'ok' | 'attention' | 'offline';
+};
+
+const getSyncAgeMinutes = (device: Device) => {
+  if (!device.lastSync) return null;
+  const last = new Date(device.lastSync).getTime();
+  if (!Number.isFinite(last)) return null;
+  return Math.max(0, Math.round((Date.now() - last) / 60000));
+};
+
+const formatLastSync = (device: Device) => {
+  if (!device.lastSync) return 'Nunca sincronizado';
+  const last = new Date(device.lastSync);
+  if (Number.isNaN(last.getTime())) return 'Nunca sincronizado';
+  return last.toLocaleString('pt-BR');
+};
+
 // Health indicator color: green = ok, yellow = attention, red = offline
-const getDeviceHealth = (device: Device): { color: string; label: string } => {
-  if (device.status !== 'online') return { color: 'bg-destructive', label: 'Desconectado' };
-  const last = device.lastSync ? new Date(device.lastSync).getTime() : 0;
-  const ageMin = (Date.now() - last) / 60000;
-  if (!last || ageMin > 10) return { color: 'bg-yellow-500', label: 'Atenção: sem sync recente' };
-  return { color: 'bg-green-500', label: 'Sincronizado e online' };
+const getDeviceHealth = (device: Device): DeviceHealth => {
+  if (device.status !== 'online') return { color: 'bg-destructive', label: 'Desconectado', status: 'offline' };
+  const ageMin = getSyncAgeMinutes(device);
+  if (ageMin === null || ageMin > 10) return { color: 'bg-yellow-500', label: 'Atenção: sem sync recente', status: 'attention' };
+  return { color: 'bg-green-500', label: 'Sincronizado e online', status: 'ok' };
 };
 
 export const Devices = () => {
-  const { devices, loading, saveDevice, deleteDevice } = useDevices();
+  const { devices, loading, saveDevice, deleteDevice, refresh } = useDevices();
   const { residents, refresh: refreshResidents } = useResidents();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string>('');
@@ -66,6 +85,30 @@ export const Devices = () => {
 
   const syncing = job.status === 'running';
   const [formData, setFormData] = useState({ ...EMPTY_DEVICE_FORM });
+
+  const deviceOverview = useMemo(() => {
+    const healthItems = devices.map((device) => ({
+      device,
+      health: getDeviceHealth(device),
+    }));
+    const latestSyncDevice = devices.reduce<Device | null>((latest, device) => {
+      const currentTime = device.lastSync ? new Date(device.lastSync).getTime() : 0;
+      const latestTime = latest?.lastSync ? new Date(latest.lastSync).getTime() : 0;
+      if (!Number.isFinite(currentTime)) return latest;
+      return currentTime > latestTime ? device : latest;
+    }, null);
+
+    return {
+      total: devices.length,
+      online: devices.filter((device) => device.status === 'online').length,
+      offline: healthItems.filter((item) => item.health.status === 'offline').length,
+      attention: healthItems.filter((item) => item.health.status === 'attention').length,
+      ok: healthItems.filter((item) => item.health.status === 'ok').length,
+      withSerial: devices.filter((device) => Boolean(device.serialNumber)).length,
+      missingSerial: devices.filter((device) => !device.serialNumber).length,
+      latestSyncDevice,
+    };
+  }, [devices]);
 
   const clearDeviceDraft = () => {
     try {
@@ -283,12 +326,16 @@ export const Devices = () => {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-3xl font-bold text-foreground mb-2">Dispositivos</h2>
           <p className="text-muted-foreground">Gerencie os dispositivos de controle de acesso</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => refresh(true)} disabled={loading || syncing}>
+            {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Activity className="h-4 w-4 mr-2" />}
+            Atualizar Status
+          </Button>
           <Button variant="outline" onClick={handleSyncAll} disabled={syncing}>
             {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
             Sincronizar Tudo
@@ -322,14 +369,71 @@ export const Devices = () => {
             )}
             {(job.photosSynced > 0 || job.tagsSynced > 0 || job.errors > 0) && (
               <div className="flex gap-3 text-xs text-muted-foreground">
-                <span>📷 {job.photosSynced} fotos</span>
-                <span>🏷️ {job.tagsSynced} TAGs</span>
-                {job.errors > 0 && <span className="text-destructive">⚠️ {job.errors} erros</span>}
+                <span>Fotos: {job.photosSynced}</span>
+                <span>TAGs: {job.tagsSynced}</span>
+                {job.errors > 0 && <span className="text-destructive">Erros: {job.errors}</span>}
               </div>
             )}
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-primary" />
+              <span>Saúde dos Dispositivos</span>
+            </div>
+            <Badge variant={deviceOverview.attention || deviceOverview.offline ? 'secondary' : 'default'}>
+              {deviceOverview.ok} estável{deviceOverview.ok !== 1 ? 's' : ''}
+            </Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            <div className="rounded-md border p-4">
+              <p className="text-xs text-muted-foreground">Cadastrados</p>
+              <p className="text-2xl font-bold">{deviceOverview.total}</p>
+              <p className="text-xs text-muted-foreground">{deviceOverview.online} online</p>
+            </div>
+            <div className="rounded-md border p-4">
+              <p className="text-xs text-muted-foreground">Sem sync recente</p>
+              <p className="text-2xl font-bold text-yellow-600">{deviceOverview.attention}</p>
+              <p className="text-xs text-muted-foreground">acima de 10 minutos</p>
+            </div>
+            <div className="rounded-md border p-4">
+              <p className="text-xs text-muted-foreground">Offline</p>
+              <p className="text-2xl font-bold text-destructive">{deviceOverview.offline}</p>
+              <p className="text-xs text-muted-foreground">marcados como inativos</p>
+            </div>
+            <div className="rounded-md border p-4">
+              <p className="text-xs text-muted-foreground">Prontos para push</p>
+              <p className="text-2xl font-bold">{deviceOverview.withSerial}</p>
+              <p className="text-xs text-muted-foreground">{deviceOverview.missingSerial} sem número de série</p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 rounded-md border bg-muted/30 p-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-start gap-3">
+              <Clock className="h-5 w-5 text-muted-foreground mt-0.5" />
+              <div>
+                <p className="text-sm font-medium">Última sincronização registrada</p>
+                <p className="text-sm text-muted-foreground">
+                  {deviceOverview.latestSyncDevice
+                    ? `${deviceOverview.latestSyncDevice.name} em ${formatLastSync(deviceOverview.latestSyncDevice)}`
+                    : 'Nenhum dispositivo sincronizado ainda'}
+                </p>
+              </div>
+            </div>
+            {(deviceOverview.attention > 0 || deviceOverview.offline > 0 || deviceOverview.missingSerial > 0) && (
+              <div className="text-sm text-muted-foreground md:text-right">
+                Revise status, rede local e número de série antes de sincronizar moradores em lote.
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
       {showForm && (
         <Card>
           <CardHeader>
@@ -359,9 +463,9 @@ export const Devices = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="facial_recognition">📷 Reconhecimento Facial</SelectItem>
-                      <SelectItem value="vehicle_tag">🏷️ TAG Veicular</SelectItem>
-                      <SelectItem value="card_reader">💳 Leitor de Cartão</SelectItem>
+                      <SelectItem value="facial_recognition">Reconhecimento Facial</SelectItem>
+                      <SelectItem value="vehicle_tag">TAG Veicular</SelectItem>
+                      <SelectItem value="card_reader">Leitor de Cartão</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -387,8 +491,8 @@ export const Devices = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="online">🟢 Online</SelectItem>
-                      <SelectItem value="offline">🔴 Offline</SelectItem>
+                      <SelectItem value="online">Online</SelectItem>
+                      <SelectItem value="offline">Offline</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -437,7 +541,11 @@ export const Devices = () => {
             </CardContent>
           </Card>
         ) : (
-          devices.map((device) => (
+          devices.map((device) => {
+            const health = getDeviceHealth(device);
+            const syncAge = getSyncAgeMinutes(device);
+
+            return (
             <Card key={device.id} className="hover:shadow-lg transition-shadow">
               <CardHeader>
                 <div className="flex items-start justify-between">
@@ -447,9 +555,9 @@ export const Devices = () => {
                         {getDeviceIcon(device.type)}
                       </div>
                       <span
-                        className={`absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-card ${getDeviceHealth(device).color}`}
-                        title={getDeviceHealth(device).label}
-                        aria-label={getDeviceHealth(device).label}
+                        className={`absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-card ${health.color}`}
+                        title={health.label}
+                        aria-label={health.label}
                       />
                     </div>
                     <div>
@@ -483,7 +591,13 @@ export const Devices = () => {
                   )}
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Última Sync:</span>
-                    <span className="text-xs">{new Date(device.lastSync).toLocaleString('pt-BR')}</span>
+                    <span className="text-xs text-right">{formatLastSync(device)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Saúde:</span>
+                    <span className="text-xs text-right">
+                      {health.label}{syncAge !== null ? ` (${syncAge} min)` : ''}
+                    </span>
                   </div>
                 </div>
 
@@ -513,7 +627,8 @@ export const Devices = () => {
                 </div>
               </CardContent>
             </Card>
-          ))
+            );
+          })
         )}
       </div>
     </div>

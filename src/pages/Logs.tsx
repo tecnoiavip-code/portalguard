@@ -17,6 +17,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/contexts/AuthContext';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 export const Logs = () => {
   const { entries: allEntries } = useAccessEntries();
@@ -54,6 +55,13 @@ export const Logs = () => {
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
+
+  const clearFilters = () => {
+    setSearchTerm('');
+    setDateFrom('');
+    setDateTo('');
+    setCurrentPage(1);
+  };
 
   const handleBlockVisitor = async () => {
     if (!blockDialog.name || !blockDialog.document) return;
@@ -128,6 +136,9 @@ export const Logs = () => {
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="secondary">{entries.length} registros</Badge>
+              <Button variant="outline" size="sm" onClick={clearFilters}>
+                Limpar Filtros
+              </Button>
               <Button variant="outline" size="sm" onClick={exportLogsToPDF}>
                 <Download className="h-4 w-4 mr-2" />
                 PDF
@@ -172,108 +183,89 @@ export const Logs = () => {
                   className="w-auto"
                 />
               </div>
-              {(dateFrom || dateTo) && (
-                <Button variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); setCurrentPage(1); }}>
-                  Limpar datas
-                </Button>
-              )}
             </div>
           </div>
 
-          <div className="space-y-3">
-            {paginatedEntries.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                {searchTerm ? 'Nenhum registro encontrado' : 'Nenhum acesso registrado ainda'}
-              </p>
-            ) : (
-              paginatedEntries.map((entry) => (
-                <div
-                  key={entry.id}
-                  className="p-4 bg-card rounded-lg border border-border hover:shadow-md hover:border-primary/30 transition-all cursor-pointer"
-                  onClick={() => setSelectedEntry(entry)}
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      {entry.photo ? (
-                        <img src={entry.photo} alt={entry.visitorName} className="w-20 h-20 rounded-full object-cover border-2 border-primary/20" />
-                      ) : (
-                        <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-3xl">
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[60px]">Foto</TableHead>
+                  <TableHead>Visitante</TableHead>
+                  <TableHead>Apartamento</TableHead>
+                  <TableHead>Crachá</TableHead>
+                  <TableHead>Entrada</TableHead>
+                  <TableHead>Saída</TableHead>
+                  <TableHead>Veículo</TableHead>
+                  <TableHead className="text-right w-[140px]">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paginatedEntries.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                      {searchTerm ? 'Nenhum registro encontrado' : 'Nenhum acesso registrado ainda'}
+                    </TableCell>
+                  </TableRow>
+                ) : paginatedEntries.map(entry => (
+                  <TableRow key={entry.id} className={`cursor-pointer ${entry.visitorType === 'service_provider' ? 'bg-warning/5 hover:bg-warning/10' : 'bg-success/5 hover:bg-success/10'}`} onClick={() => setSelectedEntry(entry)}>
+                    <TableCell>
+                      {entry.photo ? <img src={entry.photo} alt={entry.visitorName} className="w-20 h-20 rounded-full object-cover border-2 border-primary/20" /> : <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-3xl">
                           {entry.visitorType === 'service_provider' ? '🔧' : '👤'}
-                        </div>
-                      )}
+                        </div>}
+                    </TableCell>
+                    <TableCell>
                       <div>
-                        <p className="font-semibold text-foreground text-lg">
-                          {entry.visitorName}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          Doc: {entry.visitorDocument}
-                        </p>
+                        <p className="font-semibold">{entry.visitorName}</p>
+                        <p className="text-xs text-muted-foreground">{entry.visitorDocument}</p>
+                        {entry.company && <p className="text-xs text-muted-foreground">🏢 {entry.company}</p>}
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={(e) => { e.stopPropagation(); setBlockDialog({ open: true, name: entry.visitorName, document: entry.visitorDocument }); }}
-                      >
-                        <ShieldBan className="h-4 w-4 mr-1" />
-                        Bloquear
-                      </Button>
-                      <Badge
-                        variant={entry.exitTime ? 'secondary' : 'default'}
-                        className={entry.exitTime ? '' : 'bg-success'}
-                      >
-                        {entry.exitTime ? 'Finalizado' : 'Ativo'}
-                      </Badge>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <p className="text-muted-foreground">
-                        <span className="font-medium">Visitando:</span> {entry.residentName}
-                      </p>
-                      <p className="text-muted-foreground">
-                        <span className="font-medium">Apartamento:</span> {entry.apartment}
-                      </p>
-                      {entry.vehiclePlate && (
-                        <p className="text-muted-foreground">
-                          <span className="font-medium">Veículo:</span> {entry.vehiclePlate}
-                        </p>
-                      )}
-                      {entry.purpose && (
-                        <p className="text-muted-foreground">
-                          <span className="font-medium">Motivo:</span> {entry.purpose}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center space-x-2 text-success">
-                        <LogIn className="h-4 w-4" />
-                        <div>
-                          <p className="font-medium">Entrada</p>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(entry.entryTime).toLocaleString('pt-BR')}
-                          </p>
-                        </div>
+                    </TableCell>
+                    <TableCell>
+                      <div>
+                        <p className="font-medium">{entry.apartment}</p>
+                        <p className="text-xs text-muted-foreground">{entry.residentName}</p>
                       </div>
-                      {entry.exitTime && (
-                        <div className="flex items-center space-x-2 text-muted-foreground">
-                          <LogOut className="h-4 w-4" />
-                          <div>
-                            <p className="font-medium">Saída</p>
-                            <p className="text-xs text-muted-foreground">
-                              {new Date(entry.exitTime).toLocaleString('pt-BR')}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
+                    </TableCell>
+                    <TableCell className="text-sm font-mono">
+                      {entry.badgeNumber || '-'}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {new Date(entry.entryTime).toLocaleString('pt-BR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {entry.exitTime ? new Date(entry.exitTime).toLocaleString('pt-BR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      }) : <Badge variant="default" className="bg-success">Ativo</Badge>}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {entry.vehiclePlate ? <div>
+                          <p>🚗 {entry.vehiclePlate}</p>
+                          {entry.vehicleModel && <p className="text-xs">{entry.vehicleModel}</p>}
+                        </div> : '-'}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button size="icon" variant="ghost" onClick={(e) => { e.stopPropagation(); setBlockDialog({ open: true, name: entry.visitorName, document: entry.visitorDocument }); }} className="h-8 w-8 text-destructive hover:text-destructive" title="Bloquear">
+                          <ShieldBan className="h-4 w-4" />
+                        </Button>
+                        <Badge variant={entry.exitTime ? 'secondary' : 'default'} className={entry.exitTime ? 'h-8 px-2' : 'h-8 px-2 bg-success'}>
+                          {entry.exitTime ? 'Finalizado' : 'Ativo'}
+                        </Badge>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
 
           <StandardPagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} className="mt-4" />

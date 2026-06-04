@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { LayoutDashboard, Users, FileText, Mail, ScrollText, Settings, Smartphone, ClipboardList, MessageSquare, Shield, MailSearch, Megaphone } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Mail, ScrollText, Settings, Smartphone, ClipboardList, MessageSquare, Shield, MailSearch, Megaphone, ShieldCheck } from 'lucide-react';
 
 interface SidebarProps {
   activeSection: string;
@@ -20,6 +20,7 @@ const navItems = [
   { id: 'reports', label: 'Relatórios', icon: ClipboardList, group: 'Operações' },
   { id: 'devices', label: 'Dispositivos', icon: Smartphone, group: 'Sistema' },
   { id: 'logs', label: 'Logs de Acesso', icon: ScrollText, group: 'Sistema' },
+  { id: 'audit-logs', label: 'Auditoria', icon: ShieldCheck, group: 'Sistema' },
   { id: 'settings', label: 'Configurações', icon: Settings, group: 'Sistema' },
 ];
 
@@ -30,9 +31,9 @@ export const Sidebar = ({ activeSection, onSectionChange, isOpen }: SidebarProps
   return (
     <aside
       className={cn(
-        'fixed md:sticky top-[88px] z-20 w-80 h-[calc(100vh-88px)] bg-card shadow-card transition-transform duration-300 overflow-y-auto',
-        'md:translate-x-0',
-        isOpen ? 'translate-x-0' : '-translate-x-full'
+        'fixed left-0 top-[72px] z-50 h-[calc(100vh-72px)] w-80 bg-card shadow-card transition-transform duration-300 overflow-y-auto md:sticky md:top-[88px] md:z-20 md:h-[calc(100vh-88px)]',
+        'md:!translate-x-0',
+        isOpen ? '!translate-x-0' : '-translate-x-full'
       )}
     >
       <div className="p-6 space-y-6">
@@ -72,7 +73,7 @@ export const Sidebar = ({ activeSection, onSectionChange, isOpen }: SidebarProps
       
       <div className="border-t border-border p-4 space-y-2 bg-muted/30">
         <div className="text-xs text-muted-foreground space-y-1">
-          <p className="font-semibold text-foreground">© 2024 CondoGuard Pro</p>
+          <p className="font-semibold text-foreground">© 2024 PortalGuard Pro</p>
           <p>Todos os direitos reservados</p>
           <div className="flex flex-wrap gap-2 pt-2">
             <a href="#" className="hover:text-primary transition-colors">Política de Privacidade</a>

@@ -12,6 +12,7 @@ import { setAppBadge } from '@/lib/pwa-badge';
 import { notifyResident, requestNotificationPermission } from '@/lib/pwa-notify';
 import { subscribeToPush } from '@/lib/push-subscription';
 import { clearRoleCache, getUserRole } from '@/lib/auth-role';
+import { createDebouncedRunner } from '@/lib/debounce';
 
 interface ResidentLayoutProps {
   children: ReactNode;
@@ -36,6 +37,8 @@ const tabTitles: Record<string, string> = {
   authorizations: 'Autorizações',
   chat: 'Chat com Portaria',
 };
+
+const RESIDENT_EXTENDED_REALTIME_ENABLED = import.meta.env.VITE_RESIDENT_EXTENDED_REALTIME_ENABLED === 'true';
 
 const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }: ResidentLayoutProps) => {
   const { user, isLoading } = useAuth();
@@ -248,8 +251,9 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
     };
 
     loadCounts();
+    const scheduleLoadCounts = createDebouncedRunner(loadCounts, 1500);
 
-    const channel = supabase
+    let channel = supabase
       .channel('resident-notifs')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (payload) => {
         const notif = payload.new as any;
@@ -265,39 +269,44 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
         });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => {
-        loadCounts();
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
-        const msg = payload.new as any;
-        if (msg.sender_type === 'staff' && msg.resident_id === residentIdRef.current) {
-          setCounts(prev => {
-            const next = { ...prev, chat: prev.chat + 1 };
-            const total = next.chat + next.notif + next.mails + next.announcements;
-            notifyResident('Nova mensagem da portaria', msg.message?.substring(0, 100) || '', {
-              tag: `chat-${msg.id}`,
-              totalBadge: total,
+        scheduleLoadCounts();
+      });
+
+    if (RESIDENT_EXTENDED_REALTIME_ENABLED) {
+      channel = channel
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
+          const msg = payload.new as any;
+          if (msg.sender_type === 'staff' && msg.resident_id === residentIdRef.current) {
+            setCounts(prev => {
+              const next = { ...prev, chat: prev.chat + 1 };
+              const total = next.chat + next.notif + next.mails + next.announcements;
+              notifyResident('Nova mensagem da portaria', msg.message?.substring(0, 100) || '', {
+                tag: `chat-${msg.id}`,
+                totalBadge: total,
+              });
+              prevCountsRef.current = next;
+              return next;
             });
-            prevCountsRef.current = next;
-            return next;
-          });
-        }
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, () => {
-        loadCounts();
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mails' }, () => {
-        loadCounts();
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'mails' }, () => {
-        loadCounts();
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'announcements' }, () => {
-        loadCounts();
-      })
-      .subscribe();
+          }
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, () => {
+          scheduleLoadCounts();
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mails' }, () => {
+          scheduleLoadCounts();
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'mails' }, () => {
+          scheduleLoadCounts();
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'announcements' }, () => {
+          scheduleLoadCounts();
+        });
+    }
+
+    channel.subscribe();
 
     const loadIfVisible = () => {
-      if (document.visibilityState === 'visible') loadCounts();
+      if (document.visibilityState === 'visible') scheduleLoadCounts();
     };
     window.addEventListener('focus', loadIfVisible);
     document.addEventListener('visibilitychange', loadIfVisible);
@@ -312,6 +321,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
     return () => {
       isActive = false;
       clearTimeout(pollTimeout);
+      scheduleLoadCounts.cancel();
       window.removeEventListener('focus', loadIfVisible);
       document.removeEventListener('visibilitychange', loadIfVisible);
       supabase.removeChannel(channel);

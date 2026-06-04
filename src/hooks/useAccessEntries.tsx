@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabaseStorage } from '@/lib/supabase-storage';
+import { normalizeAccessEntryText, supabaseStorage } from '@/lib/supabase-storage';
 import { AccessEntry } from '@/types';
 import { toast } from 'sonner';
 
@@ -19,25 +19,44 @@ export const useAccessEntries = () => {
   }, [loadEntries]);
 
   const saveEntry = useCallback(async (entry: AccessEntry) => {
-    const success = await supabaseStorage.saveEntry(entry);
-    if (success) {
+    const savedId = await supabaseStorage.saveEntry(entry);
+    if (savedId) {
+      const savedEntry = normalizeAccessEntryText({ ...entry, id: savedId });
       // Otimização: atualizar estado local com dados que temos, sem getEntryById() extra
       setEntries(prev => {
-        const index = prev.findIndex(e => e.id === entry.id);
+        const index = prev.findIndex(e => e.id === entry.id || e.id === savedId);
         if (index > -1) {
           // Update existing (for exit time changes)
           const newEntries = [...prev];
-          newEntries[index] = entry;
+          newEntries[index] = savedEntry;
           return newEntries;
         }
         // Add new entry at the beginning
-        return [entry, ...prev];
+        return [savedEntry, ...prev];
       });
       return true;
     }
     toast.error('Erro ao salvar cadastro');
     return false;
   }, []);
+
+  const registerExit = useCallback(async (entry: AccessEntry) => {
+    const exitTime = new Date().toISOString();
+    const success = await supabaseStorage.registerEntryExit(entry, exitTime);
+
+    if (success) {
+      setEntries(prev => prev.map(item => (
+        item.id === entry.id
+          ? normalizeAccessEntryText({ ...item, exitTime })
+          : item
+      )));
+      return true;
+    }
+
+    toast.error('Erro ao registrar saída');
+    await loadEntries();
+    return false;
+  }, [loadEntries]);
 
   const deleteEntry = useCallback(async (id: string) => {
     const success = await supabaseStorage.deleteEntry(id);
@@ -54,6 +73,7 @@ export const useAccessEntries = () => {
     entries,
     loading,
     saveEntry,
+    registerExit,
     deleteEntry,
     refresh: loadEntries,
   };

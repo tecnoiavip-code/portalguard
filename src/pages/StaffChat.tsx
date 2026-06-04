@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { sendPushToUser } from '@/lib/push-subscription';
 import { playNotificationSound } from '@/lib/notification-sound';
+import { createDebouncedRunner } from '@/lib/debounce';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -43,6 +44,8 @@ const formatDateLabel = (dateStr: string) => {
   if (isYesterday(date)) return 'Ontem';
   return format(date, "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
 };
+
+const STAFF_CHAT_GLOBAL_REALTIME_ENABLED = import.meta.env.VITE_STAFF_CHAT_GLOBAL_REALTIME_ENABLED !== 'false';
 
 const StaffChat = () => {
   const { user } = useAuth();
@@ -91,8 +94,9 @@ const StaffChat = () => {
       .from('chat_messages')
       .select('id, sender_type, message, created_at, read')
       .eq('resident_id', rid)
-      .order('created_at', { ascending: true });
-    setMessages((data as any) || []);
+      .order('created_at', { ascending: false })
+      .limit(100);
+    setMessages(((data as any) || []).reverse());
 
     await supabase
       .from('chat_messages')
@@ -106,7 +110,8 @@ const StaffChat = () => {
     const { data } = await supabase
       .from('residents')
       .select('id, name, apartment')
-      .order('name');
+      .order('name')
+      .limit(300);
     if (data) setAllResidents(data as ResidentOption[]);
   };
 
@@ -114,21 +119,37 @@ const StaffChat = () => {
 
   // Global listener: play sound when any resident sends a message (even if not viewing that thread)
   useEffect(() => {
-    const channel = supabase
-      .channel('staff-chat-global-sound')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'chat_messages',
-      }, (payload) => {
-        const msg = payload.new as any;
-        if (msg.sender_type === 'resident') {
-          playNotificationSound();
-          if (!selectedThread) loadThreads();
-        }
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    const scheduleLoadThreads = createDebouncedRunner(loadThreads, 1500);
+    const loadIfVisible = () => {
+      if (document.visibilityState === 'visible' && !selectedThread) {
+        scheduleLoadThreads();
+      }
+    };
+
+    window.addEventListener('focus', loadIfVisible);
+    document.addEventListener('visibilitychange', loadIfVisible);
+
+    const channel = STAFF_CHAT_GLOBAL_REALTIME_ENABLED
+      ? supabase
+          .channel('staff-chat-global-sound')
+          .on('postgres_changes', {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'chat_messages',
+            filter: 'sender_type=eq.resident',
+          }, () => {
+            playNotificationSound();
+            if (!selectedThread) scheduleLoadThreads();
+          })
+          .subscribe()
+      : null;
+
+    return () => {
+      scheduleLoadThreads.cancel();
+      window.removeEventListener('focus', loadIfVisible);
+      document.removeEventListener('visibilitychange', loadIfVisible);
+      if (channel) supabase.removeChannel(channel);
+    };
   }, [selectedThread]);
 
   useEffect(() => {

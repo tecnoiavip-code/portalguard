@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { LayoutDashboard, Users, FileText, Mail, ScrollText, Settings, Smartphone, ClipboardList, MessageSquare, Shield, MailSearch, Megaphone, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Mail, ScrollText, Settings, Smartphone, ClipboardList, MessageSquare, Shield, MailSearch, Megaphone } from 'lucide-react';
 
 interface SidebarProps {
   activeSection: string;
@@ -20,7 +20,6 @@ const navItems = [
   { id: 'reports', label: 'Relatórios', icon: ClipboardList, group: 'Operações' },
   { id: 'devices', label: 'Dispositivos', icon: Smartphone, group: 'Sistema' },
   { id: 'logs', label: 'Logs de Acesso', icon: ScrollText, group: 'Sistema' },
-  { id: 'audit-logs', label: 'Auditoria', icon: ShieldCheck, group: 'Sistema' },
   { id: 'settings', label: 'Configurações', icon: Settings, group: 'Sistema' },
 ];
 

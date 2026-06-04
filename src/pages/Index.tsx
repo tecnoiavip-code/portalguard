@@ -11,7 +11,6 @@ const MailManagement = lazy(() => import('./MailManagement').then(({ MailManagem
 const MailLogs = lazy(() => import('./MailLogs').then(({ MailLogs }) => ({ default: MailLogs })));
 const Devices = lazy(() => import('./Devices').then(({ Devices }) => ({ default: Devices })));
 const Logs = lazy(() => import('./Logs').then(({ Logs }) => ({ default: Logs })));
-const AuditLogs = lazy(() => import('./AuditLogs').then(({ AuditLogs }) => ({ default: AuditLogs })));
 const Settings = lazy(() => import('./Settings').then(({ Settings }) => ({ default: Settings })));
 const Reports = lazy(() => import('./Reports').then(({ Reports }) => ({ default: Reports })));
 const StaffChat = lazy(() => import('./StaffChat'));
@@ -36,7 +35,6 @@ const STAFF_SECTIONS = new Set([
   'announcements',
   'devices',
   'logs',
-  'audit-logs',
   'reports',
   'settings',
 ]);
@@ -95,7 +93,6 @@ const Index = () => {
       case 'announcements': return <StaffAnnouncements />;
       case 'devices': return <Devices />;
       case 'logs': return <Logs />;
-      case 'audit-logs': return <AuditLogs />;
       case 'reports': return <Reports />;
       case 'settings': return <Settings />;
       default: return <Dashboard />;

@@ -26,14 +26,45 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     let isMounted = true;
+    let refreshFailures = 0;
+
+    const clearCorruptedSession = async () => {
+      try {
+        // Limpa tokens locais do Supabase para sair do loop de refresh inválido
+        Object.keys(localStorage).forEach((key) => {
+          if (key.startsWith('sb-') && key.includes('-auth-token')) {
+            localStorage.removeItem(key);
+          }
+        });
+      } catch {}
+      if (!isMounted) return;
+      setSession(null);
+      setUser(null);
+    };
 
     const { data: { subscription } } = auth.onAuthStateChange(
-      (_event: any, nextSession: any) => {
+      (event: any, nextSession: any) => {
         if (!isMounted) return;
+        if (event === 'TOKEN_REFRESHED') refreshFailures = 0;
+        if (event === 'SIGNED_OUT') refreshFailures = 0;
         setSession(nextSession);
         setUser(nextSession?.user ?? null);
       }
     );
+
+    // Detecta falhas repetidas no refresh do token (sessão corrompida ou offline persistente)
+    const handleUnhandledRejection = (e: PromiseRejectionEvent) => {
+      const msg = String(e?.reason?.message || e?.reason || '');
+      if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+        refreshFailures += 1;
+        if (refreshFailures >= 5 && navigator.onLine) {
+          refreshFailures = 0;
+          console.warn('[Auth] Sessão corrompida detectada, limpando tokens locais');
+          clearCorruptedSession();
+        }
+      }
+    };
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
 
     const initializeAuth = async () => {
       try {
@@ -51,6 +82,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       isMounted = false;
       subscription.unsubscribe();
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
     };
   }, [auth]);
 

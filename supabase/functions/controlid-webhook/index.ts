@@ -143,6 +143,8 @@ const deviceTypeCache = new Map<string, string | null>();
 const lastStaleRequeueCheckMap = new Map<string, number>();
 const lastImageFetchQueueMap = new Map<string, number>();
 const registeredDeviceAuthCacheMap = new Map<string, { allowed: boolean; expiresAt: number }>();
+const lastDashboardBroadcastMap = new Map<string, number>();
+const lastVehicleTagAutosyncMap = new Map<string, number>();
 
 // Throttle DB-heavy maintenance checks to preserve Supabase free-plan quota.
 const lastConfigRefreshCheckMap = new Map<string, number>();
@@ -152,6 +154,8 @@ const DEVICE_STATUS_WRITE_INTERVAL_MS = 120000; // 2 minutes
 const STALE_REQUEUE_CHECK_INTERVAL_MS = 60000; // 1 minute
 const NO_COMMAND_PUSH_DELAY_MS = Number.parseInt(Deno.env.get('CONTROLID_NO_COMMAND_DELAY_MS') ?? '2500', 10);
 const IMAGE_FETCH_REQUEUE_INTERVAL_MS = Number.parseInt(Deno.env.get('CONTROLID_IMAGE_FETCH_REQUEUE_INTERVAL_MS') ?? '1800000', 10);
+const DASHBOARD_BROADCAST_DEDUP_INTERVAL_MS = Number.parseInt(Deno.env.get('CONTROLID_DASHBOARD_DEDUP_MS') ?? '3000', 10);
+const VEHICLE_TAG_AUTOSYNC_INTERVAL_MS = Number.parseInt(Deno.env.get('CONTROLID_VEHICLE_TAG_AUTOSYNC_MS') ?? '3600000', 10);
 const STALE_EXECUTING_THRESHOLD_MS = 120000; // 120 seconds
 const MAX_STALE_REQUEUE_RETRIES = 3;
 
@@ -263,6 +267,40 @@ const buildControlIdDashboardEvent = (
   received_at: new Date().toISOString(),
 });
 
+const getDashboardBroadcastKey = (deviceId: string, eventType: string, payload: any): string => {
+  const identity =
+    payload?.card_value ||
+    payload?.qrcode_value ||
+    payload?.uhf_tag ||
+    payload?.user_id ||
+    payload?.user_name ||
+    'unknown';
+  const portal = payload?.portal_id ?? payload?.door_id ?? 'default';
+  const event = payload?.event ?? eventType;
+
+  return [
+    sanitizeString(deviceId || 'unknown-device', 100),
+    sanitizeString(eventType || 'unknown', 100),
+    sanitizeString(identity, 120),
+    sanitizeString(portal, 40),
+    sanitizeString(event, 40),
+  ].join(':');
+};
+
+const shouldBroadcastControlIdEvent = (deviceId: string, eventType: string, payload: any): boolean => {
+  const intervalMs = isFinitePositiveNumber(DASHBOARD_BROADCAST_DEDUP_INTERVAL_MS)
+    ? DASHBOARD_BROADCAST_DEDUP_INTERVAL_MS
+    : 3000;
+  const key = getDashboardBroadcastKey(deviceId, eventType, payload);
+  const nowMs = Date.now();
+  const lastMs = lastDashboardBroadcastMap.get(key) || 0;
+
+  if (nowMs - lastMs < intervalMs) return false;
+
+  lastDashboardBroadcastMap.set(key, nowMs);
+  return true;
+};
+
 const broadcastControlIdDashboardEvent = async (
   supabaseClient: any,
   deviceId: string,
@@ -270,6 +308,10 @@ const broadcastControlIdDashboardEvent = async (
   payload: any,
   processed = true
 ) => {
+  if (!shouldBroadcastControlIdEvent(deviceId, eventType, payload)) {
+    return;
+  }
+
   const eventPayload = buildControlIdDashboardEvent(deviceId, eventType, payload, processed);
   const channel = supabaseClient.channel(CONTROLID_DASHBOARD_TOPIC);
 
@@ -1369,9 +1411,21 @@ Deno.serve(async (req) => {
           const identUserName = String(payload.user_name || '');
           if (cardValue && identUserName) {
             try {
-              if (!resolvedDeviceType) {
-                resolvedDeviceType = await resolveDeviceType(supabaseClient, effectiveDeviceId);
-              }
+              const autosyncIntervalMs = isFinitePositiveNumber(VEHICLE_TAG_AUTOSYNC_INTERVAL_MS)
+                ? VEHICLE_TAG_AUTOSYNC_INTERVAL_MS
+                : 3600000;
+              const autosyncKey = `${effectiveDeviceId}:${cardValue}`;
+              const nowMs = Date.now();
+              const lastAutosyncMs = lastVehicleTagAutosyncMap.get(autosyncKey) || 0;
+
+              if (nowMs - lastAutosyncMs < autosyncIntervalMs) {
+                console.log('Skipping recently checked vehicle TAG autosync:', autosyncKey);
+              } else {
+                lastVehicleTagAutosyncMap.set(autosyncKey, nowMs);
+
+                if (!resolvedDeviceType) {
+                  resolvedDeviceType = await resolveDeviceType(supabaseClient, effectiveDeviceId);
+                }
 
               if (resolvedDeviceType === 'vehicle_tag') {
                 const aptMatch = identUserName.match(/^(\d+\w?)\s*[-–]\s*(.+)$/i);
@@ -1399,6 +1453,7 @@ Deno.serve(async (req) => {
                     }
                   }
                 }
+              }
               }
             } catch (e) {
               console.error('Error auto-syncing vehicle_tag:', e);

@@ -142,6 +142,7 @@ const lastDeviceStatusWriteMap = new Map<string, number>();
 const deviceTypeCache = new Map<string, string | null>();
 const lastStaleRequeueCheckMap = new Map<string, number>();
 const lastImageFetchQueueMap = new Map<string, number>();
+const registeredDeviceAuthCacheMap = new Map<string, { allowed: boolean; expiresAt: number }>();
 
 // Throttle DB-heavy maintenance checks to preserve Supabase free-plan quota.
 const lastConfigRefreshCheckMap = new Map<string, number>();
@@ -363,6 +364,37 @@ const extractDeviceId = (url: URL, payload: any, req: Request): string => {
   if (hDeviceId) return sanitizeString(hDeviceId, 100);
 
   return '';
+};
+
+const isRegisteredDeviceId = async (supabaseClient: any, deviceId: string): Promise<boolean> => {
+  const normalized = sanitizeString(deviceId, 100);
+  if (!normalized) return false;
+
+  const cached = registeredDeviceAuthCacheMap.get(normalized);
+  if (cached && cached.expiresAt > Date.now()) return cached.allowed;
+
+  let allowed = false;
+  const { data: bySerial } = await supabaseClient
+    .from('devices')
+    .select('id')
+    .eq('serial_number', normalized)
+    .limit(1)
+    .maybeSingle();
+
+  allowed = Boolean(bySerial);
+
+  if (!allowed && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)) {
+    const { data: byId } = await supabaseClient
+      .from('devices')
+      .select('id')
+      .eq('id', normalized)
+      .limit(1)
+      .maybeSingle();
+    allowed = Boolean(byId);
+  }
+
+  registeredDeviceAuthCacheMap.set(normalized, { allowed, expiresAt: Date.now() + 600000 });
+  return allowed;
 };
 
 const buildIdentificationActions = (payload: any, deviceType?: string | null) => {
@@ -693,45 +725,26 @@ Deno.serve(async (req) => {
   const url = new URL(req.url);
   const pathLower = url.pathname.toLowerCase();
 
-  // CONTROLID_WEBHOOK_ENABLED defaults to '1' — security is enforced via CONTROLID_WEBHOOK_SECRET.
-  // Set CONTROLID_WEBHOOK_ENABLED=0 in Supabase secrets to temporarily suspend the integration.
-  const controlIdEnabled = (Deno.env.get('CONTROLID_WEBHOOK_ENABLED') ?? '1') !== '0';
-  if (!controlIdEnabled) {
-    const isFcgiCallback = pathLower.includes('.fcgi');
-    if (isFcgiCallback || pathLower.endsWith('/push') || pathLower.includes('/push/')) {
-      return new Response('', { status: 200, headers: corsHeaders });
-    }
-
-    return new Response(
-      JSON.stringify({ success: true, suspended: true, message: 'Control iD integration temporarily suspended' }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-  }
-
   try {
-    const webhookSecret = Deno.env.get('CONTROLID_WEBHOOK_SECRET') ?? '';
-    const requireSecret = (Deno.env.get('CONTROLID_REQUIRE_SECRET') ?? (webhookSecret ? '1' : '0')) === '1';
-    const isDeviceIngressPath =
-      pathLower.endsWith('/push') ||
-      pathLower.includes('/push/') ||
-      pathLower.endsWith('/access') ||
-      pathLower.endsWith('/user_event') ||
-      pathLower.endsWith('/photo') ||
-      pathLower.includes('.fcgi') ||
-      pathLower.endsWith('/controlid-webhook') ||
-      pathLower.endsWith('/controlid-webhook/');
-
-    if (requireSecret && webhookSecret && isDeviceIngressPath) {
-      const secret = url.searchParams.get('secret');
-      if (secret !== webhookSecret) {
-        return new Response('Unauthorized', { status: 401, headers: corsHeaders });
-      }
-    }
-
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
+
+    // CONTROLID_WEBHOOK_SUSPENDED is the only flag that can suspend the integration.
+    // Older CONTROLID_WEBHOOK_ENABLED=0 values are ignored to avoid silently breaking devices.
+    const controlIdSuspended = (Deno.env.get('CONTROLID_WEBHOOK_SUSPENDED') ?? '0') === '1';
+    if (controlIdSuspended) {
+      const isFcgiCallback = pathLower.includes('.fcgi');
+      if (isFcgiCallback || pathLower.endsWith('/push') || pathLower.includes('/push/')) {
+        return new Response('', { status: 200, headers: corsHeaders });
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, suspended: true, message: 'Control iD integration temporarily suspended' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     if (req.method !== 'POST' && req.method !== 'GET') {
       return new Response(
@@ -774,6 +787,29 @@ Deno.serve(async (req) => {
     const eventType = detectEventType(url, payload);
     const deviceId = extractDeviceId(url, payload, req);
     const isFcgiCallback = url.pathname.toLowerCase().includes('.fcgi');
+
+    const webhookSecret = Deno.env.get('CONTROLID_WEBHOOK_SECRET') ?? '';
+    const requireSecret = (Deno.env.get('CONTROLID_REQUIRE_SECRET') ?? (webhookSecret ? '1' : '0')) === '1';
+    const isDeviceIngressPath =
+      pathLower.endsWith('/push') ||
+      pathLower.includes('/push/') ||
+      pathLower.endsWith('/access') ||
+      pathLower.endsWith('/user_event') ||
+      pathLower.endsWith('/photo') ||
+      pathLower.includes('.fcgi') ||
+      pathLower.endsWith('/controlid-webhook') ||
+      pathLower.endsWith('/controlid-webhook/');
+
+    if (requireSecret && webhookSecret && isDeviceIngressPath) {
+      const secret = url.searchParams.get('secret');
+      if (secret !== webhookSecret) {
+        const allowRegisteredDevice = deviceId ? await isRegisteredDeviceId(supabaseClient, deviceId) : false;
+        if (!allowRegisteredDevice) {
+          return new Response('Unauthorized', { status: 401, headers: corsHeaders });
+        }
+        console.warn('Accepted registered Control iD device without webhook secret:', deviceId);
+      }
+    }
 
     // Only log non-heartbeat events to reduce noise
     if (eventType !== 'device_is_alive') {

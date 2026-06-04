@@ -90,7 +90,7 @@ export const Settings = () => {
   }
   const monitorPath = '/functions/v1/controlid-webhook';
   const pushAddress = `https://${webhookHost}${monitorPath}`;
-  const serverAddress = `${webhookHost}${monitorPath}`;
+  const serverAddress = pushAddress;
   const acceptedPushRoutes = `${monitorPath} e ${monitorPath}/push`;
 
   const handleUnlockIntegrations = () => {

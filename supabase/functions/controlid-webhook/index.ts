@@ -217,7 +217,7 @@ const getDeviceWebhookUrl = (hostname: string): string => {
 };
 
 const getDeviceServerUrl = (hostname: string): string => {
-  return `${hostname}${getDeviceWebhookPath()}`;
+  return getDeviceWebhookUrl(hostname);
 };
 
 const getDeviceConfiguration = () => {
@@ -250,7 +250,7 @@ const getDeviceConfiguration = () => {
       use_dhcp: true
     },
     server: {
-      url: `${hostname}${getDeviceWebhookPath()}`,
+      url: getDeviceServerUrl(hostname),
       ssl: true,
       port: 443,
       request_timeout: 15,

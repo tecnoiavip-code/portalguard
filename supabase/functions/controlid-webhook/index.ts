@@ -241,6 +241,7 @@ const compactControlIdPayload = (payload: any): Record<string, unknown> => {
     'identifier_id',
     'time',
     'access_granted',
+    'saved_photo_path',
   ];
 
   const compact: Record<string, unknown> = {};

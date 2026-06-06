@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, Car, Clock, Mail, UserCheck, Users } from 'lucide-react';
+import { Activity, Car, Clock, Mail, UserCheck, UserRound, Users } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { StatsCard } from '@/components/StatsCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { supabaseStorage } from '@/lib/supabase-storage';
-import { AccessEntry, DashboardStats } from '@/types';
+import { AccessEntry, DashboardStats, Device } from '@/types';
 
 const CONTROLID_EVENT_LIMIT = 10;
 const CONTROLID_EVENT_STORAGE_KEY = 'portalguard-controlid-last-events-v1';
@@ -19,6 +19,7 @@ type ControlIdPayload = {
   user_id?: string | number;
   user_name?: string;
   access_granted?: boolean | string;
+  saved_photo_path?: string;
 };
 
 type ControlIdDashboardEvent = {
@@ -112,6 +113,19 @@ const formatControlIdDate = (receivedAt: string | null) => {
   });
 };
 
+const buildDeviceNameMap = (devices: Device[]) => {
+  const map: Record<string, string> = {};
+
+  devices.forEach((device) => {
+    const keys = [device.id, device.serialNumber, device.ipAddress].filter(Boolean) as string[];
+    keys.forEach((key) => {
+      map[key] = device.name;
+    });
+  });
+
+  return map;
+};
+
 export const Dashboard = () => {
   const [stats, setStats] = useState<DashboardStats>({
     totalResidents: 0,
@@ -121,6 +135,8 @@ export const Dashboard = () => {
   });
   const [allEntries, setAllEntries] = useState<AccessEntry[]>([]);
   const [controlIdEvents, setControlIdEvents] = useState<ControlIdDashboardEvent[]>(loadStoredControlIdEvents);
+  const [deviceNameMap, setDeviceNameMap] = useState<Record<string, string>>({});
+  const [eventPhotoUrls, setEventPhotoUrls] = useState<Record<string, string>>({});
   const statsLoadInFlight = useRef(false);
 
   const loadStats = async () => {
@@ -170,6 +186,52 @@ export const Dashboard = () => {
       document.removeEventListener('visibilitychange', loadIfVisible);
     };
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    supabaseStorage.getDevices().then((devices) => {
+      if (mounted) setDeviceNameMap(buildDeviceNameMap(devices));
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const missingPhotoEvents = controlIdEvents.filter((event) => {
+      const path = readPayloadValue(event.payload, 'saved_photo_path');
+      return path && !eventPhotoUrls[event.id];
+    });
+
+    if (missingPhotoEvents.length === 0) return;
+
+    let mounted = true;
+
+    Promise.all(
+      missingPhotoEvents.map(async (event) => {
+        const path = readPayloadValue(event.payload, 'saved_photo_path');
+        const { data, error } = await supabase.storage
+          .from('access-photos')
+          .createSignedUrl(path, 3600);
+
+        if (error || !data?.signedUrl) return null;
+        return [event.id, data.signedUrl] as const;
+      })
+    ).then((items) => {
+      if (!mounted) return;
+
+      const nextUrls = Object.fromEntries(items.filter(Boolean) as Array<readonly [string, string]>);
+      if (Object.keys(nextUrls).length > 0) {
+        setEventPhotoUrls((current) => ({ ...current, ...nextUrls }));
+      }
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [controlIdEvents, eventPhotoUrls]);
 
   useEffect(() => {
     const channel = supabase
@@ -232,11 +294,8 @@ export const Dashboard = () => {
       || 'Identificacao recebida';
   };
 
-  const getControlIdEventDetails = (event: ControlIdDashboardEvent) => {
-    const portal = readPayloadValue(event.payload, 'portal_id') || '1';
-    const incomingEvent = readPayloadValue(event.payload, 'event');
-
-    return `Porta ${portal}${incomingEvent ? ` - Evento ${incomingEvent}` : ''}`;
+  const getControlIdDeviceName = (event: ControlIdDashboardEvent) => {
+    return deviceNameMap[event.device_id] || event.device_id || 'Dispositivo Control iD';
   };
 
   const isControlIdEventGranted = (event: ControlIdDashboardEvent) => {
@@ -256,15 +315,17 @@ export const Dashboard = () => {
     isControlIdEventGranted(event) ? 'Liberado' : 'Negado'
   );
 
-  const getControlIdEventTypeLabel = (event: ControlIdDashboardEvent) => {
-    const hasTag = Boolean(
+  const isControlIdTagEvent = (event: ControlIdDashboardEvent) => {
+    return Boolean(
       readPayloadValue(event.payload, 'uhf_tag')
       || readPayloadValue(event.payload, 'card_value')
       || readPayloadValue(event.payload, 'qrcode_value')
     );
+  };
 
-    if (hasTag) return 'TAG Identificada';
-    return isControlIdEventGranted(event) ? 'Identificacao positiva' : 'Nao identificado';
+  const getControlIdEventTypeLabel = (event: ControlIdDashboardEvent) => {
+    if (isControlIdTagEvent(event)) return 'TAG identificada';
+    return isControlIdEventGranted(event) ? 'Identificacao facial' : 'Nao identificado';
   };
 
   return (
@@ -339,6 +400,8 @@ export const Dashboard = () => {
               <div className="max-h-[430px] space-y-2 overflow-y-auto pr-1">
                 {controlIdEvents.map((event, index) => {
                   const granted = isControlIdEventGranted(event);
+                  const isTagEvent = isControlIdTagEvent(event);
+                  const photoUrl = eventPhotoUrls[event.id];
                   const accentClass = granted ? 'text-success' : 'text-destructive';
                   const rowClass = granted
                     ? 'border-success/10 bg-success/5'
@@ -369,7 +432,17 @@ export const Dashboard = () => {
                       </div>
 
                       <div className={`relative z-10 flex h-12 w-12 items-center justify-center rounded-full border-2 ${iconClass}`}>
-                        <Car className="h-[22px] w-[22px]" />
+                        {!isTagEvent && photoUrl ? (
+                          <img
+                            src={photoUrl}
+                            alt={getControlIdEventTitle(event)}
+                            className="h-full w-full rounded-full object-cover"
+                          />
+                        ) : isTagEvent ? (
+                          <Car className="h-[22px] w-[22px]" />
+                        ) : (
+                          <UserRound className="h-[22px] w-[22px]" />
+                        )}
                       </div>
 
                       <div className="min-w-0">
@@ -382,7 +455,7 @@ export const Dashboard = () => {
                           </Badge>
                         </div>
                         <p className="mt-1 truncate text-sm text-muted-foreground">
-                          {getControlIdEventTypeLabel(event)} - {getControlIdEventDetails(event)}
+                          {getControlIdEventTypeLabel(event)} - {getControlIdDeviceName(event)}
                         </p>
                       </div>
 

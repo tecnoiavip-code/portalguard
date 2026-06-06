@@ -25,15 +25,7 @@ const ResidentAuth = () => {
 
   const ensureResidentAccess = async (userId: string) => {
     clearRoleCache(userId);
-    let role = await getUserRole(userId, true);
-    if (role === 'resident') return true;
-
-    await supabase.functions.invoke('register-resident', {
-      body: { action: 'link-existing' },
-    });
-
-    clearRoleCache(userId);
-    role = await getUserRole(userId, true);
+    const role = await getUserRole(userId, true);
     return role === 'resident';
   };
 

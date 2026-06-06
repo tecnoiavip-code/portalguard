@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { getUserRole } from '@/lib/auth-role';
+import { getUserRole, isStaffRole } from '@/lib/auth-role';
 import { Loader2 } from 'lucide-react';
 
 interface ProtectedRouteProps {
@@ -12,12 +12,12 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const { user, isLoading } = useAuth();
   const navigate = useNavigate();
   const [roleChecked, setRoleChecked] = useState(false);
-  const [isResident, setIsResident] = useState(false);
+  const [canAccessStaffArea, setCanAccessStaffArea] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !user) {
       setRoleChecked(false);
-      setIsResident(false);
+      setCanAccessStaffArea(false);
       navigate('/auth');
       return;
     }
@@ -29,10 +29,17 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
       getUserRole(user.id).then((role) => {
         if (!active) return;
         if (role === 'resident') {
-          setIsResident(true);
+          setCanAccessStaffArea(false);
           navigate('/morador');
+          setRoleChecked(true);
+          return;
+        }
+
+        if (isStaffRole(role)) {
+          setCanAccessStaffArea(true);
         } else {
-          setIsResident(false);
+          setCanAccessStaffArea(false);
+          navigate('/auth');
         }
         setRoleChecked(true);
       });
@@ -49,7 +56,7 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     );
   }
 
-  if (!user || isResident) {
+  if (!user || !canAccessStaffArea) {
     return null;
   }
 

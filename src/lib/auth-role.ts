@@ -10,6 +10,9 @@ const roleInflight = new Map<string, Promise<AppRole | null>>();
 const isAppRole = (role: string): role is AppRole =>
   rolePriority.includes(role as AppRole);
 
+export const isStaffRole = (role: AppRole | null): role is Exclude<AppRole, 'resident'> =>
+  role === 'admin' || role === 'receptionist' || role === 'security_guard';
+
 export function clearRoleCache(userId?: string) {
   if (userId) {
     roleCache.delete(userId);
@@ -29,13 +32,12 @@ export async function getUserRole(userId: string, force = false): Promise<AppRol
     if (inflight) return inflight;
   }
 
-  const request = Promise.resolve(
-    supabase
+  const fetchRole = async (): Promise<AppRole | null> => {
+    const { data, error } = await supabase
       .from('user_roles')
       .select('role')
-      .eq('user_id', userId)
-  )
-    .then(({ data, error }) => {
+      .eq('user_id', userId);
+
       if (error) {
         console.error('Error fetching user role:', error);
         return null;
@@ -44,9 +46,32 @@ export async function getUserRole(userId: string, force = false): Promise<AppRol
       const roles = (data || [])
         .map((item) => item.role)
         .filter((role): role is AppRole => typeof role === 'string' && isAppRole(role));
-      const role = rolePriority.find((candidate) => roles.includes(candidate)) || null;
-      roleCache.set(userId, { role, expiresAt: Date.now() + ROLE_TTL_MS });
-      return role;
+    return rolePriority.find((candidate) => roles.includes(candidate)) || null;
+  };
+
+  const request = fetchRole()
+    .then(async (initialRole) => {
+      if (initialRole) {
+        roleCache.set(userId, { role: initialRole, expiresAt: Date.now() + ROLE_TTL_MS });
+        return initialRole;
+      }
+
+      try {
+        const { error } = await supabase.functions.invoke('register-resident', {
+          body: { action: 'link-existing' },
+        });
+
+        if (!error) {
+          const linkedRole = await fetchRole();
+          roleCache.set(userId, { role: linkedRole, expiresAt: Date.now() + ROLE_TTL_MS });
+          return linkedRole;
+        }
+      } catch (error) {
+        console.warn('Resident auto-link skipped:', error);
+      }
+
+      roleCache.set(userId, { role: null, expiresAt: Date.now() + ROLE_TTL_MS });
+      return null;
     })
     .finally(() => {
       roleInflight.delete(userId);

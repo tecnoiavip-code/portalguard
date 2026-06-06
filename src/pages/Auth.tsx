@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { translateAuthError } from '@/lib/translate-auth-error';
-import { getUserRole } from '@/lib/auth-role';
+import { getUserRole, isStaffRole } from '@/lib/auth-role';
 import appLogo from '@/assets/app-icon-v18-preview.png';
 
 export const Auth = () => {
@@ -19,7 +19,7 @@ export const Auth = () => {
   const [isSendingReset, setIsSendingReset] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, signOut } = useAuth();
   const navigate = useNavigate();
   const auth = supabase.auth as any;
 
@@ -71,8 +71,14 @@ export const Auth = () => {
         return;
       }
 
-      toast.success('Login realizado com sucesso!');
-      navigate('/');
+      if (isStaffRole(role)) {
+        toast.success('Login realizado com sucesso!');
+        navigate('/');
+        return;
+      }
+
+      await signOut();
+      toast.error('Este email não está autorizado para a área da portaria.');
     } catch {
       toast.error('Erro ao fazer login');
     } finally {

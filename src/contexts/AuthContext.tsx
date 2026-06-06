@@ -103,10 +103,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await auth.signInWithPassword({
+    const { data, error } = await auth.signInWithPassword({
       email,
       password,
     });
+    if (data?.user?.id) clearRoleCache(data.user.id);
     return { error };
   };
 

@@ -33,12 +33,6 @@ interface ChatMsg {
   read: boolean;
 }
 
-interface RecentChatMsg extends ChatMsg {
-  resident_id: string;
-  resident_name: string;
-  apartment: string;
-}
-
 interface ResidentOption {
   id: string;
   name: string;
@@ -52,6 +46,20 @@ const formatDateLabel = (dateStr: string) => {
   return format(date, "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
 };
 
+const formatConversationDateTime = (dateStr: string) => {
+  if (!dateStr) return 'Sem mensagens';
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return 'Data indisponivel';
+
+  const dateLabel = isToday(date)
+    ? 'Hoje'
+    : isYesterday(date)
+      ? 'Ontem'
+      : format(date, 'dd/MM/yyyy', { locale: ptBR });
+
+  return `${dateLabel} as ${format(date, 'HH:mm', { locale: ptBR })}`;
+};
+
 const STAFF_CHAT_GLOBAL_REALTIME_ENABLED = import.meta.env.VITE_STAFF_CHAT_GLOBAL_REALTIME_ENABLED !== 'false';
 
 const StaffChat = () => {
@@ -59,7 +67,6 @@ const StaffChat = () => {
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [selectedThread, setSelectedThread] = useState<ChatThread | null>(null);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
-  const [recentMessages, setRecentMessages] = useState<RecentChatMsg[]>([]);
   const [newMsg, setNewMsg] = useState('');
   const [showNewChatDialog, setShowNewChatDialog] = useState(false);
   const [allResidents, setAllResidents] = useState<ResidentOption[]>([]);
@@ -97,44 +104,6 @@ const StaffChat = () => {
     setThreads(threadList);
   };
 
-  const loadRecentMessages = async () => {
-    const { data, error } = await supabase
-      .from('chat_messages')
-      .select('id, resident_id, sender_type, message, created_at, read')
-      .order('created_at', { ascending: false })
-      .limit(30);
-
-    if (error) {
-      console.error('Erro ao carregar histórico recente do chat:', error);
-      return;
-    }
-
-    const rows = ((data as any) || []) as ChatMsg[];
-    const residentIds = Array.from(new Set(rows.map((row) => row.resident_id).filter(Boolean))) as string[];
-    const residentsById = new Map<string, ResidentOption>();
-
-    if (residentIds.length > 0) {
-      const { data: residentsData } = await supabase
-        .from('residents')
-        .select('id, name, apartment')
-        .in('id', residentIds);
-
-      (residentsData || []).forEach((resident: any) => {
-        residentsById.set(resident.id, resident as ResidentOption);
-      });
-    }
-
-    setRecentMessages(rows.map((row) => {
-      const resident = row.resident_id ? residentsById.get(row.resident_id) : null;
-      return {
-        ...row,
-        resident_id: row.resident_id || '',
-        resident_name: resident?.name || 'Morador',
-        apartment: resident?.apartment || '-',
-      };
-    }));
-  };
-
   const loadMessages = async (rid: string) => {
     const { data } = await supabase
       .from('chat_messages')
@@ -163,17 +132,14 @@ const StaffChat = () => {
 
   useEffect(() => {
     loadThreads();
-    loadRecentMessages();
   }, []);
 
   // Global listener: play sound when any resident sends a message (even if not viewing that thread)
   useEffect(() => {
     const scheduleLoadThreads = createDebouncedRunner(loadThreads, 1500);
-    const scheduleLoadRecentMessages = createDebouncedRunner(loadRecentMessages, 1500);
     const loadIfVisible = () => {
       if (document.visibilityState === 'visible') {
         scheduleLoadThreads();
-        scheduleLoadRecentMessages();
       }
     };
 
@@ -191,19 +157,24 @@ const StaffChat = () => {
           }, () => {
             playNotificationSound();
             scheduleLoadThreads();
-            scheduleLoadRecentMessages();
           })
           .subscribe()
       : null;
 
     return () => {
       scheduleLoadThreads.cancel();
-      scheduleLoadRecentMessages.cancel();
       window.removeEventListener('focus', loadIfVisible);
       document.removeEventListener('visibilitychange', loadIfVisible);
       if (channel) supabase.removeChannel(channel);
     };
-  }, [selectedThread]);
+  }, []);
+
+  useEffect(() => {
+    const totalPages = Math.ceil(threads.length / THREAD_PAGE_SIZE);
+    if (totalPages > 0 && threadPage > totalPages) {
+      setThreadPage(totalPages);
+    }
+  }, [threads.length, threadPage]);
 
   useEffect(() => {
     if (!selectedThread) return;
@@ -243,7 +214,6 @@ const StaffChat = () => {
     } as any);
 
     loadThreads();
-    loadRecentMessages();
 
     const { data: res } = await (supabase.from('residents').select('auth_user_id') as any)
       .eq('id', selectedThread.resident_id)
@@ -278,18 +248,6 @@ const StaffChat = () => {
     setResidentSearch('');
   };
 
-  const openThreadByResident = (message: RecentChatMsg) => {
-    const existingThread = threads.find(t => t.resident_id === message.resident_id);
-    setSelectedThread(existingThread || {
-      resident_id: message.resident_id,
-      resident_name: message.resident_name,
-      apartment: message.apartment,
-      unread_count: message.sender_type === 'resident' && !message.read ? 1 : 0,
-      last_message: message.message,
-      last_time: message.created_at,
-    });
-  };
-
   const filteredResidents = allResidents.filter(r =>
     r.name.toLowerCase().includes(residentSearch.toLowerCase()) ||
     r.apartment.toLowerCase().includes(residentSearch.toLowerCase())
@@ -306,119 +264,77 @@ const StaffChat = () => {
             Nova Conversa
           </Button>
         </div>
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.15fr)]">
-          <div className="space-y-3">
+        <Card>
+          <CardContent className="p-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold">Histórico de conversas recentes</h3>
+                <p className="text-sm text-muted-foreground">Selecione um morador para abrir a conversa completa.</p>
+              </div>
+              <Badge variant="outline">{threads.length}</Badge>
+            </div>
+
             {threads.length === 0 ? (
-              <Card><CardContent className="p-6 text-center text-muted-foreground">Nenhuma conversa iniciada. Clique em "Nova Conversa" para enviar uma mensagem a um morador.</CardContent></Card>
+              <div className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
+                Nenhuma conversa iniciada. Clique em "Nova Conversa" para enviar uma mensagem a um morador.
+              </div>
             ) : (
               <>
                 {(() => {
                   const totalPages = Math.ceil(threads.length / THREAD_PAGE_SIZE);
-                  const paginated = threads.slice((threadPage - 1) * THREAD_PAGE_SIZE, threadPage * THREAD_PAGE_SIZE);
+                  const safeThreadPage = Math.min(threadPage, totalPages || 1);
+                  const paginated = threads.slice((safeThreadPage - 1) * THREAD_PAGE_SIZE, safeThreadPage * THREAD_PAGE_SIZE);
+
                   return (
                     <>
-                      {paginated.map((t) => (
-                        <Card
-                          key={t.resident_id}
-                          className={cn(
-                            'cursor-pointer transition-colors hover:bg-muted/50',
-                            t.unread_count > 0 && 'border-primary/40 bg-primary/5'
-                          )}
-                          onClick={() => setSelectedThread(t)}
-                        >
-                          <CardContent className="p-4 flex items-center gap-3">
+                      <div className="divide-y divide-border rounded-lg border">
+                        {paginated.map((t) => (
+                          <button
+                            key={t.resident_id}
+                            type="button"
+                            className={cn(
+                              'flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-muted/50',
+                              t.unread_count > 0 && 'bg-primary/5'
+                            )}
+                            onClick={() => setSelectedThread(t)}
+                          >
                             <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                               <span className="text-lg font-bold text-primary">{t.resident_name.charAt(0).toUpperCase()}</span>
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="font-semibold">{t.resident_name}</p>
-                                {t.last_time && (
-                                  <p className="text-xs text-muted-foreground shrink-0">
-                                    {isToday(new Date(t.last_time))
-                                      ? format(new Date(t.last_time), 'HH:mm', { locale: ptBR })
-                                      : format(new Date(t.last_time), 'dd/MM/yyyy', { locale: ptBR })}
-                                  </p>
-                                )}
+
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                                <div className="min-w-0">
+                                  <p className="truncate font-semibold text-foreground">{t.resident_name}</p>
+                                  <p className="text-sm text-muted-foreground">Endereço/Unidade: {t.apartment}</p>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
+                                  <MessageSquare className="h-4 w-4" />
+                                  <span>{formatConversationDateTime(t.last_time)}</span>
+                                  {t.unread_count > 0 && (
+                                    <Badge className="rounded-full px-2 text-xs">
+                                      {t.unread_count} novo{t.unread_count > 1 ? 's' : ''}
+                                    </Badge>
+                                  )}
+                                </div>
                               </div>
-                              <p className="text-xs text-muted-foreground">Apto {t.apartment}</p>
-                              <div className="flex items-center justify-between mt-0.5">
-                                <p className={cn('text-sm truncate', t.unread_count > 0 ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+                              {t.last_message && (
+                                <p className="mt-2 truncate text-sm text-muted-foreground">
                                   {t.last_message}
                                 </p>
-                                {t.unread_count > 0 && (
-                                  <Badge className="ml-2 bg-primary text-primary-foreground rounded-full h-5 min-w-5 flex items-center justify-center text-xs shrink-0">
-                                    {t.unread_count}
-                                  </Badge>
-                                )}
-                              </div>
+                              )}
                             </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                      <StandardPagination currentPage={threadPage} totalPages={totalPages} onPageChange={setThreadPage} />
+                          </button>
+                        ))}
+                      </div>
+                      <StandardPagination currentPage={safeThreadPage} totalPages={totalPages} onPageChange={setThreadPage} className="mt-4" />
                     </>
                   );
                 })()}
               </>
             )}
-          </div>
-
-          <Card>
-            <CardContent className="p-4">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div>
-                  <h3 className="font-semibold">Histórico recente</h3>
-                  <p className="text-xs text-muted-foreground">Últimas mensagens recebidas e enviadas</p>
-                </div>
-                <Badge variant="outline">{recentMessages.length}</Badge>
-              </div>
-
-              {recentMessages.length === 0 ? (
-                <div className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
-                  Nenhuma mensagem recente para exibir.
-                </div>
-              ) : (
-                <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
-                  {recentMessages.map((message) => {
-                    const isResident = message.sender_type === 'resident';
-                    const unread = isResident && !message.read;
-                    return (
-                      <button
-                        key={message.id}
-                        type="button"
-                        onClick={() => openThreadByResident(message)}
-                        className={cn(
-                          'w-full rounded-lg border p-3 text-left transition-colors hover:bg-muted/60',
-                          unread ? 'border-primary/40 bg-primary/5' : 'bg-background'
-                        )}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold">
-                              {message.resident_name} <span className="font-normal text-muted-foreground">- Apto {message.apartment}</span>
-                            </p>
-                            <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                              <span className={cn('font-medium', isResident ? 'text-primary' : 'text-foreground')}>{isResident ? 'Morador' : 'Portaria'}:</span> {message.message}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 flex-col items-end gap-1">
-                            <span className="text-xs text-muted-foreground">
-                              {isToday(new Date(message.created_at))
-                                ? format(new Date(message.created_at), 'HH:mm', { locale: ptBR })
-                                : format(new Date(message.created_at), 'dd/MM', { locale: ptBR })}
-                            </span>
-                            {unread && <Badge className="h-5 rounded-full px-2 text-[11px]">Novo</Badge>}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+          </CardContent>
+        </Card>
 
         <Dialog open={showNewChatDialog} onOpenChange={setShowNewChatDialog}>
           <DialogContent className="max-w-md">

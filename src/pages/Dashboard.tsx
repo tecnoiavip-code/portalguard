@@ -416,10 +416,10 @@ export const Dashboard = () => {
                   return (
                     <div
                       key={event.id}
-                      className={`relative grid grid-cols-[62px_58px_minmax(0,1fr)_72px] items-center gap-3 rounded-lg border px-3 py-3.5 ${rowClass}`}
+                      className={`relative grid grid-cols-[62px_88px_minmax(0,1fr)_72px] items-center gap-3 rounded-lg border px-3 py-3.5 ${rowClass}`}
                     >
                       {index < controlIdEvents.length - 1 && (
-                        <span className="absolute bottom-[-10px] left-[92px] top-[56px] w-px bg-border" />
+                        <span className="absolute bottom-[-10px] left-[118px] top-[76px] w-px bg-border" />
                       )}
 
                       <div className="text-right leading-none">
@@ -431,7 +431,7 @@ export const Dashboard = () => {
                         </p>
                       </div>
 
-                      <div className={`relative z-10 flex h-12 w-12 items-center justify-center rounded-full border-2 ${iconClass}`}>
+                      <div className={`relative z-10 flex h-20 w-20 items-center justify-center rounded-full border-2 ${iconClass}`}>
                         {!isTagEvent && photoUrl ? (
                           <img
                             src={photoUrl}
@@ -439,9 +439,9 @@ export const Dashboard = () => {
                             className="h-full w-full rounded-full object-cover"
                           />
                         ) : isTagEvent ? (
-                          <Car className="h-[22px] w-[22px]" />
+                          <Car className="h-8 w-8" />
                         ) : (
-                          <UserRound className="h-[22px] w-[22px]" />
+                          <UserRound className="h-8 w-8" />
                         )}
                       </div>
 

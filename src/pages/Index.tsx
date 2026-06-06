@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Layout } from '@/components/Layout';
 import { Sidebar } from '@/components/Sidebar';
+import { runDueAutomaticBackup } from '@/lib/backup';
 import { Loader2 } from 'lucide-react';
 
 const Dashboard = lazy(() => import('./Dashboard').then(({ Dashboard }) => ({ default: Dashboard })));
@@ -57,6 +58,12 @@ const Index = () => {
     }
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    void runDueAutomaticBackup().catch((error) => {
+      console.warn('Automatic backup skipped:', error);
+    });
+  }, []);
 
   useEffect(() => {
     try {

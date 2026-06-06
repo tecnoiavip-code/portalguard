@@ -267,6 +267,102 @@ export const Settings = () => {
     toast.success('Backup JSON gerado com sucesso!');
   };
 
+  const saveBackupPayloadAsPDF = (payload: BackupPayload, filename: string) => {
+    const doc = new jsPDF();
+    const { residents: backupResidents, mails, entries, devices } = payload.data;
+
+    doc.setFontSize(18);
+    doc.text('PortalGuard - Backup de Dados', 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Data de exportação: ${new Date(payload.generatedAt).toLocaleString('pt-BR')}`, 14, 28);
+    doc.text(`Acessos: ${backupRangeLabel(payload.filters.entryRange)} | Correspondências: ${backupRangeLabel(payload.filters.mailRange)}`, 14, 34);
+
+    autoTable(doc, {
+      startY: 40,
+      head: [['Base', 'Registros']],
+      body: [
+        ['Moradores', payload.counts.residents],
+        ['Correspondências', payload.counts.mails],
+        ['Acessos', payload.counts.entries],
+        ['Dispositivos', payload.counts.devices],
+      ],
+      theme: 'grid',
+      styles: { fontSize: 8 },
+    });
+
+    let currentY = (doc as any).lastAutoTable?.finalY || 48;
+
+    if (backupResidents.length > 0) {
+      doc.setFontSize(14);
+      doc.text('Moradores cadastrados', 14, currentY + 10);
+      autoTable(doc, {
+        startY: currentY + 14,
+        head: [['Nome', 'Apartamento', 'Telefone', 'Veículo']],
+        body: backupResidents.map((resident) => [
+          resident.name,
+          resident.apartment,
+          resident.phone || '-',
+          resident.vehiclePlate ? `${resident.vehiclePlate} (${resident.vehicleModel || '-'})` : '-',
+        ]),
+        theme: 'grid',
+        styles: { fontSize: 8 },
+      });
+      currentY = (doc as any).lastAutoTable?.finalY || currentY;
+    }
+
+    if (mails.length > 0) {
+      doc.setFontSize(14);
+      doc.text('Correspondências', 14, currentY + 10);
+      autoTable(doc, {
+        startY: currentY + 14,
+        head: [['Morador ID', 'Remetente', 'Tipo', 'Status', 'Data']],
+        body: mails.map((mail) => [
+          mail.residentId.substring(0, 12),
+          mail.sender,
+          mail.packageType,
+          mail.status === 'pending' ? 'Pendente' : 'Entregue',
+          new Date(mail.receivedAt).toLocaleDateString('pt-BR'),
+        ]),
+        theme: 'grid',
+        styles: { fontSize: 8 },
+      });
+      currentY = (doc as any).lastAutoTable?.finalY || currentY;
+    }
+
+    if (entries.length > 0) {
+      doc.setFontSize(14);
+      doc.text('Registros de acesso', 14, currentY + 10);
+      autoTable(doc, {
+        startY: currentY + 14,
+        head: [['Nome', 'Tipo', 'Apartamento', 'Entrada', 'Saída']],
+        body: entries.map((entry) => [
+          entry.visitorName,
+          entry.visitorType === 'visitor' ? 'Visitante' : 'Prestador',
+          entry.apartment,
+          new Date(entry.entryTime).toLocaleString('pt-BR'),
+          entry.exitTime ? new Date(entry.exitTime).toLocaleString('pt-BR') : 'Ativo',
+        ]),
+        theme: 'grid',
+        styles: { fontSize: 8 },
+      });
+      currentY = (doc as any).lastAutoTable?.finalY || currentY;
+    }
+
+    if (devices.length > 0) {
+      doc.setFontSize(14);
+      doc.text('Dispositivos', 14, currentY + 10);
+      autoTable(doc, {
+        startY: currentY + 14,
+        head: [['Nome', 'Tipo', 'Local', 'Status']],
+        body: devices.map((device) => [device.name, device.type, device.location, device.status]),
+        theme: 'grid',
+        styles: { fontSize: 8 },
+      });
+    }
+
+    doc.save(filename);
+  };
+
   const handleExportData = async () => {
     const payload = await getBackupPayload();
     if (!payload) return;
@@ -693,7 +789,8 @@ export const Settings = () => {
       return;
     }
 
-    downloadJSON(latestSnapshot.payload, `portalguard-backup-auto-${latestSnapshot.generatedAt.split('T')[0]}.json`);
+    saveBackupPayloadAsPDF(latestSnapshot.payload, `portalguard-backup-auto-${latestSnapshot.generatedAt.split('T')[0]}.pdf`);
+    toast.success('Último backup automático baixado em PDF.');
   };
 
   const handleClearAutomaticSnapshots = () => {
@@ -860,17 +957,17 @@ export const Settings = () => {
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                  <Button onClick={handleExportJSON} disabled={isBackupRunning} className="w-full">
-                    <FileJson className="mr-2 h-4 w-4" />
-                    Exportar JSON
-                  </Button>
-                  <Button onClick={handleExportData} disabled={isBackupRunning} className="w-full" variant="outline">
+                  <Button onClick={handleExportData} disabled={isBackupRunning} className="w-full">
                     <FileText className="mr-2 h-4 w-4" />
                     Exportar PDF
                   </Button>
                   <Button onClick={handleExportCSV} disabled={isBackupRunning} className="w-full" variant="outline">
                     <FileSpreadsheet className="mr-2 h-4 w-4" />
                     Exportar CSV
+                  </Button>
+                  <Button onClick={handleExportJSON} disabled={isBackupRunning} className="w-full" variant="outline">
+                    <FileJson className="mr-2 h-4 w-4" />
+                    JSON técnico
                   </Button>
                   <Button onClick={() => setBackupConfig(DEFAULT_BACKUP_CONFIG)} disabled={isBackupRunning} className="w-full" variant="ghost">
                     <RotateCw className="mr-2 h-4 w-4" />
@@ -944,7 +1041,7 @@ export const Settings = () => {
                   </Button>
                   <Button onClick={handleDownloadLatestSnapshot} disabled={!latestSnapshot} variant="outline">
                     <Download className="mr-2 h-4 w-4" />
-                    Baixar último
+                    Baixar PDF
                   </Button>
                 </div>
 

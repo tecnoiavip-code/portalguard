@@ -353,40 +353,41 @@ export const Dashboard = () => {
                   return (
                     <div
                       key={event.id}
-                      className={`relative grid grid-cols-[54px_52px_minmax(0,1fr)] items-center gap-2 rounded-lg border px-2 py-3 ${rowClass}`}
+                      className={`relative grid grid-cols-[62px_58px_minmax(0,1fr)_72px] items-center gap-3 rounded-lg border px-3 py-3.5 ${rowClass}`}
                     >
                       {index < controlIdEvents.length - 1 && (
-                        <span className="absolute bottom-[-10px] left-[81px] top-[50px] w-px bg-border" />
+                        <span className="absolute bottom-[-10px] left-[92px] top-[56px] w-px bg-border" />
                       )}
 
                       <div className="text-right leading-none">
-                        <p className="text-[11px] font-medium text-muted-foreground">
+                        <p className="text-xs font-medium text-muted-foreground">
                           {formatControlIdDate(event.received_at)}
                         </p>
-                        <p className={`mt-1 text-lg font-bold ${accentClass}`}>
+                        <p className={`mt-1 text-xl font-bold ${accentClass}`}>
                           {formatControlIdTime(event.received_at).slice(0, 5)}
                         </p>
                       </div>
 
-                      <div className={`relative z-10 flex h-11 w-11 items-center justify-center rounded-full border-2 ${iconClass}`}>
-                        <Car className="h-5 w-5" />
+                      <div className={`relative z-10 flex h-12 w-12 items-center justify-center rounded-full border-2 ${iconClass}`}>
+                        <Car className="h-[22px] w-[22px]" />
                       </div>
 
                       <div className="min-w-0">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <p className="truncate text-sm font-semibold text-foreground">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          <p className="min-w-0 flex-1 truncate text-base font-semibold leading-tight text-foreground">
                             {getControlIdEventTitle(event)}
                           </p>
-                          <Badge variant="outline" className={`shrink-0 text-[10px] ${badgeClass}`}>
+                          <Badge variant="outline" className={`shrink-0 px-2 py-0.5 text-[11px] ${badgeClass}`}>
                             {getControlIdStatusLabel(event)}
                           </Badge>
                         </div>
-                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        <p className="mt-1 truncate text-sm text-muted-foreground">
                           {getControlIdEventTypeLabel(event)} - {getControlIdEventDetails(event)}
                         </p>
-                        <p className="mt-0.5 text-[11px] text-muted-foreground">
-                          {formatControlIdTime(event.received_at)}
-                        </p>
+                      </div>
+
+                      <div className="hidden text-right text-xs font-medium text-muted-foreground sm:block">
+                        {formatControlIdTime(event.received_at)}
                       </div>
                     </div>
                   );

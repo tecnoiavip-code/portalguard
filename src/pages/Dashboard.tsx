@@ -416,7 +416,7 @@ export const Dashboard = () => {
                   return (
                     <div
                       key={event.id}
-                      className={`relative grid grid-cols-[62px_88px_minmax(0,1fr)_72px] items-center gap-3 rounded-lg border px-3 py-3.5 ${rowClass}`}
+                      className={`relative grid grid-cols-[62px_88px_minmax(0,1fr)] items-center gap-3 rounded-lg border px-3 py-3.5 ${rowClass}`}
                     >
                       {index < controlIdEvents.length - 1 && (
                         <span className="absolute bottom-[-10px] left-[118px] top-[76px] w-px bg-border" />
@@ -459,9 +459,6 @@ export const Dashboard = () => {
                         </p>
                       </div>
 
-                      <div className="hidden text-right text-xs font-medium text-muted-foreground sm:block">
-                        {formatControlIdTime(event.received_at)}
-                      </div>
                     </div>
                   );
                 })}

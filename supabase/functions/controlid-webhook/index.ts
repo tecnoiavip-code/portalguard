@@ -48,6 +48,17 @@ const parseQueryStringToObject = (query: string): Record<string, string> => {
   return out;
 };
 
+const tryParseJsonString = (value: unknown) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+};
+
 const uint8ToBase64 = (bytes: Uint8Array): string => {
   if (bytes.length === 0) return '';
   const maybeToBase64 = (bytes as any).toBase64;
@@ -213,6 +224,79 @@ const appendQueryString = (path: string, queryString: string): string => {
   return `${path}${path.includes('?') ? '&' : '?'}${queryString}`;
 };
 
+const normalizeObjectCandidate = (value: unknown): Record<string, unknown> | null => {
+  const parsed = tryParseJsonString(value);
+  const candidate = parsed ?? value;
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null;
+  return candidate as Record<string, unknown>;
+};
+
+const normalizeArrayCandidate = (value: unknown): unknown[] => {
+  const parsed = tryParseJsonString(value);
+  const candidate = parsed ?? value;
+  if (Array.isArray(candidate)) return candidate;
+  if (candidate && typeof candidate === 'object') return [candidate];
+  return [];
+};
+
+const extractAccessLogRows = (payload: any): Record<string, unknown>[] => {
+  const parsedResponse = tryParseJsonString(payload?.response);
+  const parsedRawData = tryParseJsonString(payload?.raw_data);
+  const parsedResult = tryParseJsonString(payload?.result);
+
+  const directCandidates: unknown[] = [
+    payload?.access_logs,
+    payload?.result?.access_logs,
+    parsedResponse?.access_logs,
+    parsedRawData?.access_logs,
+    parsedResult?.access_logs,
+  ];
+
+  const rows: Record<string, unknown>[] = [];
+  for (const candidate of directCandidates) {
+    for (const item of normalizeArrayCandidate(candidate)) {
+      const normalized = normalizeObjectCandidate(item);
+      if (normalized) rows.push(normalized);
+    }
+  }
+
+  const objectChanges = Array.isArray(payload?.object_changes) ? payload.object_changes : [];
+  for (const change of objectChanges) {
+    if (change?.object !== 'access_logs') continue;
+    const normalized = normalizeObjectCandidate(change?.values);
+    if (normalized) rows.push(normalized);
+  }
+
+  return rows;
+};
+
+const hasActionableAccessLogs = (payload: any): boolean => {
+  const rows = extractAccessLogRows(payload);
+  if (rows.length === 0) return false;
+
+  return rows.some((row) => (
+    row.card_value !== undefined ||
+    row.uhf_tag !== undefined ||
+    row.qrcode_value !== undefined ||
+    row.identifier_id !== undefined ||
+    row.user_id !== undefined ||
+    row.user_name !== undefined ||
+    row.name !== undefined ||
+    row.event !== undefined ||
+    row.portal_id !== undefined
+  ));
+};
+
+const buildAccessLogEventPayload = (payload: any) => {
+  const rows = extractAccessLogRows(payload);
+  const firstRow = rows[0] ?? {};
+  return {
+    ...payload,
+    ...firstRow,
+    access_logs_count: rows.length,
+  };
+};
+
 const getDeviceWebhookPath = (): string => {
   return appendQueryString('/functions/v1/controlid-webhook', getWebhookSecretQueryParam());
 };
@@ -373,6 +457,9 @@ const detectEventType = (url: URL, payload: any): string => {
   if (isEnterpriseIdentificationPath(path)) return 'enterprise_identification_event';
   if (path.includes('session_is_valid.fcgi')) return 'session_is_valid';
 
+  if (payload?.object_changes) return 'dao';
+  if (hasActionableAccessLogs(payload)) return 'access_logs_event';
+
   // Some devices send heartbeat as POST /push (or base webhook path) with access_logs in payload
   if ((path.includes('/push') || path.endsWith('/controlid-webhook')) && payload?.access_logs !== undefined) {
     return 'device_is_alive';
@@ -422,8 +509,7 @@ const detectEventType = (url: URL, payload: any): string => {
   if (path.includes('/catra_event')) return 'catra_event';
   if (path.includes('/access_photo')) return 'access_photo';
 
-  if (payload?.object_changes) return 'dao';
-  if (payload?.access_logs !== undefined) return 'device_is_alive';
+  if (payload?.access_logs !== undefined) return hasActionableAccessLogs(payload) ? 'access_logs_event' : 'device_is_alive';
   if (payload?.operation_mode) return 'operation_mode';
   if (payload?.door) return 'door';
   if (payload?.secbox) return 'secbox';
@@ -518,12 +604,18 @@ const isIdentificationPayloadGranted = (
   const userId = Number.parseInt(String(payload?.user_id ?? '0'), 10);
   const incomingEvent = Number.parseInt(String(payload?.event ?? '0'), 10);
   const userName = sanitizeString(payload?.user_name || payload?.name || '', 200);
+  const explicitAccessGranted =
+    payload?.access_granted === true ||
+    payload?.access_granted === 1 ||
+    payload?.access_granted === '1' ||
+    String(payload?.access_granted ?? '').toLowerCase() === 'true';
 
   const isIdentified = (Number.isFinite(userId) && userId > 0) || userName.length > 0;
+  const isGrantedByDevice = incomingEvent === 7 || incomingEvent === 8 || explicitAccessGranted;
   // Event 3/6 = device-side denial (unknown card, etc.). Don't grant.
   const isDeniedByDevice = incomingEvent === 3 || incomingEvent === 6;
 
-  return options?.forceGranted === true ? true : isIdentified && !isDeniedByDevice;
+  return options?.forceGranted === true ? true : (isIdentified || isGrantedByDevice) && !isDeniedByDevice;
 };
 
 const buildIdentificationResponse = (
@@ -577,17 +669,6 @@ const resolveDeviceType = async (supabaseClient: any, deviceId: string): Promise
     return resolvedType;
   } catch (error) {
     console.error('Error resolving device type for identification response:', error);
-    return null;
-  }
-};
-
-const tryParseJsonString = (value: unknown) => {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return null;
-  try {
-    return JSON.parse(trimmed);
-  } catch {
     return null;
   }
 };
@@ -1334,6 +1415,50 @@ Deno.serve(async (req) => {
 
     // For events without device_id
     const effectiveDeviceId = deviceId || 'unknown-device';
+
+    // ===== ACCESS LOG EVENTS: UHF/TAG readers may send access_logs directly =====
+    // These are real vehicle events, not heartbeat. Keep response fast and avoid
+    // storing noisy logs, but still broadcast them to the dashboard.
+    if (eventType === 'access_logs_event') {
+      if (deviceId) {
+        runBackground('updateDeviceStatusAccessLog', updateDeviceStatus(supabaseClient, deviceId));
+      }
+
+      const accessEventPayload = buildAccessLogEventPayload(payload);
+      const accessGranted = isIdentificationPayloadGranted(accessEventPayload);
+      const cachedType = deviceTypeCache.get(effectiveDeviceId) ?? null;
+      const identResponse = buildIdentificationResponse(accessEventPayload, url, cachedType);
+
+      console.log('Access log event received from Control iD:', {
+        device_id: effectiveDeviceId,
+        event_in: accessEventPayload?.event,
+        card_value: accessEventPayload?.card_value,
+        uhf_tag: accessEventPayload?.uhf_tag,
+        access_granted: accessGranted,
+      });
+
+      runBackground('accessLogEventPostProcess', (async () => {
+        if (!cachedType) {
+          runBackground('warmDeviceTypeCacheFromAccessLog', resolveDeviceType(supabaseClient, effectiveDeviceId));
+        }
+        await broadcastControlIdDashboardEvent(
+          supabaseClient,
+          effectiveDeviceId,
+          eventType,
+          accessEventPayload,
+          accessGranted
+        );
+      })());
+
+      if (accessGranted) {
+        return new Response(
+          JSON.stringify(identResponse),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response('', { status: 200, headers: corsHeaders });
+    }
 
     // ===== IDENTIFICATION EVENTS: Return authorization IMMEDIATELY, then do DB work =====
     // Critical: the device has a short timeout (~15s) and will NOT open the door if

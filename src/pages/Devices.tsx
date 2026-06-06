@@ -20,7 +20,7 @@ import {
   reconcileFromDevices,
   syncAllResidentsToDevices,
 } from '@/lib/device-capture';
-import { supabaseStorage } from '@/lib/supabase-storage';
+import { invalidateCache, supabaseStorage } from '@/lib/supabase-storage';
 import { toast } from 'sonner';
 import {
   getSyncJobState,
@@ -218,7 +218,10 @@ export const Devices = () => {
         setSyncJobState({ message: `Reconciliando dados do hardware... (${cfg.success} configs OK)` });
         const rec = await reconcileFromDevices(devices, residents as any, () => { /* progress */ });
 
+        invalidateCache('residents_list');
+        const refreshedResidents = await supabaseStorage.getResidents();
         await refreshResidents();
+        const residentsForSync = refreshedResidents || residents;
 
         setSyncJobState({
           message: `Replicando moradores nos dispositivos...`,
@@ -228,22 +231,25 @@ export const Devices = () => {
 
         const result = await syncAllResidentsToDevices(
           devices,
-          residents as any,
+          residentsForSync as any,
           (id) => supabaseStorage.getResidentPhoto(id),
           (msg, current, total) => setSyncJobState({ message: msg, current, total }),
         );
 
         const finalState = getSyncJobState();
+        const totalPhotosSynced = finalState.photosSynced + result.photosSynced;
+        const totalTagsSynced = finalState.tagsSynced + result.tagsSynced;
+        const totalErrors = finalState.errors + result.errors;
         setSyncJobState({
           status: 'done',
           message: 'Sincronização concluída!',
-          photosSynced: finalState.photosSynced + result.photosSynced,
-          tagsSynced: finalState.tagsSynced + result.tagsSynced,
-          errors: finalState.errors + result.errors,
+          photosSynced: totalPhotosSynced,
+          tagsSynced: totalTagsSynced,
+          errors: totalErrors,
           finishedAt: Date.now(),
         });
         toast.success('Sincronização concluída', {
-          description: `${result.photosSynced} face(s), ${result.tagsSynced} TAG(s)${result.errors > 0 ? `, ${result.errors} erro(s)` : ''}`,
+          description: `${totalPhotosSynced} face(s), ${totalTagsSynced} TAG(s)${totalErrors > 0 ? `, ${totalErrors} erro(s)` : ''}`,
           duration: 8000,
         });
       } catch (err: any) {

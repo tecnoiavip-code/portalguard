@@ -341,40 +341,12 @@ const getDeviceConfiguration = () => {
     hostname = 'uqbxicxpphcfcofufxca.supabase.co';
   }
 
-  const onlineMode = Deno.env.get('CONTROLID_ONLINE_MODE') ?? '0';
-  const defaultOperationMode = onlineMode === '1' ? 'online' : 'standalone';
-  const lang = Deno.env.get('CONTROLID_LANGUAGE') ?? 'portuguese';
-  const opMode = Deno.env.get('CONTROLID_OPERATION_MODE') ?? defaultOperationMode;
-
   return {
     monitor: {
       request_timeout: Deno.env.get('CONTROLID_MONITOR_REQUEST_TIMEOUT') ?? "15000",
       hostname,
       port: "443",
-      path: getDeviceWebhookPath(),
-      secure: "1"
-    },
-    general: {
-      language: lang,
-      operation_mode: opMode
-    },
-    network: {
-      use_dhcp: true
-    },
-    server: {
-      url: getDeviceServerUrl(hostname),
-      ssl: true,
-      port: 443,
-      request_timeout: 15,
-      send_user_events: true,
-      send_device_events: true,
-      send_photo: true,
-      image_quality: 80
-    },
-    access: {
-      enable_face: true,
-      face_threshold: 7,
-      anti_spoofing: 'passive'
+      path: getDeviceWebhookPath()
     }
   };
 };

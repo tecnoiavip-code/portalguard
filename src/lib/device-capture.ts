@@ -1,5 +1,6 @@
 import { Device } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
+import { invalidateCache } from '@/lib/supabase-storage';
 
 export function hashCode(str: string): number {
   let hash = 0;
@@ -959,6 +960,7 @@ export async function reconcileFromDevices(
           .from('resident-photos')
           .upload(path, file, { upsert: true });
         if (upErr) { errors++; continue; }
+        invalidateCache(`photo_${resident.id}`);
         photosAdded++;
       } catch (e) {
         errors++;
@@ -979,6 +981,7 @@ export async function reconcileFromDevices(
           .update({ vehicle_tag: String(c.value) })
           .eq('id', resident.id);
         if (error) { errors++; continue; }
+        invalidateCache('residents_list');
         tagsAdded++;
       } catch {
         errors++;

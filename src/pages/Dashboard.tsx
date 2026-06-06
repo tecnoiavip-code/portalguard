@@ -9,6 +9,7 @@ import { supabaseStorage } from '@/lib/supabase-storage';
 import { AccessEntry, DashboardStats } from '@/types';
 
 const CONTROLID_EVENT_LIMIT = 10;
+const CONTROLID_EVENT_STORAGE_KEY = 'portalguard-controlid-last-events-v1';
 
 type ControlIdPayload = {
   [key: string]: unknown;
@@ -46,6 +47,47 @@ const normalizeControlIdEvent = (row: unknown): ControlIdDashboardEvent | null =
   };
 };
 
+const mergeControlIdEvents = (
+  current: ControlIdDashboardEvent[],
+  nextEvent: ControlIdDashboardEvent
+) => {
+  const deduped = current.filter((event) => event.id !== nextEvent.id);
+  return [nextEvent, ...deduped].slice(0, CONTROLID_EVENT_LIMIT);
+};
+
+const loadStoredControlIdEvents = (): ControlIdDashboardEvent[] => {
+  if (typeof window === 'undefined') return [];
+
+  try {
+    const raw = window.localStorage.getItem(CONTROLID_EVENT_STORAGE_KEY);
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .map(normalizeControlIdEvent)
+      .filter((event): event is ControlIdDashboardEvent => Boolean(event?.id))
+      .slice(0, CONTROLID_EVENT_LIMIT);
+  } catch (error) {
+    console.error('Error loading stored Control iD events:', error);
+    return [];
+  }
+};
+
+const persistControlIdEvents = (events: ControlIdDashboardEvent[]) => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(
+      CONTROLID_EVENT_STORAGE_KEY,
+      JSON.stringify(events.slice(0, CONTROLID_EVENT_LIMIT))
+    );
+  } catch (error) {
+    console.error('Error storing Control iD events:', error);
+  }
+};
+
 const readPayloadValue = (payload: ControlIdPayload | null, key: keyof ControlIdPayload) => {
   const value = payload?.[key];
   if (typeof value === 'string') return value.trim();
@@ -78,7 +120,7 @@ export const Dashboard = () => {
     todayEntries: 0,
   });
   const [allEntries, setAllEntries] = useState<AccessEntry[]>([]);
-  const [controlIdEvents, setControlIdEvents] = useState<ControlIdDashboardEvent[]>([]);
+  const [controlIdEvents, setControlIdEvents] = useState<ControlIdDashboardEvent[]>(loadStoredControlIdEvents);
   const statsLoadInFlight = useRef(false);
 
   const loadStats = async () => {
@@ -144,8 +186,9 @@ export const Dashboard = () => {
           if (!nextEvent?.id) return;
 
           setControlIdEvents((current) => {
-            const deduped = current.filter((event) => event.id !== nextEvent.id);
-            return [nextEvent, ...deduped].slice(0, CONTROLID_EVENT_LIMIT);
+            const nextEvents = mergeControlIdEvents(current, nextEvent);
+            persistControlIdEvents(nextEvents);
+            return nextEvents;
           });
         }
       )

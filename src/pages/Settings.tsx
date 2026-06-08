@@ -202,6 +202,7 @@ export const Settings = () => {
 
   const monitorPath = '/functions/v1/controlid-webhook';
   const pushAddress = `https://${webhookHost}${monitorPath}`;
+  const pushEndpoint = `${pushAddress}/push`;
   const acceptedPushRoutes = `${monitorPath} e ${monitorPath}/push`;
   const latestSnapshot = backupSnapshots[0];
 
@@ -1135,7 +1136,7 @@ export const Settings = () => {
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">Push remote address</p>
-                      <code className="block overflow-x-auto rounded bg-background p-2 text-xs">{pushAddress}</code>
+                      <code className="block overflow-x-auto rounded bg-background p-2 text-xs">{pushEndpoint}</code>
                     </div>
                     <div className="space-y-1 md:col-span-2">
                       <p className="text-xs text-muted-foreground">Rotas aceitas pelo webhook</p>
@@ -1144,7 +1145,13 @@ export const Settings = () => {
                     <div className="space-y-1 md:col-span-2">
                       <p className="text-xs text-muted-foreground">Timeouts recomendados</p>
                       <code className="block overflow-x-auto rounded bg-background p-2 text-xs">
-                        monitor.request_timeout=15000 - push_request_timeout=15000 - push_request_period=5000
+                        monitor.request_timeout=5000 - online_client.request_timeout=5000 - push_request_timeout=15000 - push_request_period=5s
+                      </code>
+                    </div>
+                    <div className="space-y-1 md:col-span-2">
+                      <p className="text-xs text-muted-foreground">Modo online persistente</p>
+                      <code className="block overflow-x-auto rounded bg-background p-2 text-xs">
+                        general.online=1 - general.local_identification=1 - online_client.server_id=900001
                       </code>
                     </div>
                   </div>

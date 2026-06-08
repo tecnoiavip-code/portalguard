@@ -80,6 +80,10 @@ const uint8ToBase64 = (bytes: Uint8Array): string => {
 };
 
 const buildPushDispatchFromQueuedCommand = (queuedCommand: any): Record<string, unknown> => {
+  if (Array.isArray(queuedCommand?.transactions)) {
+    return { transactions: queuedCommand.transactions };
+  }
+
   // Keep both payload styles for maximum firmware compatibility:
   // - legacy: { verb, endpoint, body, contentType, queryString }
   // - flat:   { command, parameters }
@@ -309,6 +313,11 @@ const getDeviceServerUrl = (hostname: string): string => {
   return getDeviceWebhookUrl(hostname);
 };
 
+const getControlIdServerDeviceId = (): number => {
+  const raw = Number.parseInt(Deno.env.get('CONTROLID_SERVER_DEVICE_ID') ?? '900001', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 900001;
+};
+
 const CONTROLID_DASHBOARD_TOPIC = 'controlid-dashboard';
 const CONTROLID_DASHBOARD_EVENT = 'controlid-event';
 
@@ -417,7 +426,7 @@ const broadcastControlIdDashboardEvent = async (
   }
 };
 
-const getDeviceConfiguration = () => {
+const getDeviceEndpointConfig = () => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   let hostname = '';
   try {
@@ -426,16 +435,86 @@ const getDeviceConfiguration = () => {
     hostname = 'uqbxicxpphcfcofufxca.supabase.co';
   }
 
+  const webhookPath = getDeviceWebhookPath();
   return {
-    monitor: {
-      request_timeout: Deno.env.get('CONTROLID_MONITOR_REQUEST_TIMEOUT') ?? "15000",
-      hostname,
-      port: "443",
-      path: getDeviceWebhookPath()
-    }
+    hostname,
+    webhookPath,
+    webhookUrl: `https://${hostname}${webhookPath}`,
+    pushUrl: Deno.env.get('CONTROLID_PUSH_REMOTE_ADDRESS') || `https://${hostname}${webhookPath}/push`,
   };
 };
-// Function removed as we now use getDeviceConfiguration
+
+const getDeviceConfiguration = () => {
+  const { hostname, webhookPath, pushUrl } = getDeviceEndpointConfig();
+  const serverDeviceId = getControlIdServerDeviceId();
+  const monitorTimeout = Deno.env.get('CONTROLID_MONITOR_REQUEST_TIMEOUT') ?? '5000';
+  const onlineTimeout = Deno.env.get('CONTROLID_ONLINE_REQUEST_TIMEOUT') ?? '5000';
+  const pushTimeout = Deno.env.get('CONTROLID_PUSH_REQUEST_TIMEOUT') ?? '15000';
+  const pushPeriod = Number.parseInt(Deno.env.get('CONTROLID_PUSH_REQUEST_PERIOD_SECONDS') ?? '5', 10);
+  const enableOnlineMode = (Deno.env.get('CONTROLID_ENABLE_ONLINE_MODE') ?? '1') !== '0';
+
+  return {
+    monitor: {
+      request_timeout: monitorTimeout,
+      hostname,
+      port: '443',
+      path: webhookPath,
+      alive_interval: Deno.env.get('CONTROLID_MONITOR_ALIVE_INTERVAL') ?? '30000',
+      inform_access_event_id: '1',
+    },
+    push_server: {
+      push_request_timeout: pushTimeout,
+      push_request_period: Number.isFinite(pushPeriod) && pushPeriod > 0 ? pushPeriod : 5,
+      push_remote_address: pushUrl,
+    },
+    ...(enableOnlineMode ? {
+      general: {
+        online: '1',
+        local_identification: '1',
+      },
+      online_client: {
+        server_id: String(serverDeviceId),
+        extract_template: '0',
+        contingency_enabled: '1',
+        max_request_attempts: Deno.env.get('CONTROLID_ONLINE_MAX_REQUEST_ATTEMPTS') ?? '5',
+        request_timeout: onlineTimeout,
+        alive_interval: Deno.env.get('CONTROLID_ONLINE_ALIVE_INTERVAL') ?? '30000',
+      },
+    } : {}),
+  };
+};
+
+const getControlIdServerDeviceObject = () => {
+  const { webhookUrl } = getDeviceEndpointConfig();
+  return {
+    id: getControlIdServerDeviceId(),
+    name: 'PortalGuard Supabase',
+    ip: webhookUrl,
+    public_key: '',
+  };
+};
+
+const buildDeviceConfigurationTransactions = () => ({
+  transactions: [
+    {
+      transactionid: 1,
+      verb: 'POST',
+      endpoint: 'create_or_modify_objects',
+      body: {
+        object: 'devices',
+        values: [getControlIdServerDeviceObject()],
+      },
+      contentType: 'application/json',
+    },
+    {
+      transactionid: 2,
+      verb: 'POST',
+      endpoint: 'set_configuration',
+      body: getDeviceConfiguration(),
+      contentType: 'application/json',
+    },
+  ],
+});
 
 /**
  * Detect event type from URL path and payload.
@@ -730,6 +809,13 @@ const extractPhotoBase64 = (payload: any): string | null => {
 };
 
 const getQueuedCommandName = (queuedCommand: any): string => {
+  if (Array.isArray(queuedCommand?.transactions)) {
+    const hasConfigurationTransaction = queuedCommand.transactions.some((transaction: any) =>
+      sanitizeString(transaction?.endpoint ?? '', 160).replace(/\.fcgi$/i, '') === 'set_configuration'
+    );
+    if (hasConfigurationTransaction) return 'set_configuration';
+  }
+
   const directCommand = sanitizeString(queuedCommand?.command ?? '', 160).replace(/\.fcgi$/i, '');
   if (directCommand) return directCommand;
 
@@ -1161,14 +1247,11 @@ Deno.serve(async (req) => {
             );
 
             if (!hasRecentDone && !hasPendingOrExecuting) {
-                const fullConfig = getDeviceConfiguration();
+                const fullConfigCommand = buildDeviceConfigurationTransactions();
 
                 await supabaseClient.from('push_command_queue').insert({
                   device_id: deviceId,
-                  command: {
-                    command: 'set_configuration',
-                    parameters: fullConfig,
-                  },
+                  command: fullConfigCommand,
                   status: 'pending',
                 });
                 console.log('Auto-queued config refresh for device:', deviceId);
@@ -1264,6 +1347,7 @@ Deno.serve(async (req) => {
 
       console.log('Sending config to device:', targetIp);
 
+      const serverDevice = getControlIdServerDeviceObject();
       const fullConfig = getDeviceConfiguration();
 
       try {
@@ -1288,6 +1372,24 @@ Deno.serve(async (req) => {
         if (!session) {
           return new Response(
             JSON.stringify({ error: 'No session returned from device login' }),
+            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const serverObjectUrl = `http://${targetIp}:${targetPort}/create_or_modify_objects.fcgi?session=${session}`;
+        const serverObjectResp = await fetch(serverObjectUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            object: 'devices',
+            values: [serverDevice],
+          }),
+          signal: AbortSignal.timeout(10000),
+        });
+
+        if (!serverObjectResp.ok) {
+          return new Response(
+            JSON.stringify({ error: 'Failed to configure server reference', status: serverObjectResp.status }),
             { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
@@ -1321,6 +1423,7 @@ Deno.serve(async (req) => {
           JSON.stringify({ 
             success: configResp.ok, 
             message: configResp.ok ? 'Configuration sent successfully (monitor + push)' : 'Failed to set configuration',
+            server_device: serverDevice,
             sent_config: fullConfig,
             current_config: verifyData || null
           }),
@@ -1359,12 +1462,7 @@ Deno.serve(async (req) => {
       }
 
       // If direct access fails, fallback to queue
-      const fullConfig = getDeviceConfiguration();
-
-      const command = {
-        command: 'set_configuration',
-        parameters: fullConfig,
-      };
+      const command = buildDeviceConfigurationTransactions();
 
       // Persist to DB instead of in-memory queue
       const { error: insertErr } = await supabaseClient
@@ -1389,7 +1487,7 @@ Deno.serve(async (req) => {
         JSON.stringify({ 
           success: true, 
           message: 'Configuration queued for push (persistent). Device will receive it on next poll.',
-          config: fullConfig
+          config: getDeviceConfiguration()
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );

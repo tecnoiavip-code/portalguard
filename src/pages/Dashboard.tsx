@@ -148,6 +148,8 @@ const isTruthyPayloadValue = (value: unknown) => (
   value === true || value === 1 || value === '1' || value === 'true'
 );
 
+const normalizeTagValue = (value: string) => value.replace(/\s+/g, '').toUpperCase();
+
 export const Dashboard = () => {
   const [stats, setStats] = useState<DashboardStats>({
     totalResidents: 0,
@@ -361,7 +363,28 @@ export const Dashboard = () => {
     return hours;
   }, [allEntries]);
 
+  const getControlIdTagValue = (event: ControlIdDashboardEvent) => (
+    readPayloadValue(event.payload, 'uhf_tag')
+    || readPayloadValue(event.payload, 'card_value')
+    || readPayloadValue(event.payload, 'qrcode_value')
+  );
+
+  const getResidentByTag = (event: ControlIdDashboardEvent) => {
+    const tagValue = normalizeTagValue(getControlIdTagValue(event));
+    if (!tagValue) return null;
+
+    return residents.find((resident) => (
+      resident.vehicleTag && normalizeTagValue(resident.vehicleTag) === tagValue
+    )) || null;
+  };
+
   const getControlIdEventTitle = (event: ControlIdDashboardEvent) => {
+    if (isControlIdTagEvent(event)) {
+      const resident = getResidentByTag(event);
+      if (resident) return `${resident.apartment} - ${resident.name}`;
+      return isControlIdEventGranted(event) ? 'TAG sem vínculo no sistema' : 'Não identificado';
+    }
+
     return readPayloadValue(event.payload, 'user_name')
       || readPayloadValue(event.payload, 'name')
       || 'Identificacao recebida';
@@ -382,9 +405,11 @@ export const Dashboard = () => {
   const isControlIdEventGranted = (event: ControlIdDashboardEvent) => {
     const incomingEvent = Number.parseInt(readPayloadValue(event.payload, 'event') || '0', 10);
     const accessGranted = event.payload?.access_granted;
-    const title = getControlIdEventTitle(event).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const rawTitle = readPayloadValue(event.payload, 'user_name') || readPayloadValue(event.payload, 'name');
+    const title = rawTitle.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
     if (accessGranted === false || accessGranted === 'false') return false;
+    if (isControlIdTagEvent(event) && !getResidentByTag(event)) return false;
     if (accessGranted === true || accessGranted === 'true') return true;
     if (event.processed === false || incomingEvent === 3 || incomingEvent === 6) return false;
     if (title.includes('desconhecido') || title.includes('unknown') || title.includes('negado')) return false;
@@ -409,7 +434,10 @@ export const Dashboard = () => {
   };
 
   const getControlIdEventTypeLabel = (event: ControlIdDashboardEvent) => {
-    if (isControlIdTagEvent(event)) return 'TAG identificada';
+    if (isControlIdTagEvent(event)) {
+      if (!getResidentByTag(event)) return isControlIdEventGranted(event) ? 'TAG sem vínculo' : 'Não identificado';
+      return 'TAG identificada';
+    }
     return isControlIdEventGranted(event) ? 'Identificacao facial' : 'Nao identificado';
   };
 

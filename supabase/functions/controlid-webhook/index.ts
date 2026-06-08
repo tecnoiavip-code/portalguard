@@ -171,6 +171,7 @@ const NO_COMMAND_PUSH_DELAY_MS = Number.parseInt(Deno.env.get('CONTROLID_NO_COMM
 const IMAGE_FETCH_REQUEUE_INTERVAL_MS = Number.parseInt(Deno.env.get('CONTROLID_IMAGE_FETCH_REQUEUE_INTERVAL_MS') ?? '1800000', 10);
 const DASHBOARD_BROADCAST_DEDUP_INTERVAL_MS = Number.parseInt(Deno.env.get('CONTROLID_DASHBOARD_DEDUP_MS') ?? '3000', 10);
 const VEHICLE_TAG_AUTOSYNC_INTERVAL_MS = Number.parseInt(Deno.env.get('CONTROLID_VEHICLE_TAG_AUTOSYNC_MS') ?? '3600000', 10);
+const VEHICLE_TAG_AUTOSYNC_ENABLED = (Deno.env.get('CONTROLID_VEHICLE_TAG_AUTOSYNC_ENABLED') ?? '') === '1';
 const STALE_EXECUTING_THRESHOLD_MS = 120000; // 120 seconds
 const MAX_STALE_REQUEUE_RETRIES = 3;
 
@@ -1608,10 +1609,11 @@ Deno.serve(async (req) => {
             ...(savedPhotoPath ? { saved_photo_path: savedPhotoPath } : {}),
           };
 
-          // 3. Auto-sync vehicle tag
+          // 3. Optional vehicle TAG autosync. Disabled by default because the
+          // device user_name can be stale and must not overwrite resident data.
           const cardValue = String(payload.card_value || '');
           const identUserName = String(payload.user_name || '');
-          if (cardValue && identUserName) {
+          if (VEHICLE_TAG_AUTOSYNC_ENABLED && cardValue && identUserName) {
             try {
               const autosyncIntervalMs = isFinitePositiveNumber(VEHICLE_TAG_AUTOSYNC_INTERVAL_MS)
                 ? VEHICLE_TAG_AUTOSYNC_INTERVAL_MS

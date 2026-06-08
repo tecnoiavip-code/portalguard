@@ -656,11 +656,10 @@ const buildIdentificationActions = (payload: any, deviceType?: string | null) =>
   // Device-specific action mapping (Control iD docs):
   // - iDFlex / iDAccess Pro / iDAccess Nano / iDFace => sec_box
   // - iDAccess / iDFit / iDBox / iDUHF (relay) => door
-  // Many condominium installations wire the gate to the relay even on facial devices.
-  // Return both actions for facial/unknown users so identification stays compatible
-  // with sec_box setups and also pulses the physical relay.
+  // Avoid mixing action types in one online authorization response because some
+  // firmwares reject the whole response when one action is not valid for the model.
   if (deviceType === 'facial_recognition') {
-    return [buildDoorAction(resolvedPortal), buildSecBoxAction()];
+    return [buildSecBoxAction()];
   }
 
   if (deviceType === 'vehicle_tag' || deviceType === 'card_reader') {
@@ -672,8 +671,8 @@ const buildIdentificationActions = (payload: any, deviceType?: string | null) =>
     return [buildDoorAction(resolvedPortal)];
   }
 
-  // Unknown facial/identified-user fallback.
-  return [buildDoorAction(resolvedPortal), buildSecBoxAction()];
+  // Unknown identified-user fallback: most facial/pro controllers use MAE/sec_box.
+  return [buildSecBoxAction()];
 };
 
 const isIdentificationPayloadGranted = (
@@ -723,11 +722,10 @@ const buildIdentificationResponse = (
     result.actions = buildIdentificationActions(payload, deviceType);
   }
 
-  // Control iD's remote authorization examples return this payload directly.
-  // Some custom firmwares/proxies may expect { result }, so keep that as an
-  // explicit opt-in instead of the default.
-  const forceWrapped = (Deno.env.get('CONTROLID_IDENT_WRAPPED_RESPONSE') ?? '') === '1';
-  return forceWrapped ? { result } : result;
+  // Online identification callbacks expect the payload wrapped in "result".
+  // A flat response is only useful for direct remote authorization API calls.
+  const forceFlat = (Deno.env.get('CONTROLID_IDENT_FLAT_RESPONSE') ?? '') === '1';
+  return forceFlat ? result : { result };
 };
 
 const resolveDeviceType = async (supabaseClient: any, deviceId: string): Promise<string | null> => {

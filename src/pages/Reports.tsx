@@ -18,6 +18,8 @@ import { ptBR } from 'date-fns/locale';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+const PORTARIA_EQUIPMENT_COLUMNS = 'id, name, description, is_active, created_at';
+
 interface Shift {
   id: string;
   team_members: string[];
@@ -116,7 +118,7 @@ export const Reports = () => {
   const loadPortariaEquipment = async () => {
     const { data, error } = await (supabase
       .from('portaria_equipment') as any)
-      .select('id, name, type, location, status, is_active')
+      .select(PORTARIA_EQUIPMENT_COLUMNS)
       .eq('is_active', true)
       .order('name')
       .limit(100);
@@ -136,10 +138,15 @@ export const Reports = () => {
   const loadAllPortariaEquipment = async () => {
     const { data, error } = await (supabase
       .from('portaria_equipment') as any)
-      .select('id, name, type, location, status, is_active')
+      .select(PORTARIA_EQUIPMENT_COLUMNS)
       .order('name')
       .limit(100);
-    if (!error) setPortariaEquipment(data || []);
+    if (error) {
+      console.error('Error loading all equipment:', error);
+      toast.error('Erro ao carregar equipamentos');
+      return;
+    }
+    setPortariaEquipment(data || []);
   };
 
   const loadShifts = async () => {
@@ -286,12 +293,16 @@ export const Reports = () => {
       toast.error('Informe o nome do equipamento');
       return;
     }
-    const { error } = await supabase.from('portaria_equipment').insert({
-      name: equipmentFormData.name.toUpperCase(),
-      description: equipmentFormData.description || null,
-    });
+    const { error } = await supabase
+      .from('portaria_equipment')
+      .insert({
+        name: equipmentFormData.name.trim().toUpperCase(),
+        description: equipmentFormData.description.trim() || null,
+        is_active: true,
+      });
     if (error) {
-      toast.error('Erro ao cadastrar equipamento');
+      console.error('Error creating equipment:', error);
+      toast.error(`Erro ao cadastrar equipamento: ${error.message}`);
     } else {
       toast.success('Equipamento cadastrado');
       setEquipmentFormData({ name: '', description: '' });

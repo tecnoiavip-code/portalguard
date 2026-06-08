@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { supabaseStorage } from '@/lib/supabase-storage';
-import { AccessEntry, DashboardStats, Device } from '@/types';
+import { AccessEntry, DashboardStats, Device, Resident } from '@/types';
 
 const CONTROLID_EVENT_LIMIT = 10;
 const CONTROLID_EVENT_STORAGE_KEY = 'portalguard-controlid-last-events-v1';
@@ -20,6 +20,8 @@ type ControlIdPayload = {
   user_name?: string;
   access_granted?: boolean | string;
   saved_photo_path?: string;
+  user_has_image?: boolean | string | number;
+  device_type?: Device['type'];
 };
 
 type ControlIdDashboardEvent = {
@@ -113,18 +115,38 @@ const formatControlIdDate = (receivedAt: string | null) => {
   });
 };
 
-const buildDeviceNameMap = (devices: Device[]) => {
-  const map: Record<string, string> = {};
+type DeviceDashboardInfo = Pick<Device, 'name' | 'type'>;
+
+const buildDeviceInfoMap = (devices: Device[]) => {
+  const map: Record<string, DeviceDashboardInfo> = {};
 
   devices.forEach((device) => {
     const keys = [device.id, device.serialNumber, device.ipAddress].filter(Boolean) as string[];
     keys.forEach((key) => {
-      map[key] = device.name;
+      map[key] = { name: device.name, type: device.type };
     });
   });
 
   return map;
 };
+
+const normalizeControlIdPersonName = (value: string) => (
+  value
+    .replace(/^\s*\d+[a-z]?\s*[-]\s*/i, '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+);
+
+const readControlIdApartmentPrefix = (value: string) => {
+  const match = value.match(/^\s*(\d+[a-z]?)\s*[-]\s*/i);
+  return match?.[1]?.trim().toLowerCase() || '';
+};
+
+const isTruthyPayloadValue = (value: unknown) => (
+  value === true || value === 1 || value === '1' || value === 'true'
+);
 
 export const Dashboard = () => {
   const [stats, setStats] = useState<DashboardStats>({
@@ -135,7 +157,8 @@ export const Dashboard = () => {
   });
   const [allEntries, setAllEntries] = useState<AccessEntry[]>([]);
   const [controlIdEvents, setControlIdEvents] = useState<ControlIdDashboardEvent[]>(loadStoredControlIdEvents);
-  const [deviceNameMap, setDeviceNameMap] = useState<Record<string, string>>({});
+  const [residents, setResidents] = useState<Resident[]>([]);
+  const [deviceInfoMap, setDeviceInfoMap] = useState<Record<string, DeviceDashboardInfo>>({});
   const [eventPhotoUrls, setEventPhotoUrls] = useState<Record<string, string>>({});
   const statsLoadInFlight = useRef(false);
 
@@ -190,8 +213,13 @@ export const Dashboard = () => {
   useEffect(() => {
     let mounted = true;
 
-    supabaseStorage.getDevices().then((devices) => {
-      if (mounted) setDeviceNameMap(buildDeviceNameMap(devices));
+    Promise.all([
+      supabaseStorage.getDevices(),
+      supabaseStorage.getResidents(),
+    ]).then(([devices, residentsData]) => {
+      if (!mounted) return;
+      setDeviceInfoMap(buildDeviceInfoMap(devices));
+      setResidents(residentsData || []);
     });
 
     return () => {
@@ -200,9 +228,50 @@ export const Dashboard = () => {
   }, []);
 
   useEffect(() => {
+    const getEventDeviceType = (event: ControlIdDashboardEvent): Device['type'] | '' => {
+      const payloadType = readPayloadValue(event.payload, 'device_type');
+      if (payloadType === 'facial_recognition' || payloadType === 'vehicle_tag' || payloadType === 'card_reader') {
+        return payloadType;
+      }
+      return deviceInfoMap[event.device_id]?.type || '';
+    };
+
+    const isFacialEvent = (event: ControlIdDashboardEvent) => {
+      const deviceType = getEventDeviceType(event);
+      if (deviceType === 'facial_recognition') return true;
+      if (deviceType === 'vehicle_tag' || deviceType === 'card_reader') return false;
+      return isTruthyPayloadValue(event.payload?.user_has_image);
+    };
+
+    const findLocalPhoto = async (event: ControlIdDashboardEvent) => {
+      const title = getControlIdEventTitle(event);
+      const normalizedTitle = normalizeControlIdPersonName(title);
+      if (!normalizedTitle) return '';
+
+      const entryPhoto = allEntries.find((entry) => {
+        const names = [entry.visitorName, entry.residentName].filter(Boolean);
+        return names.some((name) => {
+          const normalized = normalizeControlIdPersonName(name);
+          return normalized && (normalized.includes(normalizedTitle) || normalizedTitle.includes(normalized));
+        });
+      })?.photo;
+      if (entryPhoto) return entryPhoto;
+
+      const apartmentPrefix = readControlIdApartmentPrefix(title);
+      const resident = residents.find((item) => {
+        const normalizedResidentName = normalizeControlIdPersonName(item.name);
+        const apartmentMatches = !apartmentPrefix || item.apartment.trim().toLowerCase() === apartmentPrefix;
+        const nameMatches = normalizedResidentName
+          && (normalizedResidentName.includes(normalizedTitle) || normalizedTitle.includes(normalizedResidentName));
+        return apartmentMatches && nameMatches;
+      });
+
+      return resident ? supabaseStorage.getResidentPhoto(resident.id) : '';
+    };
+
     const missingPhotoEvents = controlIdEvents.filter((event) => {
       const path = readPayloadValue(event.payload, 'saved_photo_path');
-      return path && !eventPhotoUrls[event.id];
+      return (path || isFacialEvent(event)) && !eventPhotoUrls[event.id];
     });
 
     if (missingPhotoEvents.length === 0) return;
@@ -212,12 +281,16 @@ export const Dashboard = () => {
     Promise.all(
       missingPhotoEvents.map(async (event) => {
         const path = readPayloadValue(event.payload, 'saved_photo_path');
-        const { data, error } = await supabase.storage
-          .from('access-photos')
-          .createSignedUrl(path, 3600);
+        if (path) {
+          const { data, error } = await supabase.storage
+            .from('access-photos')
+            .createSignedUrl(path, 3600);
 
-        if (error || !data?.signedUrl) return null;
-        return [event.id, data.signedUrl] as const;
+          if (!error && data?.signedUrl) return [event.id, data.signedUrl] as const;
+        }
+
+        const localPhoto = await findLocalPhoto(event);
+        return localPhoto ? [event.id, localPhoto] as const : null;
       })
     ).then((items) => {
       if (!mounted) return;
@@ -231,7 +304,7 @@ export const Dashboard = () => {
     return () => {
       mounted = false;
     };
-  }, [controlIdEvents, eventPhotoUrls]);
+  }, [allEntries, controlIdEvents, deviceInfoMap, eventPhotoUrls, residents]);
 
   useEffect(() => {
     const channel = supabase
@@ -295,7 +368,15 @@ export const Dashboard = () => {
   };
 
   const getControlIdDeviceName = (event: ControlIdDashboardEvent) => {
-    return deviceNameMap[event.device_id] || event.device_id || 'Dispositivo Control iD';
+    return deviceInfoMap[event.device_id]?.name || event.device_id || 'Dispositivo Control iD';
+  };
+
+  const getControlIdDeviceType = (event: ControlIdDashboardEvent): Device['type'] | '' => {
+    const payloadType = readPayloadValue(event.payload, 'device_type');
+    if (payloadType === 'facial_recognition' || payloadType === 'vehicle_tag' || payloadType === 'card_reader') {
+      return payloadType;
+    }
+    return deviceInfoMap[event.device_id]?.type || '';
   };
 
   const isControlIdEventGranted = (event: ControlIdDashboardEvent) => {
@@ -316,10 +397,14 @@ export const Dashboard = () => {
   );
 
   const isControlIdTagEvent = (event: ControlIdDashboardEvent) => {
+    const deviceType = getControlIdDeviceType(event);
+    if (deviceType === 'facial_recognition') return false;
+    if (deviceType === 'vehicle_tag' || deviceType === 'card_reader') return true;
+
     return Boolean(
       readPayloadValue(event.payload, 'uhf_tag')
-      || readPayloadValue(event.payload, 'card_value')
       || readPayloadValue(event.payload, 'qrcode_value')
+      || (readPayloadValue(event.payload, 'card_value') && !isTruthyPayloadValue(event.payload?.user_has_image))
     );
   };
 

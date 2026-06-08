@@ -335,6 +335,8 @@ const compactControlIdPayload = (payload: any): Record<string, unknown> => {
     'time',
     'access_granted',
     'saved_photo_path',
+    'user_has_image',
+    'device_type',
   ];
 
   const compact: Record<string, unknown> = {};
@@ -1525,6 +1527,9 @@ Deno.serve(async (req) => {
       const accessGranted = isIdentificationPayloadGranted(accessEventPayload);
       const cachedType = deviceTypeCache.get(effectiveDeviceId) ?? null;
       const identResponse = buildIdentificationResponse(accessEventPayload, url, cachedType);
+      const dashboardPayload = cachedType
+        ? { ...accessEventPayload, device_type: cachedType }
+        : accessEventPayload;
 
       console.log('Access log event received from Control iD:', {
         device_id: effectiveDeviceId,
@@ -1542,7 +1547,7 @@ Deno.serve(async (req) => {
           supabaseClient,
           effectiveDeviceId,
           eventType,
-          accessEventPayload,
+          dashboardPayload,
           accessGranted
         );
       })());
@@ -1597,9 +1602,11 @@ Deno.serve(async (req) => {
             }
           }
 
-          enrichedPayload = savedPhotoPath
-            ? { ...payload, saved_photo_path: savedPhotoPath }
-            : payload;
+          enrichedPayload = {
+            ...payload,
+            ...(resolvedDeviceType ? { device_type: resolvedDeviceType } : {}),
+            ...(savedPhotoPath ? { saved_photo_path: savedPhotoPath } : {}),
+          };
 
           // 3. Auto-sync vehicle tag
           const cardValue = String(payload.card_value || '');

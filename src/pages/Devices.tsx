@@ -240,12 +240,18 @@ export const Devices = () => {
         const totalPhotosSynced = finalState.photosSynced + result.photosSynced;
         const totalTagsSynced = finalState.tagsSynced + result.tagsSynced;
         const totalErrors = finalState.errors + result.errors;
+        const allDetails = [...(rec.details || []), ...(result.details || [])].filter(Boolean);
+        const priorityDetails = allDetails.filter((detail) => (
+          /erro|timeout|divergente|invalida|inválida|sem numero|sem número/i.test(detail)
+        ));
+        const details = (priorityDetails.length > 0 ? priorityDetails : allDetails).slice(0, 8);
         setSyncJobState({
           status: 'done',
           message: 'Sincronização concluída!',
           photosSynced: totalPhotosSynced,
           tagsSynced: totalTagsSynced,
           errors: totalErrors,
+          details,
           finishedAt: Date.now(),
         });
         toast.success('Sincronização concluída', {
@@ -378,6 +384,13 @@ export const Devices = () => {
                 <span>Fotos: {job.photosSynced}</span>
                 <span>TAGs: {job.tagsSynced}</span>
                 {job.errors > 0 && <span className="text-destructive">Erros: {job.errors}</span>}
+              </div>
+            )}
+            {job.details.length > 0 && (
+              <div className="rounded-md border bg-muted/30 p-2 text-xs text-muted-foreground">
+                {job.details.map((detail, index) => (
+                  <p key={`${detail}-${index}`} className="truncate">{detail}</p>
+                ))}
               </div>
             )}
           </CardContent>

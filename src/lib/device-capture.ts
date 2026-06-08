@@ -78,11 +78,25 @@ function normalizeText(value: string): string {
     .toLowerCase();
 }
 
-function buildCardObjectId(userId: number, cardValue: number): number {
+function buildCardObjectId(userId: number, cardValue: string | number): number {
   const raw = Math.abs(hashCode(`${userId}:${cardValue}`));
   if (raw > 0) return raw;
   const fallback = Math.abs(userId) + 1;
   return fallback > 0 ? fallback : 1;
+}
+
+function normalizeTagForDevice(tagValue: string): { raw: string; value: string | number } | null {
+  const raw = String(tagValue || '').trim().replace(/\s+/g, '');
+  if (!raw) return null;
+
+  if (/^\d+$/.test(raw) && !raw.startsWith('0')) {
+    const numericValue = Number(raw);
+    if (Number.isSafeInteger(numericValue) && numericValue > 0 && String(numericValue) === raw.replace(/^0+/, '')) {
+      return { raw, value: numericValue };
+    }
+  }
+
+  return { raw, value: raw };
 }
 
 /**
@@ -744,10 +758,11 @@ export async function syncTagToAllDevices(
     ? `${personInfo.apartment} - ${personInfo.name}`
     : personInfo.name;
   const deviceRegistration = personInfo.registration || personInfo.document || personInfo.identifier;
-  const cardValue = Number(String(tagValue).replace(/\D/g, '')) || 0;
-  if (!Number.isFinite(cardValue) || cardValue <= 0) {
+  const normalizedTag = normalizeTagForDevice(tagValue);
+  if (!normalizedTag) {
     return { synced: 0, errors: 1, details: ['TAG invalida para sincronizacao.'] };
   }
+  const cardValue = normalizedTag.value;
 
   let synced = 0;
   let errors = 0;
@@ -872,7 +887,7 @@ export async function reconcileFromDevices(
   devices: Device[],
   residents: Resident[],
   onProgress: (msg: string, current: number, total: number) => void
-): Promise<{ photosAdded: number; tagsAdded: number; skipped: number; errors: number }> {
+): Promise<{ photosAdded: number; tagsAdded: number; skipped: number; errors: number; details: string[] }> {
   const targetDevices = devices.filter(
     (d) => d.type === 'facial_recognition' || d.type === 'vehicle_tag'
   );
@@ -887,6 +902,7 @@ export async function reconcileFromDevices(
   let tagsAdded = 0;
   let skipped = 0;
   let errors = 0;
+  const details: string[] = [];
 
   // Build resident lookup by hashed id (matches deviceUserId convention)
   const byHashId = new Map<number, Resident>();
@@ -971,14 +987,31 @@ export async function reconcileFromDevices(
     for (const c of cards) {
       if (!c.user_id) continue;
       const userObj = users.find((u) => u.id === c.user_id);
-      const resident = byHashId.get(c.user_id) || (userObj ? matchByName(userObj.name) : undefined);
-      if (!resident) { skipped++; continue; }
-      if ((resident as any).vehicle_tag || (resident as any).vehicleTag) { skipped++; continue; }
+      const residentByHash = byHashId.get(c.user_id);
+      const resident = residentByHash || (userObj ? matchByName(userObj.name) : undefined);
+      const normalizedTag = normalizeTagForDevice(String(c.value));
+
+      if (!resident || !normalizedTag) { skipped++; continue; }
+
+      const currentTag = String((resident as any).vehicle_tag || (resident as any).vehicleTag || '').trim();
+      if (currentTag) {
+        const normalizedCurrent = normalizeTagForDevice(currentTag);
+        if (normalizedCurrent?.raw === normalizedTag.raw) {
+          skipped++;
+          continue;
+        }
+
+        if (!residentByHash) {
+          skipped++;
+          details.push(`${device.name}: TAG divergente para ${resident.name}; vínculo por nome ignorado para evitar sobrescrever cadastro.`);
+          continue;
+        }
+      }
 
       try {
         const { error } = await supabase
           .from('residents')
-          .update({ vehicle_tag: String(c.value) })
+          .update({ vehicle_tag: normalizedTag.raw })
           .eq('id', resident.id);
         if (error) { errors++; continue; }
         invalidateCache('residents_list');
@@ -989,7 +1022,7 @@ export async function reconcileFromDevices(
     }
   }
 
-  return { photosAdded, tagsAdded, skipped, errors };
+  return { photosAdded, tagsAdded, skipped, errors, details };
 }
 
 /**
@@ -1032,19 +1065,20 @@ export async function syncAllResidentsToDevices(
   residents: Array<{ id: string; name: string; apartment: string; cpf?: string; vehicleTag?: string }>,
   getResidentPhoto: (residentId: string) => Promise<string | null>,
   onProgress?: (msg: string, current: number, total: number) => void
-): Promise<{ photosSynced: number; tagsSynced: number; skipped: number; errors: number }> {
+): Promise<{ photosSynced: number; tagsSynced: number; skipped: number; errors: number; details: string[] }> {
   const facialDevices = devices.filter((d) => d.type === 'facial_recognition');
   const allTargets = devices.filter(
     (d) => d.type === 'facial_recognition' || d.type === 'vehicle_tag'
   );
   if (allTargets.length === 0) {
-    return { photosSynced: 0, tagsSynced: 0, skipped: 0, errors: 0 };
+    return { photosSynced: 0, tagsSynced: 0, skipped: 0, errors: 0, details: ['Nenhum dispositivo facial/TAG cadastrado.'] };
   }
 
   let photosSynced = 0;
   let tagsSynced = 0;
   let skipped = 0;
   let errors = 0;
+  const details: string[] = [];
 
   for (let i = 0; i < residents.length; i++) {
     const r = residents[i];
@@ -1074,32 +1108,50 @@ export async function syncAllResidentsToDevices(
               reader.readAsDataURL(blob);
             });
           }
-          const result = await syncBiometricToAllDevices(facialDevices, personInfo, base64);
+          const result = await syncBiometricToAllDevices(
+            facialDevices,
+            personInfo,
+            base64,
+            (msg) => onProgress?.(`${r.name}: ${msg}`, i, residents.length)
+          );
           photosSynced += result.synced;
           errors += result.errors;
+          details.push(...result.details.map((item) => `${r.name}: ${item}`));
         } else {
           skipped++;
+          details.push(`${r.name}: sem foto cadastrada no sistema.`);
         }
       } catch (err) {
         console.error(`Photo sync error for ${r.name}:`, err);
         errors++;
+        details.push(`${r.name}: erro ao sincronizar foto - ${(err as Error)?.message || 'erro desconhecido'}`);
       }
     }
 
     // TAG sync
     if (r.vehicleTag) {
       try {
-        const result = await syncTagToAllDevices(allTargets, personInfo, r.vehicleTag);
+        const result = await syncTagToAllDevices(
+          allTargets,
+          personInfo,
+          r.vehicleTag,
+          (msg) => onProgress?.(`${r.name}: ${msg}`, i, residents.length)
+        );
         tagsSynced += result.synced;
         errors += result.errors;
+        details.push(...result.details.map((item) => `${r.name}: ${item}`));
       } catch (err) {
         console.error(`TAG sync error for ${r.name}:`, err);
         errors++;
+        details.push(`${r.name}: erro ao sincronizar TAG - ${(err as Error)?.message || 'erro desconhecido'}`);
       }
+    } else {
+      skipped++;
+      details.push(`${r.name}: sem TAG cadastrada no sistema.`);
     }
   }
 
   onProgress?.('Sincronização concluída!', residents.length, residents.length);
-  return { photosSynced, tagsSynced, skipped, errors };
+  return { photosSynced, tagsSynced, skipped, errors, details };
 }
 

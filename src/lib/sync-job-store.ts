@@ -12,6 +12,7 @@ export interface SyncJobState {
   photosSynced: number;
   tagsSynced: number;
   errors: number;
+  details: string[];
   startedAt?: number;
   finishedAt?: number;
 }
@@ -27,6 +28,7 @@ const defaultState: SyncJobState = {
   photosSynced: 0,
   tagsSynced: 0,
   errors: 0,
+  details: [],
 };
 
 export function getSyncJobState(): SyncJobState {

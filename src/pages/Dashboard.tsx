@@ -140,7 +140,7 @@ const normalizeControlIdPersonName = (value: string) => (
 );
 
 const readControlIdApartmentPrefix = (value: string) => {
-  const match = value.match(/^\s*(\d+[a-z]?)\s*[-]\s*/i);
+  const match = value.match(/^\s*(\d+[a-z]?)\s*[-\u2013]\s*/i);
   return match?.[1]?.trim().toLowerCase() || '';
 };
 
@@ -378,9 +378,33 @@ export const Dashboard = () => {
     )) || null;
   };
 
+  const getResidentByControlIdName = (event: ControlIdDashboardEvent) => {
+    const rawName = readPayloadValue(event.payload, 'user_name') || readPayloadValue(event.payload, 'name');
+    const normalizedName = normalizeControlIdPersonName(rawName);
+    if (!normalizedName) return null;
+
+    const apartmentPrefix = readControlIdApartmentPrefix(rawName);
+    const candidates = residents.filter((resident) => {
+      const normalizedResidentName = normalizeControlIdPersonName(resident.name);
+      const apartmentMatches = !apartmentPrefix || resident.apartment.trim().toLowerCase() === apartmentPrefix;
+      const nameMatches = apartmentPrefix
+        ? normalizedResidentName.includes(normalizedName) || normalizedName.includes(normalizedResidentName)
+        : normalizedResidentName === normalizedName;
+
+      return apartmentMatches && nameMatches;
+    });
+
+    if (candidates.length === 1) return candidates[0];
+    return null;
+  };
+
+  const getResidentForTagEvent = (event: ControlIdDashboardEvent) => (
+    getResidentByTag(event) || getResidentByControlIdName(event)
+  );
+
   const getControlIdEventTitle = (event: ControlIdDashboardEvent) => {
     if (isControlIdTagEvent(event)) {
-      const resident = getResidentByTag(event);
+      const resident = getResidentForTagEvent(event);
       if (resident) return `${resident.apartment} - ${resident.name}`;
       return isControlIdEventGranted(event) ? 'TAG sem vínculo no sistema' : 'Não identificado';
     }
@@ -409,7 +433,7 @@ export const Dashboard = () => {
     const title = rawTitle.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
     if (accessGranted === false || accessGranted === 'false') return false;
-    if (isControlIdTagEvent(event) && !getResidentByTag(event)) return false;
+    if (isControlIdTagEvent(event) && !getResidentForTagEvent(event)) return false;
     if (accessGranted === true || accessGranted === 'true') return true;
     if (event.processed === false || incomingEvent === 3 || incomingEvent === 6) return false;
     if (title.includes('desconhecido') || title.includes('unknown') || title.includes('negado')) return false;
@@ -435,7 +459,7 @@ export const Dashboard = () => {
 
   const getControlIdEventTypeLabel = (event: ControlIdDashboardEvent) => {
     if (isControlIdTagEvent(event)) {
-      if (!getResidentByTag(event)) return isControlIdEventGranted(event) ? 'TAG sem vínculo' : 'Não identificado';
+      if (!getResidentForTagEvent(event)) return isControlIdEventGranted(event) ? 'TAG sem vínculo' : 'Não identificado';
       return 'TAG identificada';
     }
     return isControlIdEventGranted(event) ? 'Identificacao facial' : 'Nao identificado';

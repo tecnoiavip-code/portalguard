@@ -723,10 +723,11 @@ const buildIdentificationResponse = (
     result.actions = buildIdentificationActions(payload, deviceType);
   }
 
-  // By documentation, identification callbacks expect the payload wrapped in "result".
-  // A flat response can be re-enabled with CONTROLID_IDENT_FLAT_RESPONSE=1.
-  const forceFlat = (Deno.env.get('CONTROLID_IDENT_FLAT_RESPONSE') ?? '') === '1';
-  return forceFlat ? result : { result };
+  // Control iD's remote authorization examples return this payload directly.
+  // Some custom firmwares/proxies may expect { result }, so keep that as an
+  // explicit opt-in instead of the default.
+  const forceWrapped = (Deno.env.get('CONTROLID_IDENT_WRAPPED_RESPONSE') ?? '') === '1';
+  return forceWrapped ? { result } : result;
 };
 
 const resolveDeviceType = async (supabaseClient: any, deviceId: string): Promise<string | null> => {

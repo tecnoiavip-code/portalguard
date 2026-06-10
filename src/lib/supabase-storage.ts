@@ -278,7 +278,10 @@ export const supabaseStorage = {
     if (resident.photo && resident.photo.startsWith('data:')) {
       const uploaded = await supabaseStorage.uploadResidentPhoto(savedId, resident.photo);
       if (!uploaded) {
-        return null;
+        const { toast } = await import('sonner');
+        toast.warning('Morador salvo, mas a foto não foi enviada. Verifique as permissões do armazenamento.');
+        invalidateCache('residents_list', `photo_${savedId}`);
+        return savedId;
       }
       await supabase.from('residents').update({ photo_url: null }).eq('id', savedId);
     } else if (resident.photoRemoved) {

@@ -140,6 +140,7 @@ export const Reports = () => {
     const { data, error } = await (supabase
       .from('portaria_equipment') as any)
       .select(PORTARIA_EQUIPMENT_COLUMNS)
+      .eq('is_active', true)
       .order('name')
       .limit(100);
     if (error) {
@@ -329,18 +330,6 @@ export const Reports = () => {
     } else {
       toast.success(editingEquipmentId ? 'Equipamento atualizado' : 'Equipamento cadastrado');
       resetEquipmentForm();
-      await loadPortariaEquipment();
-      await loadAllPortariaEquipment();
-    }
-  };
-
-  const handleToggleEquipment = async (id: string, isActive: boolean) => {
-    const { error } = await supabase
-      .from('portaria_equipment')
-      .update({ is_active: !isActive })
-      .eq('id', id);
-    if (!error) {
-      toast.success(isActive ? 'Equipamento desativado' : 'Equipamento ativado');
       await loadPortariaEquipment();
       await loadAllPortariaEquipment();
     }
@@ -832,12 +821,6 @@ export const Reports = () => {
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant={eq.is_active ? 'default' : 'secondary'}>
-                        {eq.is_active ? 'Ativo' : 'Inativo'}
-                      </Badge>
-                      <Button variant="outline" size="sm" onClick={() => handleToggleEquipment(eq.id, eq.is_active)}>
-                        {eq.is_active ? 'Desativar' : 'Ativar'}
-                      </Button>
                       <Button variant="outline" size="sm" onClick={() => handleEditEquipment(eq)} title="Editar equipamento">
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>

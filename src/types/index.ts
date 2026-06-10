@@ -6,6 +6,7 @@ export interface Resident {
   phone?: string;
   email?: string;
   photo?: string;
+  photoRemoved?: boolean;
   vehiclePlate?: string;
   vehicleModel?: string;
   vehicleColor?: string;

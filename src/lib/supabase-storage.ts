@@ -142,13 +142,21 @@ export const supabaseStorage = {
       const ext = file.name.split('.').pop() || 'jpg';
       const path = `${residentId}/photo.${ext}`;
 
-      await supabase.storage.from('resident-photos').remove([path]);
-
+      const { data: existingFiles } = await supabase.storage
+        .from('resident-photos')
+        .list(residentId);
       const { error } = await supabase.storage
         .from('resident-photos')
         .upload(path, file, { upsert: true });
 
       if (error) { console.error('Error uploading photo:', error); return null; }
+
+      const staleFiles = (existingFiles || [])
+        .map(existingFile => `${residentId}/${existingFile.name}`)
+        .filter(existingPath => existingPath !== path);
+      if (staleFiles.length > 0) {
+        await supabase.storage.from('resident-photos').remove(staleFiles);
+      }
 
       const { data: signedUrl } = await supabase.storage
         .from('resident-photos')
@@ -268,15 +276,18 @@ export const supabaseStorage = {
 
     // Handle photo
     if (resident.photo && resident.photo.startsWith('data:')) {
-      await supabaseStorage.uploadResidentPhoto(savedId, resident.photo);
+      const uploaded = await supabaseStorage.uploadResidentPhoto(savedId, resident.photo);
+      if (!uploaded) {
+        return null;
+      }
       await supabase.from('residents').update({ photo_url: null }).eq('id', savedId);
-    } else if (!resident.photo) {
+    } else if (resident.photoRemoved) {
       await supabaseStorage.deleteResidentPhoto(savedId);
       await supabase.from('residents').update({ photo_url: null }).eq('id', savedId);
     }
 
     // Invalidate list cache so next read is fresh
-    invalidateCache('residents_list');
+    invalidateCache('residents_list', `photo_${savedId}`);
     return savedId;
   },
 

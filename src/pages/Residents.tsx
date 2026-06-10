@@ -52,11 +52,13 @@ export const Residents = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedResident, setSelectedResident] = useState<Resident | null>(null);
   const [selectedResidentPhoto, setSelectedResidentPhoto] = useState<string>('');
+  const [residentPhotoUrls, setResidentPhotoUrls] = useState<Record<string, string>>({});
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const itemsPerPage = 10;
   const [formData, setFormData] = useState({ ...EMPTY_RESIDENT_FORM });
+  const [photoRemoved, setPhotoRemoved] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -101,6 +103,7 @@ export const Residents = () => {
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
+  const paginatedResidentIds = paginatedResidents.map(resident => resident.id).join('|');
 
   const clearResidentDraft = () => {
     try {
@@ -119,6 +122,7 @@ export const Residents = () => {
         isOpen?: boolean;
         editingId?: string;
         formData?: Partial<typeof EMPTY_RESIDENT_FORM>;
+        photoRemoved?: boolean;
       };
 
       if (!draft?.isOpen) return;
@@ -128,6 +132,7 @@ export const Residents = () => {
         ...EMPTY_RESIDENT_FORM,
         ...(draft.formData || {}),
       });
+      setPhotoRemoved(Boolean(draft.photoRemoved));
       setIsDialogOpen(true);
     } catch {
       // ignore invalid drafts
@@ -143,12 +148,45 @@ export const Residents = () => {
           isOpen: true,
           editingId,
           formData,
+          photoRemoved,
         })
       );
     } catch {
       // ignore storage errors
     }
-  }, [isDialogOpen, editingId, formData]);
+  }, [isDialogOpen, editingId, formData, photoRemoved]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadVisibleResidentPhotos = async () => {
+      const entries = await Promise.all(
+        paginatedResidents.map(async (resident) => {
+          if (resident.photo) return [resident.id, resident.photo] as const;
+          const photo = await supabaseStorage.getResidentPhoto(resident.id);
+          return [resident.id, photo] as const;
+        })
+      );
+
+      if (cancelled) return;
+      setResidentPhotoUrls((current) => {
+        const next = { ...current };
+        entries.forEach(([residentId, photo]) => {
+          if (photo) next[residentId] = photo;
+          else delete next[residentId];
+        });
+        return next;
+      });
+    };
+
+    if (paginatedResidents.length > 0) {
+      loadVisibleResidentPhotos();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [paginatedResidentIds]);
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -167,6 +205,7 @@ export const Residents = () => {
     const residentData: Resident = {
       id: editingId || `res_${Date.now()}`,
       ...formData,
+      photoRemoved,
       createdAt: editingId
         ? residents.find((r) => r.id === editingId)?.createdAt || new Date().toISOString()
         : new Date().toISOString(),
@@ -174,6 +213,16 @@ export const Residents = () => {
 
     const savedResidentId = await saveResident(residentData);
     if (savedResidentId) {
+      setResidentPhotoUrls((current) => {
+        const next = { ...current };
+        if (photoRemoved) {
+          delete next[savedResidentId];
+        } else if (formData.photo) {
+          next[savedResidentId] = formData.photo;
+        }
+        return next;
+      });
+
       const personInfo = {
         name: formData.name,
         apartment: formData.apartment,
@@ -219,6 +268,7 @@ export const Residents = () => {
       vehicleColor: resident.vehicleColor || '',
       vehicleTag: resident.vehicleTag || '',
     });
+    setPhotoRemoved(false);
     setIsDialogOpen(true);
   };
 
@@ -254,6 +304,7 @@ export const Residents = () => {
         context.drawImage(videoRef.current, 0, 0);
         const photoData = canvasRef.current.toDataURL('image/jpeg', 0.7);
         setFormData({ ...formData, photo: photoData });
+        setPhotoRemoved(false);
         stopCamera();
         toast.success('Foto capturada!');
       }
@@ -266,6 +317,7 @@ export const Residents = () => {
       const reader = new FileReader();
       reader.onloadend = () => {
         setFormData({ ...formData, photo: reader.result as string });
+        setPhotoRemoved(false);
         toast.success('Foto carregada!');
       };
       reader.readAsDataURL(file);
@@ -301,6 +353,7 @@ export const Residents = () => {
       }, abortCtrl.signal, personInfo);
       if (photo) {
         setFormData(prev => ({ ...prev, photo }));
+        setPhotoRemoved(false);
         setShowDeviceCaptureDialog(false);
         setDeviceCaptureStatus('');
         setDeviceCaptureStep(undefined);
@@ -408,6 +461,7 @@ export const Residents = () => {
   const resetForm = () => {
     setEditingId('');
     setFormData({ ...EMPTY_RESIDENT_FORM });
+    setPhotoRemoved(false);
     stopCamera();
     setIsDialogOpen(false);
     clearResidentDraft();
@@ -879,9 +933,17 @@ export const Residents = () => {
                   paginatedResidents.map((resident) => (
                     <TableRow key={resident.id} className="hover:bg-muted/50 cursor-pointer" onClick={() => handleViewDetail(resident)}>
                       <TableCell>
-                        <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-xs">
-                          Sem foto
-                        </div>
+                        {residentPhotoUrls[resident.id] ? (
+                          <img
+                            src={residentPhotoUrls[resident.id]}
+                            alt={resident.name}
+                            className="w-20 h-20 rounded-full object-cover border-2 border-primary/20"
+                          />
+                        ) : (
+                          <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-xs">
+                            Sem foto
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="font-medium">{resident.name}</TableCell>
                       <TableCell>{resident.apartment}</TableCell>
@@ -1057,7 +1119,10 @@ export const Residents = () => {
                       </Button>
                     )}
                     {formData.photo && (
-                      <Button type="button" size="sm" variant="destructive" onClick={() => setFormData({ ...formData, photo: '' })}>
+                      <Button type="button" size="sm" variant="destructive" onClick={() => {
+                        setFormData({ ...formData, photo: '' });
+                        setPhotoRemoved(true);
+                      }}>
                         Remover
                       </Button>
                     )}

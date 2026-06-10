@@ -279,7 +279,18 @@ export const supabaseStorage = {
       const uploaded = await supabaseStorage.uploadResidentPhoto(savedId, resident.photo);
       if (!uploaded) {
         const { toast } = await import('sonner');
-        toast.warning('Morador salvo, mas a foto não foi enviada. Verifique as permissões do armazenamento.');
+        const { error: fallbackError } = await supabase
+          .from('residents')
+          .update({ photo_url: resident.photo })
+          .eq('id', savedId);
+
+        if (fallbackError) {
+          console.error('Error saving resident photo fallback:', fallbackError.message);
+          toast.error('Morador salvo, mas a foto nao foi gravada.');
+        } else {
+          setCache(`photo_${savedId}`, resident.photo, 3500_000);
+          toast.warning('Storage bloqueou o upload. A foto foi salva em modo compativel.');
+        }
         invalidateCache('residents_list', `photo_${savedId}`);
         return savedId;
       }

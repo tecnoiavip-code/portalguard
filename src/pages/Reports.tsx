@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { ClipboardList, Users, AlertTriangle, Plus, Wrench, Download, Search, X, FileSpreadsheet, Sun, Moon, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { ClipboardList, Users, AlertTriangle, Plus, Wrench, Download, Search, X, FileSpreadsheet, Sun, Moon, CheckCircle, XCircle, AlertCircle, Pencil, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -84,6 +84,7 @@ export const Reports = () => {
   // Equipment management state
   const [isEquipmentDialogOpen, setIsEquipmentDialogOpen] = useState(false);
   const [isChecklistDialogOpen, setIsChecklistDialogOpen] = useState(false);
+  const [editingEquipmentId, setEditingEquipmentId] = useState<string | null>(null);
   const [equipmentFormData, setEquipmentFormData] = useState({ name: '', description: '' });
   const [equipmentPage, setEquipmentPage] = useState(1);
 
@@ -288,27 +289,48 @@ export const Reports = () => {
     }
   };
 
-  const handleCreateEquipment = async () => {
+  const resetEquipmentForm = () => {
+    setEditingEquipmentId(null);
+    setEquipmentFormData({ name: '', description: '' });
+    setIsEquipmentDialogOpen(false);
+  };
+
+  const openCreateEquipmentDialog = () => {
+    setEditingEquipmentId(null);
+    setEquipmentFormData({ name: '', description: '' });
+    setIsEquipmentDialogOpen(true);
+  };
+
+  const handleEditEquipment = (equipment: PortariaEquipment) => {
+    setEditingEquipmentId(equipment.id);
+    setEquipmentFormData({
+      name: equipment.name,
+      description: equipment.description || '',
+    });
+    setIsEquipmentDialogOpen(true);
+  };
+
+  const handleSaveEquipment = async () => {
     if (!equipmentFormData.name.trim()) {
       toast.error('Informe o nome do equipamento');
       return;
     }
-    const { error } = await supabase
-      .from('portaria_equipment')
-      .insert({
-        name: equipmentFormData.name.trim().toUpperCase(),
-        description: equipmentFormData.description.trim() || null,
-        is_active: true,
-      });
+    const payload = {
+      name: equipmentFormData.name.trim().toUpperCase(),
+      description: equipmentFormData.description.trim() || null,
+    };
+    const query = editingEquipmentId
+      ? supabase.from('portaria_equipment').update(payload).eq('id', editingEquipmentId)
+      : supabase.from('portaria_equipment').insert({ ...payload, is_active: true });
+    const { error } = await query;
     if (error) {
-      console.error('Error creating equipment:', error);
-      toast.error(`Erro ao cadastrar equipamento: ${error.message}`);
+      console.error('Error saving equipment:', error);
+      toast.error(`Erro ao salvar equipamento: ${error.message}`);
     } else {
-      toast.success('Equipamento cadastrado');
-      setEquipmentFormData({ name: '', description: '' });
-      setIsEquipmentDialogOpen(false);
-      loadPortariaEquipment();
-      loadAllPortariaEquipment();
+      toast.success(editingEquipmentId ? 'Equipamento atualizado' : 'Equipamento cadastrado');
+      resetEquipmentForm();
+      await loadPortariaEquipment();
+      await loadAllPortariaEquipment();
     }
   };
 
@@ -319,9 +341,26 @@ export const Reports = () => {
       .eq('id', id);
     if (!error) {
       toast.success(isActive ? 'Equipamento desativado' : 'Equipamento ativado');
-      loadPortariaEquipment();
-      loadAllPortariaEquipment();
+      await loadPortariaEquipment();
+      await loadAllPortariaEquipment();
     }
+  };
+
+  const handleDeleteEquipment = async (id: string) => {
+    if (!confirm('Deseja realmente excluir este equipamento dos próximos checklists?')) return;
+    const { error } = await supabase
+      .from('portaria_equipment')
+      .update({ is_active: false })
+      .eq('id', id);
+    if (error) {
+      console.error('Error deleting equipment:', error);
+      toast.error(`Erro ao excluir equipamento: ${error.message}`);
+      return;
+    }
+    toast.success('Equipamento excluído dos próximos checklists');
+    if (editingEquipmentId === id) resetEquipmentForm();
+    await loadPortariaEquipment();
+    await loadAllPortariaEquipment();
   };
 
   const handleViewShiftDetails = async (shift: Shift) => {
@@ -775,7 +814,7 @@ export const Reports = () => {
                   <Wrench className="h-5 w-5" />
                   Equipamentos da Portaria
                 </CardTitle>
-                <Button onClick={() => setIsEquipmentDialogOpen(true)} size="sm">
+                <Button onClick={openCreateEquipmentDialog} size="sm">
                   <Plus className="h-4 w-4 mr-2" />
                   Cadastrar Equipamento
                 </Button>
@@ -799,6 +838,12 @@ export const Reports = () => {
                       <Button variant="outline" size="sm" onClick={() => handleToggleEquipment(eq.id, eq.is_active)}>
                         {eq.is_active ? 'Desativar' : 'Ativar'}
                       </Button>
+                      <Button variant="outline" size="sm" onClick={() => handleEditEquipment(eq)} title="Editar equipamento">
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => handleDeleteEquipment(eq.id)} title="Excluir equipamento">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -812,11 +857,11 @@ export const Reports = () => {
         </div>
       )}
 
-      {/* Dialog: Cadastrar Equipamento */}
-      <Dialog open={isEquipmentDialogOpen} onOpenChange={setIsEquipmentDialogOpen}>
+      {/* Dialog: Cadastrar/Editar Equipamento */}
+      <Dialog open={isEquipmentDialogOpen} onOpenChange={(open) => (open ? setIsEquipmentDialogOpen(true) : resetEquipmentForm())}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Cadastrar Equipamento da Portaria</DialogTitle>
+            <DialogTitle>{editingEquipmentId ? 'Editar Equipamento da Portaria' : 'Cadastrar Equipamento da Portaria'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div>
@@ -827,10 +872,15 @@ export const Reports = () => {
               <Label>Descrição</Label>
               <Input value={equipmentFormData.description} onChange={e => setEquipmentFormData({ ...equipmentFormData, description: e.target.value })} placeholder="Ex: Marca/Modelo, localização" />
             </div>
-            <Button onClick={handleCreateEquipment} className="w-full">
-              <Plus className="h-4 w-4 mr-2" />
-              Cadastrar
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={resetEquipmentForm} className="flex-1">
+                Cancelar
+              </Button>
+              <Button onClick={handleSaveEquipment} className="flex-1">
+                <Plus className="h-4 w-4 mr-2" />
+                {editingEquipmentId ? 'Salvar Alterações' : 'Cadastrar'}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

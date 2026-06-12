@@ -569,7 +569,7 @@ export const Dashboard = () => {
                       </div>
 
                       <div className={`relative z-10 flex h-20 w-20 items-center justify-center rounded-full border-2 ${iconClass}`}>
-                        {!isTagEvent && photoUrl ? (
+                        {photoUrl ? (
                           <img
                             src={photoUrl}
                             alt={getControlIdEventTitle(event)}

@@ -363,19 +363,41 @@ export const Dashboard = () => {
     return hours;
   }, [allEntries]);
 
-  const getControlIdTagValue = (event: ControlIdDashboardEvent) => (
-    readPayloadValue(event.payload, 'uhf_tag')
-    || readPayloadValue(event.payload, 'card_value')
-    || readPayloadValue(event.payload, 'qrcode_value')
-  );
+  // Extract ALL possible tag/card identifier values from the event payload.
+  const getControlIdTagValue = (event: ControlIdDashboardEvent) => {
+    const p = event.payload;
+    return (
+      readPayloadValue(p, 'uhf_tag')
+      || readPayloadValue(p, 'card_value')
+      || readPayloadValue(p, 'qrcode_value')
+      // Extra field names used in some firmware versions / access_logs rows
+      || (p as any)?.tag_value?.toString?.().trim?.()
+      || (p as any)?.tag?.toString?.().trim?.()
+      || (p as any)?.rfid?.toString?.().trim?.()
+      || (p as any)?.card_id?.toString?.().trim?.()
+      || (p as any)?.card_number?.toString?.().trim?.()
+      || (p as any)?.badge_number?.toString?.().trim?.()
+      || ''
+    );
+  };
 
   const getResidentByTag = (event: ControlIdDashboardEvent) => {
     const tagValue = normalizeTagValue(getControlIdTagValue(event));
     if (!tagValue) return null;
 
-    return residents.find((resident) => (
-      resident.vehicleTag && normalizeTagValue(resident.vehicleTag) === tagValue
-    )) || null;
+    // Exact match first
+    const exactMatch = residents.find((r) =>
+      r.vehicleTag && normalizeTagValue(r.vehicleTag) === tagValue
+    );
+    if (exactMatch) return exactMatch;
+
+    // Partial / suffix match for tags that may have leading zeros stripped
+    const partialMatch = residents.find((r) => {
+      if (!r.vehicleTag) return false;
+      const normalized = normalizeTagValue(r.vehicleTag);
+      return normalized.endsWith(tagValue) || tagValue.endsWith(normalized);
+    });
+    return partialMatch || null;
   };
 
   const getResidentByControlIdName = (event: ControlIdDashboardEvent) => {
@@ -387,15 +409,36 @@ export const Dashboard = () => {
     const candidates = residents.filter((resident) => {
       const normalizedResidentName = normalizeControlIdPersonName(resident.name);
       const apartmentMatches = !apartmentPrefix || resident.apartment.trim().toLowerCase() === apartmentPrefix;
+      // With apartment: partial name match. Without: require substantial overlap.
       const nameMatches = apartmentPrefix
         ? normalizedResidentName.includes(normalizedName) || normalizedName.includes(normalizedResidentName)
-        : normalizedResidentName === normalizedName;
+        : normalizedResidentName.includes(normalizedName) || normalizedName.includes(normalizedResidentName);
 
       return apartmentMatches && nameMatches;
     });
 
     if (candidates.length === 1) return candidates[0];
+    // If multiple candidates but one apartment prefix matches perfectly, prefer it
+    if (candidates.length > 1 && apartmentPrefix) {
+      const exactApt = candidates.find((r) => r.apartment.trim().toLowerCase() === apartmentPrefix);
+      if (exactApt) return exactApt;
+    }
     return null;
+  };
+
+  const isControlIdTagEvent = (event: ControlIdDashboardEvent) => {
+    const deviceType = getControlIdDeviceType(event);
+    if (deviceType === 'facial_recognition') return false;
+    if (deviceType === 'vehicle_tag' || deviceType === 'card_reader') return true;
+
+    return Boolean(
+      readPayloadValue(event.payload, 'uhf_tag')
+      || readPayloadValue(event.payload, 'qrcode_value')
+      || (event.payload as any)?.tag_value
+      || (event.payload as any)?.tag
+      || (event.payload as any)?.rfid
+      || (readPayloadValue(event.payload, 'card_value') && !isTruthyPayloadValue(event.payload?.user_has_image))
+    );
   };
 
   const getResidentForTagEvent = (event: ControlIdDashboardEvent) => (
@@ -406,12 +449,14 @@ export const Dashboard = () => {
     if (isControlIdTagEvent(event)) {
       const resident = getResidentForTagEvent(event);
       if (resident) return `${resident.apartment} - ${resident.name}`;
-      return isControlIdEventGranted(event) ? 'TAG sem vínculo no sistema' : 'Não identificado';
+      // TAG exists but no resident linked — show the raw TAG value so operator knows what passed
+      const tagVal = getControlIdTagValue(event);
+      return tagVal ? `TAG: ${tagVal}` : 'TAG sem vínculo no sistema';
     }
 
     return readPayloadValue(event.payload, 'user_name')
       || readPayloadValue(event.payload, 'name')
-      || 'Identificacao recebida';
+      || 'Identificação recebida';
   };
 
   const getControlIdDeviceName = (event: ControlIdDashboardEvent) => {
@@ -426,6 +471,10 @@ export const Dashboard = () => {
     return deviceInfoMap[event.device_id]?.type || '';
   };
 
+  // The device decides autonomously whether to grant or deny access.
+  // We trust the device's own event code (7 = granted, 3/6 = denied) and
+  // the access_granted flag that our webhook sets. We no longer block "granted"
+  // just because the TAG has no linked resident — the device already opened the gate.
   const isControlIdEventGranted = (event: ControlIdDashboardEvent) => {
     const incomingEvent = Number.parseInt(readPayloadValue(event.payload, 'event') || '0', 10);
     const accessGranted = event.payload?.access_granted;
@@ -433,7 +482,6 @@ export const Dashboard = () => {
     const title = rawTitle.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
     if (accessGranted === false || accessGranted === 'false') return false;
-    if (isControlIdTagEvent(event) && !getResidentForTagEvent(event)) return false;
     if (accessGranted === true || accessGranted === 'true') return true;
     if (event.processed === false || incomingEvent === 3 || incomingEvent === 6) return false;
     if (title.includes('desconhecido') || title.includes('unknown') || title.includes('negado')) return false;
@@ -445,24 +493,13 @@ export const Dashboard = () => {
     isControlIdEventGranted(event) ? 'Liberado' : 'Negado'
   );
 
-  const isControlIdTagEvent = (event: ControlIdDashboardEvent) => {
-    const deviceType = getControlIdDeviceType(event);
-    if (deviceType === 'facial_recognition') return false;
-    if (deviceType === 'vehicle_tag' || deviceType === 'card_reader') return true;
-
-    return Boolean(
-      readPayloadValue(event.payload, 'uhf_tag')
-      || readPayloadValue(event.payload, 'qrcode_value')
-      || (readPayloadValue(event.payload, 'card_value') && !isTruthyPayloadValue(event.payload?.user_has_image))
-    );
-  };
-
   const getControlIdEventTypeLabel = (event: ControlIdDashboardEvent) => {
     if (isControlIdTagEvent(event)) {
-      if (!getResidentForTagEvent(event)) return isControlIdEventGranted(event) ? 'TAG sem vínculo' : 'Não identificado';
-      return 'TAG identificada';
+      const resident = getResidentForTagEvent(event);
+      if (resident) return 'TAG identificada';
+      return isControlIdEventGranted(event) ? 'TAG sem vínculo' : 'TAG negada';
     }
-    return isControlIdEventGranted(event) ? 'Identificacao facial' : 'Nao identificado';
+    return isControlIdEventGranted(event) ? 'Identificação facial' : 'Não identificado';
   };
 
   return (

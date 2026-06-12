@@ -323,6 +323,9 @@ const CONTROLID_DASHBOARD_TOPIC = 'controlid-dashboard';
 const CONTROLID_DASHBOARD_EVENT = 'controlid-event';
 
 const compactControlIdPayload = (payload: any): Record<string, unknown> => {
+  // Include all fields useful for resident identification in the dashboard.
+  // Access-log events often carry these fields nested inside access_logs rows,
+  // which buildAccessLogEventPayload() already flattens into the root level.
   const allowedKeys = [
     'event',
     'name',
@@ -338,6 +341,17 @@ const compactControlIdPayload = (payload: any): Record<string, unknown> => {
     'saved_photo_path',
     'user_has_image',
     'device_type',
+    // Extra TAG / access-log fields that Control iD may send
+    'card_id',
+    'card_number',
+    'tag_value',
+    'tag',
+    'rfid',
+    'badge_number',
+    'apartment',
+    'door_id',
+    'door_name',
+    'access_logs_count',
   ];
 
   const compact: Record<string, unknown> = {};
@@ -1553,13 +1567,7 @@ Deno.serve(async (req) => {
         );
       })());
 
-      if (accessGranted) {
-        return new Response(
-          JSON.stringify(identResponse),
-          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
+      // Acknowledge without interfering — device operates autonomously (visualization only)
       return new Response('', { status: 200, headers: corsHeaders });
     }
 
@@ -1735,10 +1743,8 @@ Deno.serve(async (req) => {
         await broadcastControlIdDashboardEvent(supabaseClient, effectiveDeviceId, eventType, enrichedPayload, identificationGranted);
       })());
 
-      return new Response(
-        JSON.stringify(identResponse),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      // Acknowledge without interfering — device operates autonomously (visualization only)
+      return new Response('', { status: 200, headers: corsHeaders });
     }
 
     if (!checkRateLimit(effectiveDeviceId)) {

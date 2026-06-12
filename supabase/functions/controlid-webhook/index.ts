@@ -1587,7 +1587,9 @@ Deno.serve(async (req) => {
         portal_id: payload?.portal_id,
         event_in: payload?.event,
         response: identResponse,
-          // ALL work runs in background — VISUALIZATION ONLY, no DB writes for events.
+      });
+
+      // ALL work runs in background — VISUALIZATION ONLY, no DB writes for events.
       runBackground('identificationPostProcess', (async () => {
         try {
           let resolvedDeviceType = deviceTypeCache.get(effectiveDeviceId) ?? null;

@@ -446,17 +446,25 @@ export const Dashboard = () => {
   );
 
   const getControlIdEventTitle = (event: ControlIdDashboardEvent) => {
+    const resident = getResidentForTagEvent(event);
+    if (resident) return `${resident.name} - ${resident.apartment}`;
+
     if (isControlIdTagEvent(event)) {
-      const resident = getResidentForTagEvent(event);
-      if (resident) return `${resident.apartment} - ${resident.name}`;
       // TAG exists but no resident linked — show the raw TAG value so operator knows what passed
       const tagVal = getControlIdTagValue(event);
       return tagVal ? `TAG: ${tagVal}` : 'TAG sem vínculo no sistema';
     }
 
-    return readPayloadValue(event.payload, 'user_name')
-      || readPayloadValue(event.payload, 'name')
-      || 'Identificação recebida';
+    const rawName = readPayloadValue(event.payload, 'user_name') || readPayloadValue(event.payload, 'name');
+    if (!rawName) return 'Identificação recebida';
+
+    // Try to flip "APT - Name" to "Name - APT" as a fallback
+    const aptMatch = rawName.match(/^(\d+\w?)\s*[-–]\s*(.+)$/i);
+    if (aptMatch) {
+      return `${aptMatch[2].trim()} - ${aptMatch[1].trim()}`;
+    }
+
+    return rawName;
   };
 
   const getControlIdDeviceName = (event: ControlIdDashboardEvent) => {

@@ -1587,160 +1587,26 @@ Deno.serve(async (req) => {
         portal_id: payload?.portal_id,
         event_in: payload?.event,
         response: identResponse,
-      });
-
-      // ALL database work runs in background AFTER response is sent
+          // ALL work runs in background — VISUALIZATION ONLY, no DB writes for events.
       runBackground('identificationPostProcess', (async () => {
-        let enrichedPayload: any = payload;
         try {
           let resolvedDeviceType = deviceTypeCache.get(effectiveDeviceId) ?? null;
 
-          // Refresh cache asynchronously for subsequent requests.
+          // Warm device type cache so subsequent events get device_type in payload
           if (!resolvedDeviceType) {
-            runBackground('warmDeviceTypeCache', resolveDeviceType(supabaseClient, effectiveDeviceId));
+            resolvedDeviceType = await resolveDeviceType(supabaseClient, effectiveDeviceId);
           }
 
-          // 1. Save photo if present in payload
-          let savedPhotoPath: string | null = null;
-          const photoBase64 = extractPhotoBase64(payload);
-          if (photoBase64) {
-            try {
-              savedPhotoPath = await saveAccessPhoto(supabaseClient, effectiveDeviceId, photoBase64);
-            } catch (e) {
-              console.error('Error saving access photo:', e);
-            }
-          }
-
-          enrichedPayload = {
+          const enrichedPayload = {
             ...payload,
             ...(resolvedDeviceType ? { device_type: resolvedDeviceType } : {}),
-            ...(savedPhotoPath ? { saved_photo_path: savedPhotoPath } : {}),
           };
 
-          // 3. Optional vehicle TAG autosync. Disabled by default because the
-          // device user_name can be stale and must not overwrite resident data.
-          const cardValue = String(payload.card_value || '');
-          const identUserName = String(payload.user_name || '');
-          if (VEHICLE_TAG_AUTOSYNC_ENABLED && cardValue && identUserName) {
-            try {
-              const autosyncIntervalMs = isFinitePositiveNumber(VEHICLE_TAG_AUTOSYNC_INTERVAL_MS)
-                ? VEHICLE_TAG_AUTOSYNC_INTERVAL_MS
-                : 3600000;
-              const autosyncKey = `${effectiveDeviceId}:${cardValue}`;
-              const nowMs = Date.now();
-              const lastAutosyncMs = lastVehicleTagAutosyncMap.get(autosyncKey) || 0;
-
-              if (nowMs - lastAutosyncMs < autosyncIntervalMs) {
-                console.log('Skipping recently checked vehicle TAG autosync:', autosyncKey);
-              } else {
-                lastVehicleTagAutosyncMap.set(autosyncKey, nowMs);
-
-                if (!resolvedDeviceType) {
-                  resolvedDeviceType = await resolveDeviceType(supabaseClient, effectiveDeviceId);
-                }
-
-              if (resolvedDeviceType === 'vehicle_tag') {
-                const aptMatch = identUserName.match(/^(\d+\w?)\s*[-–]\s*(.+)$/i);
-                if (aptMatch) {
-                  const [, apt, extractedName] = aptMatch;
-                  const normalizedName = extractedName.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
-                  const { data: residents } = await supabaseClient
-                    .from('residents')
-                    .select('id, name, vehicle_tag')
-                    .ilike('apartment', `%${apt.trim()}`);
-
-                  if (residents && residents.length > 0) {
-                    const matched = residents.find((resident: any) => {
-                      const residentName = resident.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-                      return residentName.includes(normalizedName) || normalizedName.includes(residentName);
-                    }) || (residents.length === 1 ? residents[0] : null);
-
-                    if (matched && matched.vehicle_tag !== cardValue) {
-                      await supabaseClient
-                        .from('residents')
-                        .update({ vehicle_tag: cardValue })
-                        .eq('id', matched.id);
-                      console.log(`Auto-synced vehicle_tag ${cardValue} to resident ${matched.name} (${apt})`);
-                    }
-                  }
-                }
-              }
-              }
-            } catch (e) {
-              console.error('Error auto-syncing vehicle_tag:', e);
-            }
-          }
-
-          // 4. Queue user_get_image if device reports user has image
-          const userId = Number.parseInt(String(payload?.user_id ?? '0'), 10);
-          const hasImage = payload?.user_has_image === 1 || payload?.user_has_image === '1'
-            || payload?.user_has_image === true || payload?.user_has_image === 'true';
-
-          if (hasImage && Number.isFinite(userId) && userId > 0 && !savedPhotoPath) {
-            const imageFetchKey = `${effectiveDeviceId}:${userId}`;
-            const nowMs = Date.now();
-            const lastImageFetchMs = lastImageFetchQueueMap.get(imageFetchKey) || 0;
-            const imageFetchIntervalMs = isFinitePositiveNumber(IMAGE_FETCH_REQUEUE_INTERVAL_MS)
-              ? IMAGE_FETCH_REQUEUE_INTERVAL_MS
-              : 1800000;
-
-            if (nowMs - lastImageFetchMs < imageFetchIntervalMs) {
-              console.log('Skipping recently queued user image fetch:', imageFetchKey);
-            } else {
-              const imageCutoff = new Date(nowMs - imageFetchIntervalMs).toISOString();
-              const { data: queuedImageCommands } = await supabaseClient
-                .from('push_command_queue')
-                .select('id, command, status, created_at')
-                .eq('device_id', effectiveDeviceId)
-                .gte('created_at', imageCutoff)
-                .in('status', ['pending', 'executing', 'done'])
-                .order('created_at', { ascending: false })
-                .limit(10);
-
-              const alreadyQueued = queuedImageCommands?.some((row: any) => {
-                const command = row.command as any;
-                const commandName = getQueuedCommandName(command);
-                const queuedUserId = Number.parseInt(
-                  String(command?.body?.user_id ?? command?.parameters?.user_id ?? '0'),
-                  10
-                );
-                return commandName === 'user_get_image' && queuedUserId === userId;
-              }) ?? false;
-
-              if (alreadyQueued) {
-                lastImageFetchQueueMap.set(imageFetchKey, nowMs);
-              }
-
-              if (!alreadyQueued) {
-                const { error: queueErr } = await supabaseClient
-                  .from('push_command_queue')
-                  .insert({
-                    device_id: effectiveDeviceId,
-                    command: {
-                      verb: 'POST',
-                      endpoint: 'user_get_image?get_timestamp=1',
-                      body: { user_id: userId, technology: 'visible_light', get_timestamp: 1, raw: false },
-                      contentType: 'application/json',
-                      meta: { user_id: userId },
-                    },
-                    status: 'pending',
-                  });
-                if (queueErr) {
-                  console.error('Failed to queue user_get_image:', queueErr);
-                } else {
-                  lastImageFetchQueueMap.set(imageFetchKey, nowMs);
-                  console.log(`Queued user_get_image for user ${userId} on device ${effectiveDeviceId}`);
-                }
-              }
-            }
-          }
+          // Broadcast to dashboard via Realtime only — no DB insert.
+          await broadcastControlIdDashboardEvent(supabaseClient, effectiveDeviceId, eventType, enrichedPayload, identificationGranted);
         } catch (e) {
           console.error('Error in identification post-processing:', e);
         }
-
-        // 5. Send event to frontend without persisting noisy device logs.
-        await broadcastControlIdDashboardEvent(supabaseClient, effectiveDeviceId, eventType, enrichedPayload, identificationGranted);
       })());
 
       // Acknowledge without interfering — device operates autonomously (visualization only)
@@ -1755,32 +1621,17 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ===== NON-IDENTIFICATION EVENTS: Save logs and process =====
-    // Extract and save photo if present in payload
-    let savedPhotoPath: string | null = null;
-    const photoBase64 = extractPhotoBase64(payload);
-    if (photoBase64) {
-      try {
-        savedPhotoPath = await saveAccessPhoto(supabaseClient, effectiveDeviceId, photoBase64);
-      } catch (e) {
-        console.error('Error saving access photo:', e);
-      }
-    }
-
-    const enrichedPayload = savedPhotoPath
-      ? { ...payload, saved_photo_path: savedPhotoPath }
+    // ===== NON-IDENTIFICATION EVENTS: Broadcast only — no DB writes =====
+    // For DAO events, extract and broadcast the first access_log row for identification.
+    const eventPayloadForBroadcast = eventType === 'dao' && payload.object_changes
+      ? buildAccessLogEventPayload(payload)
       : payload;
 
-    // Process specific events
-    if (eventType === 'dao' && payload.object_changes) {
-      await processAccessLogs(supabaseClient, payload.object_changes, effectiveDeviceId);
-    }
-
-    // Ensure non-identification events also reach the frontend without DB storage.
-    if (['dao', 'access_photo', 'catra_event', 'door', 'secbox', 'operation_mode', 'access_event', 'user_event', 'photo_event'].includes(eventType)) {
+    // Broadcast to dashboard via Realtime only.
+    if (['dao', 'access_photo', 'catra_event', 'door', 'secbox', 'operation_mode', 'access_event', 'user_event', 'photo_event', 'access_logs_event'].includes(eventType)) {
       runBackground(
         'broadcastControlIdEvent',
-        broadcastControlIdDashboardEvent(supabaseClient, effectiveDeviceId, eventType, enrichedPayload, true)
+        broadcastControlIdDashboardEvent(supabaseClient, effectiveDeviceId, eventType, eventPayloadForBroadcast, true)
       );
     }
 

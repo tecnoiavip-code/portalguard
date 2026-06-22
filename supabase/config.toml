@@ -1,0 +1,7 @@
+project_id = "kxdqffkkufgsizszchvw"
+
+[functions.controlid-webhook]
+verify_jwt = false
+
+[functions.pdf-ocr]
+verify_jwt = false

@@ -1,0 +1,1 @@
+ALTER TABLE public.push_command_queue ADD COLUMN IF NOT EXISTS result jsonb DEFAULT NULL;

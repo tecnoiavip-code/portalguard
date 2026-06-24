@@ -500,9 +500,23 @@ export const supabaseStorage = {
     
     // Build OR condition
     const orConditions = [];
-    if (nameReady) orConditions.push(`visitor_name.ilike.%${name}%`);
-    if (docReady) orConditions.push(`visitor_document.ilike.%${document}%`);
-    if (plateReady) orConditions.push(`vehicle_plate.ilike.%${plate}%`);
+    if (nameReady) {
+      // Use wildcard for vowels to ignore accents and case
+      const safeName = name.replace(/[aeiouáéíóúãõâêîôûàèìòù]/gi, '_');
+      orConditions.push(`visitor_name.ilike.%${safeName}%`);
+    }
+    if (docReady) {
+      // Use wildcard between digits to ignore formatting differences (e.g. 123.456 vs 123456)
+      const digits = document.replace(/\D/g, '');
+      const pattern = digits.split('').join('%');
+      orConditions.push(`visitor_document.ilike.%${pattern}%`);
+    }
+    if (plateReady) {
+      // Ignore plate formatting
+      const chars = plate.replace(/[^a-zA-Z0-9]/g, '');
+      const pattern = chars.split('').join('%');
+      orConditions.push(`vehicle_plate.ilike.%${pattern}%`);
+    }
     
     if (orConditions.length > 0) {
       query = query.or(orConditions.join(','));

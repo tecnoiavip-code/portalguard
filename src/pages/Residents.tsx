@@ -92,6 +92,7 @@ export const Residents = () => {
 
   const facialDevices = devices.filter(d => d.type === 'facial_recognition');
   const tagDevices = devices.filter(d => d.type === 'vehicle_tag' || d.type === 'card_reader');
+  const defaultTagDeviceId = tagDevices[0]?.id || '';
 
   const filteredResidents = residents.filter(resident =>
     resident.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -198,6 +199,12 @@ export const Residents = () => {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [isDialogOpen]);
+
+  useEffect(() => {
+    if (showTagSyncDialog && !selectedTagDeviceId && defaultTagDeviceId) {
+      setSelectedTagDeviceId(defaultTagDeviceId);
+    }
+  }, [showTagSyncDialog, selectedTagDeviceId, defaultTagDeviceId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

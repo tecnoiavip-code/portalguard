@@ -99,6 +99,79 @@ function normalizeTagForDevice(tagValue: string): { raw: string; value: string |
   return { raw, value: raw };
 }
 
+function extractControlIdObjectList(result: any, objectName: string): any[] {
+  const candidates = [
+    result?.[objectName],
+    result?.values,
+    result?.data,
+    result?.objects,
+    result?.result?.[objectName],
+    result?.result?.values,
+    result?.result?.data,
+    result?.response?.[objectName],
+    result?.response?.values,
+    result?.raw_data?.[objectName],
+    result?.raw_data?.values,
+  ];
+
+  if (Array.isArray(result)) return result;
+  for (const value of candidates) {
+    if (Array.isArray(value)) return value;
+  }
+  return [];
+}
+
+function readControlIdUserId(value: any): number | undefined {
+  const raw = value?.user_id ?? value?.userId ?? value?.user?.id ?? value?.id;
+  const parsed = Number.parseInt(String(raw ?? ''), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function readControlIdCardUserId(value: any): number | undefined {
+  const raw = value?.user_id ?? value?.userId ?? value?.user?.id;
+  const parsed = Number.parseInt(String(raw ?? ''), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function readControlIdUserName(value: any): string {
+  return String(value?.name ?? value?.user_name ?? value?.userName ?? value?.user?.name ?? '').trim();
+}
+
+function readControlIdCardValue(value: any): string {
+  return String(
+    value?.value
+    ?? value?.card_value
+    ?? value?.cardValue
+    ?? value?.card
+    ?? value?.number
+    ?? value?.code
+    ?? ''
+  ).trim();
+}
+
+function normalizeControlIdCards(result: any): Array<{ value: string; user_id?: number }> {
+  return extractControlIdObjectList(result, 'cards')
+    .map((card) => ({
+      value: readControlIdCardValue(card),
+      user_id: readControlIdCardUserId(card),
+    }))
+    .filter((card) => Boolean(card.value));
+}
+
+function normalizeControlIdUsers(result: any): Array<{ id: number; name: string; image_timestamp: number }> {
+  return extractControlIdObjectList(result, 'users')
+    .map((user) => {
+      const id = readControlIdUserId(user);
+      return id ? {
+        ...user,
+        id,
+        name: readControlIdUserName(user),
+        image_timestamp: Number(user?.image_timestamp ?? user?.imageTimestamp ?? 0) || 0,
+      } : null;
+    })
+    .filter((user): user is { id: number; name: string; image_timestamp: number } => Boolean(user));
+}
+
 /**
  * Queue a command to a device via push_command_queue and wait for result using Realtime.
  * Otimização: em vez de polling a cada 2s (30 queries em 60s), usa Realtime subscription (1 query + listener)
@@ -492,18 +565,18 @@ export async function syncTagsFromDevice(
 
   // Load cards
   const cardsResult = await queueCommandAndWait(serial, 'load_objects', { object: 'cards' }, 60000);
-  const cards: Array<{ value: number | string; user_id?: number }> = cardsResult?.cards || [];
+  const cards = normalizeControlIdCards(cardsResult);
 
   onStatus('Buscando usuários do dispositivo...');
 
   // Load users to match names
   const usersResult = await queueCommandAndWait(serial, 'load_objects', { object: 'users' }, 60000);
-  const users: Array<{ id: number; name: string }> = usersResult?.users || [];
+  const users = normalizeControlIdUsers(usersResult);
 
   const userMap = new Map(users.map(u => [u.id, u.name]));
 
   return cards.map(c => ({
-    value: String(c.value),
+    value: c.value,
     userId: c.user_id,
     userName: c.user_id ? userMap.get(c.user_id) : undefined,
   }));
@@ -545,7 +618,7 @@ export async function syncPhotosFromDevices(
     let users: Array<{ id: number; name: string; image_timestamp: number }> = [];
     try {
       const result = await queueCommandAndWait(serial, 'load_objects', { object: 'users' }, 60000);
-      users = result?.users || [];
+      users = normalizeControlIdUsers(result);
     } catch (e) {
       console.error(`Error loading users from ${device.name}:`, e);
       errors++;
@@ -939,9 +1012,9 @@ export async function reconcileFromDevices(
     let cards: Array<{ value: number | string; user_id?: number }> = [];
     try {
       const r1 = await queueCommandAndWait(serial, 'load_objects', { object: 'users' }, 60000);
-      users = r1?.users || [];
+      users = normalizeControlIdUsers(r1);
       const r2 = await queueCommandAndWait(serial, 'load_objects', { object: 'cards' }, 60000);
-      cards = r2?.cards || [];
+      cards = normalizeControlIdCards(r2);
     } catch (e) {
       console.error(`Reconcile: failed to load from ${device.name}`, e);
       errors++;

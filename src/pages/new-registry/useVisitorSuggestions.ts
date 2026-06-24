@@ -34,10 +34,16 @@ export const useVisitorSuggestions = ({
       }
 
       const similar = allEntries.filter(entry => {
-        const nameMatch = nameReady && entry.visitorName.toLowerCase().includes(name.toLowerCase());
-        const docMatch = docReady && entry.visitorDocument.includes(document);
-        const plateMatch =
-          plateReady && entry.vehiclePlate && entry.vehiclePlate.toLowerCase().includes(plate!.toLowerCase());
+        const normalizeStr = (str: string) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+        
+        const nameMatch = nameReady && normalizeStr(entry.visitorName).includes(normalizeStr(name));
+        
+        const cleanDoc = (doc: string) => doc.replace(/\D/g, '');
+        const docMatch = docReady && cleanDoc(entry.visitorDocument).includes(cleanDoc(document));
+        
+        const cleanPlate = (p: string) => p.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        const plateMatch = plateReady && entry.vehiclePlate && cleanPlate(entry.vehiclePlate).includes(cleanPlate(plate!));
+        
         return nameMatch || docMatch || plateMatch;
       });
 

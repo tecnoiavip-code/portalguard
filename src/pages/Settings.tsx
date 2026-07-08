@@ -164,6 +164,44 @@ export const Settings = () => {
     toast.success('Backup em PDF gerado com sucesso!');
   };
 
+  const handleExportJSON = async () => {
+    try {
+      toast.info('Gerando backup completo...');
+      const { data: residents } = await supabase.from('residents').select('*').order('name');
+      const { data: mails } = await supabase.from('mails').select('*').order('received_at', { ascending: false });
+      const { data: entries } = await supabase.from('access_entries').select('*').order('entry_time', { ascending: false }).limit(500);
+      const { data: devices } = await supabase.from('devices').select('*');
+      const { data: authorizations } = await supabase.from('visitor_authorizations').select('*');
+      const { data: blockedVisitors } = await supabase.from('blocked_visitors').select('*');
+
+      const payload = {
+        version: 2,
+        generatedAt: new Date().toISOString(),
+        counts: {
+          residents: residents?.length ?? 0,
+          mails: mails?.length ?? 0,
+          entries: entries?.length ?? 0,
+          devices: devices?.length ?? 0,
+          authorizations: authorizations?.length ?? 0,
+          blockedVisitors: blockedVisitors?.length ?? 0,
+        },
+        data: { residents, mails, entries, devices, authorizations, blockedVisitors },
+      };
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `portalguard-backup-completo-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Backup gerado! ${payload.counts.residents} moradores, ${payload.counts.entries} acessos, ${payload.counts.authorizations} prestadores, ${payload.counts.blockedVisitors} bloqueados.`);
+    } catch (err) {
+      console.error('Export JSON error:', err);
+      toast.error('Erro ao gerar backup JSON.');
+    }
+  };
+
   const handleImportData = async () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -215,6 +253,24 @@ export const Settings = () => {
             for (const device of data.devices) {
               const success = await supabaseStorage.saveDevice(device);
               success ? successCount++ : errorCount++;
+            }
+          }
+
+          // Importar prestadores / autorizações de visitantes
+          if (data.authorizations && Array.isArray(data.authorizations)) {
+            for (const authItem of data.authorizations) {
+              const { error } = await supabase.from('visitor_authorizations').upsert(authItem);
+              if (!error) successCount++;
+              else errorCount++;
+            }
+          }
+
+          // Importar visitantes bloqueados
+          if (data.blockedVisitors && Array.isArray(data.blockedVisitors)) {
+            for (const blockedItem of data.blockedVisitors) {
+              const { error } = await supabase.from('blocked_visitors').upsert(blockedItem);
+              if (!error) successCount++;
+              else errorCount++;
             }
           }
 
@@ -512,6 +568,10 @@ export const Settings = () => {
               <Button onClick={handleExportCSV} className="w-full" variant="outline">
                 <FileSpreadsheet className="h-4 w-4 mr-2" />
                 Exportar CSV
+              </Button>
+              <Button onClick={handleExportJSON} className="w-full col-span-2" variant="default">
+                <Download className="h-4 w-4 mr-2" />
+                Exportar JSON Completo (para banco local)
               </Button>
             </div>
             <div className="grid grid-cols-2 gap-3">

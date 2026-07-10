@@ -45,12 +45,22 @@ const MAX_REQUESTS_PER_WINDOW = 200;
 // Throttle status writes to keep push responses fast and stable
 const lastDeviceStatusWriteMap = new Map<string, number>();
 const deviceTypeCache = new Map<string, string | null>();
+const deviceRowIdCache = new Map<string, string>(); // deviceId -> devices.id (avoid repeat lookups)
 
 // Throttle config refresh checks (check DB at most every 5 min per device)
 const lastConfigRefreshCheckMap = new Map<string, number>();
-const CONFIG_REFRESH_CHECK_INTERVAL_MS = 300000; // 5 minutes
+const CONFIG_REFRESH_CHECK_INTERVAL_MS = 600000; // 10 minutes
 const CONFIG_REFRESH_INTERVAL_MS = 1800000; // 30 minutes — re-send config well before 90min dropout
-const DEVICE_STATUS_WRITE_INTERVAL_MS = 10000;
+const DEVICE_STATUS_WRITE_INTERVAL_MS = 180000; // 3 min — reduce writes to devices table
+
+// Throttle stale-command sweeper per-device (was every poll → huge write load)
+const lastStaleSweepMap = new Map<string, number>();
+const STALE_SWEEP_INTERVAL_MS = 60000; // 1 minute
+
+// Cache "queue is empty" state per device to avoid a SELECT on every poll
+// TTL is short so newly-inserted commands are still picked up quickly.
+const emptyQueueUntilMap = new Map<string, number>();
+const EMPTY_QUEUE_CACHE_MS = 8000; // 8s — polls happen every ~5s
 
 const checkRateLimit = (deviceId: string): boolean => {
   const now = Date.now();
@@ -407,16 +417,21 @@ Deno.serve(async (req) => {
         runBackground('updateDeviceStatus', updateDeviceStatus(supabaseClient, deviceId));
       }
 
-      // Auto-expire stale executing commands (>120s old) to prevent queue blockage
+      // Auto-expire stale executing commands — throttled per-device (was every poll)
       if (deviceId) {
-        const staleThreshold = new Date(Date.now() - 120000).toISOString();
-        runBackground('expireStaleCommands', supabaseClient
-          .from('push_command_queue')
-          .update({ status: 'error', result: { error: 'auto_expired_stale_executing' } })
-          .eq('device_id', deviceId)
-          .eq('status', 'executing')
-          .lt('executed_at', staleThreshold)
-        );
+        const nowMs = Date.now();
+        const lastSweep = lastStaleSweepMap.get(deviceId) || 0;
+        if (nowMs - lastSweep > STALE_SWEEP_INTERVAL_MS) {
+          lastStaleSweepMap.set(deviceId, nowMs);
+          const staleThreshold = new Date(nowMs - 120000).toISOString();
+          runBackground('expireStaleCommands', supabaseClient
+            .from('push_command_queue')
+            .update({ status: 'error', result: { error: 'auto_expired_stale_executing' } })
+            .eq('device_id', deviceId)
+            .eq('status', 'executing')
+            .lt('executed_at', staleThreshold)
+          );
+        }
       }
 
       // Check if this POST is actually a result from a previously sent command
@@ -495,18 +510,22 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Fetch oldest pending command from DB queue
-      const { data: pendingCmd, error: fetchErr } = await supabaseClient
-        .from('push_command_queue')
-        .select('id, command')
-        .eq('device_id', deviceId)
-        .eq('status', 'pending')
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-
-      if (fetchErr) {
-        console.error('Error fetching push queue:', fetchErr);
+      // Fetch oldest pending command — skip the SELECT if we recently saw an empty queue.
+      const nowMsQ = Date.now();
+      const emptyUntil = emptyQueueUntilMap.get(deviceId) || 0;
+      let pendingCmd: any = null;
+      if (nowMsQ >= emptyUntil) {
+        const { data, error: fetchErr } = await supabaseClient
+          .from('push_command_queue')
+          .select('id, command')
+          .eq('device_id', deviceId)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (fetchErr) console.error('Error fetching push queue:', fetchErr);
+        pendingCmd = data;
+        if (!pendingCmd) emptyQueueUntilMap.set(deviceId, nowMsQ + EMPTY_QUEUE_CACHE_MS);
       }
 
       if (pendingCmd) {
@@ -1199,60 +1218,36 @@ async function saveAccessPhoto(supabaseClient: any, deviceId: string, base64Data
 }
 
 async function updateDeviceStatus(supabaseClient: any, deviceId: string) {
-  console.log('Updating device status - alive:', deviceId);
-
   const nowMs = Date.now();
   const lastWriteMs = lastDeviceStatusWriteMap.get(deviceId) || 0;
   if (nowMs - lastWriteMs < DEVICE_STATUS_WRITE_INTERVAL_MS) {
-    return;
+    return; // Skip — recently updated
   }
   lastDeviceStatusWriteMap.set(deviceId, nowMs);
 
   const now = new Date(nowMs).toISOString();
 
-  const { data: deviceBySerial } = await supabaseClient
-    .from('devices')
-    .select('id')
-    .eq('serial_number', deviceId)
-    .maybeSingle();
-
-  if (deviceBySerial) {
-    await supabaseClient
-      .from('devices')
-      .update({ last_sync: now, status: 'online' })
-      .eq('id', deviceBySerial.id);
-  } else {
-    const { data: deviceByIp } = await supabaseClient
+  // Fast path: use cached row id
+  let rowId = deviceRowIdCache.get(deviceId);
+  if (!rowId) {
+    const { data } = await supabaseClient
       .from('devices')
       .select('id')
-      .eq('ip_address', deviceId)
+      .or(`serial_number.eq.${deviceId},ip_address.eq.${deviceId}`)
+      .limit(1)
       .maybeSingle();
-
-    if (deviceByIp) {
-      await supabaseClient
-        .from('devices')
-        .update({ last_sync: now, status: 'online' })
-        .eq('id', deviceByIp.id);
-    } else {
-      const { data: deviceByName } = await supabaseClient
-        .from('devices')
-        .select('id')
-        .ilike('name', `%${deviceId}%`)
-        .maybeSingle();
-
-      if (deviceByName) {
-        await supabaseClient
-          .from('devices')
-          .update({ last_sync: now, status: 'online' })
-          .eq('id', deviceByName.id);
-      } else {
-        console.log('No matching device found for:', deviceId);
-      }
+    if (data?.id) {
+      rowId = data.id;
+      deviceRowIdCache.set(deviceId, rowId);
     }
   }
 
-  await supabaseClient
-    .from('controlid_config')
-    .update({ last_sync: now, is_active: true })
-    .eq('device_id', deviceId);
+  if (rowId) {
+    await supabaseClient
+      .from('devices')
+      .update({ last_sync: now, status: 'online' })
+      .eq('id', rowId);
+  }
+  // Skip the extra controlid_config update — not needed on every heartbeat.
 }
+

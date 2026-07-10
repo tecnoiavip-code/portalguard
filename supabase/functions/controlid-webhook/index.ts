@@ -1218,60 +1218,36 @@ async function saveAccessPhoto(supabaseClient: any, deviceId: string, base64Data
 }
 
 async function updateDeviceStatus(supabaseClient: any, deviceId: string) {
-  console.log('Updating device status - alive:', deviceId);
-
   const nowMs = Date.now();
   const lastWriteMs = lastDeviceStatusWriteMap.get(deviceId) || 0;
   if (nowMs - lastWriteMs < DEVICE_STATUS_WRITE_INTERVAL_MS) {
-    return;
+    return; // Skip — recently updated
   }
   lastDeviceStatusWriteMap.set(deviceId, nowMs);
 
   const now = new Date(nowMs).toISOString();
 
-  const { data: deviceBySerial } = await supabaseClient
-    .from('devices')
-    .select('id')
-    .eq('serial_number', deviceId)
-    .maybeSingle();
-
-  if (deviceBySerial) {
-    await supabaseClient
-      .from('devices')
-      .update({ last_sync: now, status: 'online' })
-      .eq('id', deviceBySerial.id);
-  } else {
-    const { data: deviceByIp } = await supabaseClient
+  // Fast path: use cached row id
+  let rowId = deviceRowIdCache.get(deviceId);
+  if (!rowId) {
+    const { data } = await supabaseClient
       .from('devices')
       .select('id')
-      .eq('ip_address', deviceId)
+      .or(`serial_number.eq.${deviceId},ip_address.eq.${deviceId}`)
+      .limit(1)
       .maybeSingle();
-
-    if (deviceByIp) {
-      await supabaseClient
-        .from('devices')
-        .update({ last_sync: now, status: 'online' })
-        .eq('id', deviceByIp.id);
-    } else {
-      const { data: deviceByName } = await supabaseClient
-        .from('devices')
-        .select('id')
-        .ilike('name', `%${deviceId}%`)
-        .maybeSingle();
-
-      if (deviceByName) {
-        await supabaseClient
-          .from('devices')
-          .update({ last_sync: now, status: 'online' })
-          .eq('id', deviceByName.id);
-      } else {
-        console.log('No matching device found for:', deviceId);
-      }
+    if (data?.id) {
+      rowId = data.id;
+      deviceRowIdCache.set(deviceId, rowId);
     }
   }
 
-  await supabaseClient
-    .from('controlid_config')
-    .update({ last_sync: now, is_active: true })
-    .eq('device_id', deviceId);
+  if (rowId) {
+    await supabaseClient
+      .from('devices')
+      .update({ last_sync: now, status: 'online' })
+      .eq('id', rowId);
+  }
+  // Skip the extra controlid_config update — not needed on every heartbeat.
 }
+

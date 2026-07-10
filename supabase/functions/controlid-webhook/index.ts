@@ -510,18 +510,22 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Fetch oldest pending command from DB queue
-      const { data: pendingCmd, error: fetchErr } = await supabaseClient
-        .from('push_command_queue')
-        .select('id, command')
-        .eq('device_id', deviceId)
-        .eq('status', 'pending')
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-
-      if (fetchErr) {
-        console.error('Error fetching push queue:', fetchErr);
+      // Fetch oldest pending command — skip the SELECT if we recently saw an empty queue.
+      const nowMsQ = Date.now();
+      const emptyUntil = emptyQueueUntilMap.get(deviceId) || 0;
+      let pendingCmd: any = null;
+      if (nowMsQ >= emptyUntil) {
+        const { data, error: fetchErr } = await supabaseClient
+          .from('push_command_queue')
+          .select('id, command')
+          .eq('device_id', deviceId)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (fetchErr) console.error('Error fetching push queue:', fetchErr);
+        pendingCmd = data;
+        if (!pendingCmd) emptyQueueUntilMap.set(deviceId, nowMsQ + EMPTY_QUEUE_CACHE_MS);
       }
 
       if (pendingCmd) {

@@ -417,16 +417,21 @@ Deno.serve(async (req) => {
         runBackground('updateDeviceStatus', updateDeviceStatus(supabaseClient, deviceId));
       }
 
-      // Auto-expire stale executing commands (>120s old) to prevent queue blockage
+      // Auto-expire stale executing commands — throttled per-device (was every poll)
       if (deviceId) {
-        const staleThreshold = new Date(Date.now() - 120000).toISOString();
-        runBackground('expireStaleCommands', supabaseClient
-          .from('push_command_queue')
-          .update({ status: 'error', result: { error: 'auto_expired_stale_executing' } })
-          .eq('device_id', deviceId)
-          .eq('status', 'executing')
-          .lt('executed_at', staleThreshold)
-        );
+        const nowMs = Date.now();
+        const lastSweep = lastStaleSweepMap.get(deviceId) || 0;
+        if (nowMs - lastSweep > STALE_SWEEP_INTERVAL_MS) {
+          lastStaleSweepMap.set(deviceId, nowMs);
+          const staleThreshold = new Date(nowMs - 120000).toISOString();
+          runBackground('expireStaleCommands', supabaseClient
+            .from('push_command_queue')
+            .update({ status: 'error', result: { error: 'auto_expired_stale_executing' } })
+            .eq('device_id', deviceId)
+            .eq('status', 'executing')
+            .lt('executed_at', staleThreshold)
+          );
+        }
       }
 
       // Check if this POST is actually a result from a previously sent command

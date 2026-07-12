@@ -61,13 +61,13 @@ export const Layout = ({ children }: LayoutProps) => {
       })
       .subscribe();
 
-    // Polling fallback every 10s to catch missed realtime events
+    // Polling fallback (realtime already covers inserts/updates). Long interval to save DB quota.
     const poll = () => {
       if (!isActive) return;
       loadNotifs();
-      pollTimeout = setTimeout(poll, 10000);
+      pollTimeout = setTimeout(poll, 120000);
     };
-    pollTimeout = setTimeout(poll, 10000);
+    pollTimeout = setTimeout(poll, 120000);
 
     return () => {
       isActive = false;

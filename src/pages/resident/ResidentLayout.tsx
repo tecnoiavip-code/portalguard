@@ -278,9 +278,9 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
     const poll = () => {
       if (!isActive) return;
       loadCounts();
-      pollTimeout = setTimeout(poll, 8000);
+      pollTimeout = setTimeout(poll, 120000);
     };
-    pollTimeout = setTimeout(poll, 8000);
+    pollTimeout = setTimeout(poll, 120000);
 
     return () => {
       isActive = false;

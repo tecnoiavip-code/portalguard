@@ -66,11 +66,11 @@ export const Settings = () => {
   const [passwordError, setPasswordError] = useState(false);
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-  let webhookHost = 'kxdqffkkufgsizszchvw.supabase.co';
+  let webhookHost = 'uqbxicxpphcfcofufxca.supabase.co';
   try {
     webhookHost = new URL(supabaseUrl).hostname;
   } catch {
-    webhookHost = 'kxdqffkkufgsizszchvw.supabase.co';
+    webhookHost = 'uqbxicxpphcfcofufxca.supabase.co';
   }
   const monitorPath = '/functions/v1/controlid-webhook';
   const pushAddress = `https://${webhookHost}${monitorPath}`;

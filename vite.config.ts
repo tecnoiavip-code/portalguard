@@ -13,60 +13,44 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     mode === "development" && componentTagger(),
-    ...(mode !== "development"
-      ? [
-          VitePWA({
-            registerType: "autoUpdate",
-            includeAssets: ["favicon.ico", "pwa-icon-192.png", "pwa-icon-512.png"],
-            manifest: {
-              name: "Portal do Morador - PortalGuard",
-              short_name: "Portal Morador",
-              description: "Acesse seu condomínio na palma da mão",
-              theme_color: "#1e40af",
-              background_color: "#d4e8fb",
-              display: "standalone",
-              orientation: "portrait",
-              scope: "/",
-              start_url: "/morador",
-              icons: [
-                {
-                  src: "/pwa-icon-192.png",
-                  sizes: "192x192",
-                  type: "image/png",
-                },
-                {
-                  src: "/pwa-icon-512.png",
-                  sizes: "512x512",
-                  type: "image/png",
-                },
-                {
-                  src: "/pwa-icon-512.png",
-                  sizes: "512x512",
-                  type: "image/png",
-                  purpose: "maskable",
-                },
-              ],
+    VitePWA({
+      registerType: "autoUpdate",
+      devOptions: { enabled: false },
+      includeAssets: ["favicon.ico", "pwa-icon-192.png", "pwa-icon-512.png"],
+      manifest: {
+        name: "Portal do Morador - PortalGuard",
+        short_name: "Portal Morador",
+        description: "Acesse seu condomínio na palma da mão",
+        theme_color: "#1e40af",
+        background_color: "#d4e8fb",
+        display: "standalone",
+        orientation: "portrait",
+        scope: "/",
+        start_url: "/morador",
+        icons: [
+          { src: "/pwa-icon-192.png", sizes: "192x192", type: "image/png" },
+          { src: "/pwa-icon-512.png", sizes: "512x512", type: "image/png" },
+          { src: "/pwa-icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        ],
+      },
+      workbox: {
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+        skipWaiting: true,
+        clientsClaim: true,
+        navigateFallbackDenylist: [/^\/~oauth/],
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/.*supabase.*$/,
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "supabase-cache",
+              expiration: { maxEntries: 50, maxAgeSeconds: 300 },
             },
-            workbox: {
-              maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
-              skipWaiting: true,
-              clientsClaim: true,
-              navigateFallbackDenylist: [/^\/~oauth/],
-              globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
-              runtimeCaching: [
-                {
-                  urlPattern: /^https:\/\/.*supabase.*$/,
-                  handler: "NetworkFirst",
-                  options: {
-                    cacheName: "supabase-cache",
-                    expiration: { maxEntries: 50, maxAgeSeconds: 300 },
-                  },
-                },
-              ],
-            },
-          }),
-        ]
-      : []),
+          },
+        ],
+      },
+    }),
   ].filter(Boolean),
   resolve: {
     alias: {

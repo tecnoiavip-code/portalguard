@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,9 @@ export const Auth = () => {
   const [resetEmail, setResetEmail] = useState('');
   const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const rawNext = searchParams.get('next');
+  const safeNext = rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : null;
   const auth = supabase.auth as any;
 
   const [loginEmail, setLoginEmail] = useState('');
@@ -72,13 +75,13 @@ export const Auth = () => {
 
         if (residentRole) {
           toast.success('Login realizado! Redirecionando para o Portal do Morador.');
-          navigate('/morador');
+          navigate(safeNext ?? '/morador');
           return;
         }
       }
 
       toast.success('Login realizado com sucesso!');
-      navigate('/');
+      navigate(safeNext ?? '/');
     } catch {
       toast.error('Erro ao fazer login');
     } finally {

@@ -12,6 +12,7 @@ import NotFound from "./pages/NotFound";
 import ResidentAuth from "./pages/resident/ResidentAuth";
 import ResidentApp from "./pages/resident/ResidentApp";
 import ResetPassword from "./pages/ResetPassword";
+import OAuthConsent from "./pages/OAuthConsent";
 
 const App = () => (
   <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
@@ -24,6 +25,7 @@ const App = () => (
           <Routes>
             <Route path="/auth" element={<Auth />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
             <Route path="/morador/login" element={<ResidentAuth />} />
             <Route path="/morador" element={<ResidentApp />} />
             <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />

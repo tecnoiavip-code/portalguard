@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useState, useEffect } from 'react';
+import { parseBackupPayload } from '@/lib/backup-import';
 
 // Funções auxiliares para CSV
 const arrayToCSV = (data: any[], headers: string[]) => {
@@ -67,13 +68,16 @@ export const Settings = () => {
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
   let webhookHost = 'uqbxicxpphcfcofufxca.supabase.co';
+  let isLocal = false;
   try {
-    webhookHost = new URL(supabaseUrl).hostname;
+    const urlObj = new URL(supabaseUrl);
+    webhookHost = urlObj.host; // Inclui a porta (ex: 127.0.0.1:54321)
+    isLocal = urlObj.hostname === 'localhost' || urlObj.hostname === '127.0.0.1';
   } catch {
     webhookHost = 'uqbxicxpphcfcofufxca.supabase.co';
   }
   const monitorPath = '/functions/v1/controlid-webhook';
-  const pushAddress = `https://${webhookHost}${monitorPath}`;
+  const pushAddress = isLocal ? `http://${webhookHost}${monitorPath}` : `https://${webhookHost}${monitorPath}`;
   const acceptedPushRoutes = `${monitorPath} e ${monitorPath}/push`;
 
   const handleUnlockIntegrations = () => {
@@ -220,44 +224,35 @@ export const Settings = () => {
             return;
           }
 
-          const data = JSON.parse(text);
+          const parsed = JSON.parse(text);
+          const data = parseBackupPayload(parsed);
           let successCount = 0;
           let errorCount = 0;
-          
-          // Importar moradores
-          if (data.residents && Array.isArray(data.residents)) {
-            for (const resident of data.residents) {
-              const success = await supabaseStorage.saveResident(resident);
+
+          const importCollection = async (items: any[], action: (item: any) => Promise<boolean>) => {
+            for (const item of items) {
+              const success = await action(item);
               success ? successCount++ : errorCount++;
             }
-          }
-          
-          // Importar correspondências
-          if (data.mails && Array.isArray(data.mails)) {
-            for (const mail of data.mails) {
-              const success = await supabaseStorage.saveMail(mail);
-              success ? successCount++ : errorCount++;
-            }
-          }
-          
-          // Importar registros de acesso
-          if (data.entries && Array.isArray(data.entries)) {
-            for (const entry of data.entries) {
-              const success = await supabaseStorage.saveEntry(entry);
-              success ? successCount++ : errorCount++;
-            }
-          }
-          
-          // Importar dispositivos
-          if (data.devices && Array.isArray(data.devices)) {
-            for (const device of data.devices) {
-              const success = await supabaseStorage.saveDevice(device);
-              success ? successCount++ : errorCount++;
-            }
+          };
+
+          if (data.residents.length > 0) {
+            await importCollection(data.residents, async (resident) => supabaseStorage.saveResident(resident as any));
           }
 
-          // Importar prestadores / autorizações de visitantes
-          if (data.authorizations && Array.isArray(data.authorizations)) {
+          if (data.mails.length > 0) {
+            await importCollection(data.mails, async (mail) => supabaseStorage.saveMail(mail as any));
+          }
+
+          if (data.entries.length > 0) {
+            await importCollection(data.entries, async (entry) => supabaseStorage.saveEntry(entry as any));
+          }
+
+          if (data.devices.length > 0) {
+            await importCollection(data.devices, async (device) => supabaseStorage.saveDevice(device as any));
+          }
+
+          if (data.authorizations.length > 0) {
             for (const authItem of data.authorizations) {
               const { error } = await supabase.from('visitor_authorizations').upsert(authItem);
               if (!error) successCount++;
@@ -265,8 +260,7 @@ export const Settings = () => {
             }
           }
 
-          // Importar visitantes bloqueados
-          if (data.blockedVisitors && Array.isArray(data.blockedVisitors)) {
+          if (data.blockedVisitors.length > 0) {
             for (const blockedItem of data.blockedVisitors) {
               const { error } = await supabase.from('blocked_visitors').upsert(blockedItem);
               if (!error) successCount++;

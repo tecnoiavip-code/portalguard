@@ -229,7 +229,7 @@ export const Settings = () => {
           let successCount = 0;
           let errorCount = 0;
 
-          const importCollection = async (items: any[], action: (item: any) => Promise<boolean>) => {
+          const importCollection = async (items: any[], action: (item: any) => Promise<any>) => {
             for (const item of items) {
               const success = await action(item);
               success ? successCount++ : errorCount++;

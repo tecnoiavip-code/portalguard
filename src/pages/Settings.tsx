@@ -168,28 +168,57 @@ export const Settings = () => {
     toast.success('Backup em PDF gerado com sucesso!');
   };
 
+  // Todas as tabelas de dados a serem incluídas no backup completo
+  const BACKUP_TABLES = [
+    'residents',
+    'vehicles',
+    'mails',
+    'access_entries',
+    'devices',
+    'controlid_config',
+    'visitor_authorizations',
+    'blocked_visitors',
+    'announcements',
+    'announcement_attachments',
+    'announcement_reads',
+    'chat_messages',
+    'incidents',
+    'notifications',
+    'portaria_equipment',
+    'profiles',
+    'push_subscriptions',
+    'shift_equipment_checks',
+    'shifts',
+    'user_roles',
+    'vapid_keys',
+  ] as const;
+
   const handleExportJSON = async () => {
     try {
       toast.info('Gerando backup completo...');
-      const { data: residents } = await supabase.from('residents').select('*').order('name');
-      const { data: mails } = await supabase.from('mails').select('*').order('received_at', { ascending: false });
-      const { data: entries } = await supabase.from('access_entries').select('*').order('entry_time', { ascending: false }).limit(500);
-      const { data: devices } = await supabase.from('devices').select('*');
-      const { data: authorizations } = await supabase.from('visitor_authorizations').select('*');
-      const { data: blockedVisitors } = await supabase.from('blocked_visitors').select('*');
+      const data: Record<string, any[]> = {};
+      const counts: Record<string, number> = {};
+      const failed: string[] = [];
+
+      for (const table of BACKUP_TABLES) {
+        const { data: rows, error } = await supabase.from(table as any).select('*');
+        if (error) {
+          console.error(`[backup] Falha ao ler ${table}:`, error.message);
+          failed.push(table);
+          data[table] = [];
+          counts[table] = 0;
+        } else {
+          data[table] = rows || [];
+          counts[table] = rows?.length ?? 0;
+        }
+      }
 
       const payload = {
-        version: 2,
+        version: 3,
         generatedAt: new Date().toISOString(),
-        counts: {
-          residents: residents?.length ?? 0,
-          mails: mails?.length ?? 0,
-          entries: entries?.length ?? 0,
-          devices: devices?.length ?? 0,
-          authorizations: authorizations?.length ?? 0,
-          blockedVisitors: blockedVisitors?.length ?? 0,
-        },
-        data: { residents, mails, entries, devices, authorizations, blockedVisitors },
+        source: import.meta.env.VITE_SUPABASE_URL,
+        counts,
+        data,
       };
 
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -199,7 +228,12 @@ export const Settings = () => {
       a.download = `portalguard-backup-completo-${new Date().toISOString().split('T')[0]}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      toast.success(`Backup gerado! ${payload.counts.residents} moradores, ${payload.counts.entries} acessos, ${payload.counts.authorizations} prestadores, ${payload.counts.blockedVisitors} bloqueados.`);
+
+      const total = Object.values(counts).reduce((a, b) => a + b, 0);
+      toast.success(`Backup gerado: ${total} registros em ${BACKUP_TABLES.length - failed.length}/${BACKUP_TABLES.length} tabelas.`);
+      if (failed.length > 0) {
+        toast.warning(`Tabelas sem acesso ignoradas: ${failed.join(', ')}`);
+      }
     } catch (err) {
       console.error('Export JSON error:', err);
       toast.error('Erro ao gerar backup JSON.');
@@ -210,7 +244,7 @@ export const Settings = () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'application/json,.json';
-    
+
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
@@ -225,56 +259,73 @@ export const Settings = () => {
           }
 
           const parsed = JSON.parse(text);
-          const data = parseBackupPayload(parsed);
-          let successCount = 0;
-          let errorCount = 0;
+          const root = parsed?.data && typeof parsed.data === 'object' ? parsed.data : parsed;
 
-          const importCollection = async (items: any[], action: (item: any) => Promise<any>) => {
-            for (const item of items) {
-              const success = await action(item);
-              success ? successCount++ : errorCount++;
+          // Ordem de importação respeitando dependências de chave estrangeira
+          const ORDER = [
+            'profiles',
+            'user_roles',
+            'residents',
+            'vehicles',
+            'devices',
+            'controlid_config',
+            'portaria_equipment',
+            'vapid_keys',
+            'push_subscriptions',
+            'shifts',
+            'shift_equipment_checks',
+            'incidents',
+            'blocked_visitors',
+            'visitor_authorizations',
+            'access_entries',
+            'mails',
+            'announcements',
+            'announcement_attachments',
+            'announcement_reads',
+            'chat_messages',
+            'notifications',
+          ];
+
+          const results: { table: string; ok: number; fail: number; error?: string }[] = [];
+          const CHUNK = 200;
+
+          toast.info('Restaurando backup no banco atual...');
+
+          for (const table of ORDER) {
+            const rows = Array.isArray(root?.[table]) ? root[table] : [];
+            if (rows.length === 0) continue;
+
+            let ok = 0, fail = 0, lastErr = '';
+            for (let i = 0; i < rows.length; i += CHUNK) {
+              const chunk = rows.slice(i, i + CHUNK);
+              const { error } = await supabase
+                .from(table as any)
+                .upsert(chunk, { onConflict: 'id' } as any);
+              if (error) {
+                fail += chunk.length;
+                lastErr = error.message;
+                console.error(`[restore] ${table} chunk ${i}:`, error.message);
+              } else {
+                ok += chunk.length;
+              }
             }
-          };
-
-          if (data.residents.length > 0) {
-            await importCollection(data.residents, async (resident) => supabaseStorage.saveResident(resident as any));
+            results.push({ table, ok, fail, error: lastErr });
           }
 
-          if (data.mails.length > 0) {
-            await importCollection(data.mails, async (mail) => supabaseStorage.saveMail(mail as any));
-          }
+          const totalOk = results.reduce((s, r) => s + r.ok, 0);
+          const totalFail = results.reduce((s, r) => s + r.fail, 0);
+          const failedTables = results.filter(r => r.fail > 0);
 
-          if (data.entries.length > 0) {
-            await importCollection(data.entries, async (entry) => supabaseStorage.saveEntry(entry as any));
+          if (totalOk > 0) {
+            toast.success(`Restauração concluída: ${totalOk} registros importados.`);
           }
-
-          if (data.devices.length > 0) {
-            await importCollection(data.devices, async (device) => supabaseStorage.saveDevice(device as any));
+          if (failedTables.length > 0) {
+            console.warn('[restore] Tabelas com falha:', failedTables);
+            toast.error(
+              `Falhas em ${failedTables.length} tabela(s): ${failedTables.map(f => `${f.table}(${f.fail})`).join(', ')}. Veja o console para detalhes.`
+            );
           }
-
-          if (data.authorizations.length > 0) {
-            for (const authItem of data.authorizations) {
-              const { error } = await supabase.from('visitor_authorizations').upsert(authItem);
-              if (!error) successCount++;
-              else errorCount++;
-            }
-          }
-
-          if (data.blockedVisitors.length > 0) {
-            for (const blockedItem of data.blockedVisitors) {
-              const { error } = await supabase.from('blocked_visitors').upsert(blockedItem);
-              if (!error) successCount++;
-              else errorCount++;
-            }
-          }
-
-          if (successCount > 0) {
-            toast.success(`${successCount} registros importados com sucesso!`);
-          }
-          if (errorCount > 0) {
-            toast.error(`${errorCount} registros falharam na importação.`);
-          }
-          if (successCount === 0 && errorCount === 0) {
+          if (totalOk === 0 && totalFail === 0) {
             toast.warning('Nenhum dado válido encontrado no arquivo.');
           }
         } catch (error) {

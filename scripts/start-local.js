@@ -12,17 +12,44 @@ console.log('==================================================\n');
 
 // 1. Verificar se o Docker está rodando
 console.log('Verificando se o Docker Desktop está em execução...');
+let dockerRunning = false;
 try {
   execSync('docker info', { stdio: 'ignore' });
+  dockerRunning = true;
   console.log('\x1b[32m[OK] Docker está rodando.\x1b[0m\n');
 } catch (e) {
-  console.error('\x1b[31m[ERRO] O Docker não está rodando ou não está instalado!\x1b[0m');
-  console.error('O Supabase Local depende do Docker Desktop para executar o PostgreSQL e outros serviços.');
-  console.error('Por favor:');
-  console.error('1. Inicie o Docker Desktop em seu computador.');
-  console.error('2. Se não tiver o Docker instalado, baixe em: https://www.docker.com/products/docker-desktop/');
-  console.error('3. Tente rodar este comando novamente após o Docker estar ativo.\n');
-  process.exit(1);
+  const dockerExePath = 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe';
+  if (fs.existsSync(dockerExePath)) {
+    console.log('\x1b[33m[INFO] Abrindo o Docker Desktop automaticamente...\x1b[0m');
+    try {
+      spawn(dockerExePath, [], { detached: true, stdio: 'ignore' }).unref();
+      console.log('Aguardando a inicialização da engine do Docker (pode levar alguns segundos)...');
+      
+      for (let attempt = 1; attempt <= 30; attempt++) {
+        try {
+          execSync('docker info', { stdio: 'ignore' });
+          dockerRunning = true;
+          console.log('\n\x1b[32m[OK] Docker Desktop iniciado com sucesso!\x1b[0m\n');
+          break;
+        } catch (err) {
+          process.stdout.write('.');
+          execSync('powershell -Command "Start-Sleep -Seconds 2"', { stdio: 'ignore' });
+        }
+      }
+    } catch (err) {
+      // Fallback
+    }
+  }
+
+  if (!dockerRunning) {
+    console.error('\n\x1b[31m[ERRO] O Docker não está rodando ou não pôde ser iniciado automaticamente!\x1b[0m');
+    console.error('O Supabase Local depende do Docker Desktop para executar o PostgreSQL e outros serviços.');
+    console.error('Por favor:');
+    console.error('1. Abra o Docker Desktop manualmente no seu computador.');
+    console.error('2. Aguarde o Docker carregar totalmente.');
+    console.error('3. Execute o atalho novamente após o Docker estar ativo.\n');
+    process.exit(1);
+  }
 }
 
 // 2. Verificar status do Supabase local e iniciá-lo se necessário

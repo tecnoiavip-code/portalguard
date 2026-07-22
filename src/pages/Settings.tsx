@@ -259,7 +259,98 @@ export const Settings = () => {
           }
 
           const parsed = JSON.parse(text);
-          const root = parsed?.data && typeof parsed.data === 'object' ? parsed.data : parsed;
+          let rootData: Record<string, any> = {};
+
+          if (Array.isArray(parsed)) {
+            rootData = { residents: parsed };
+          } else if (parsed?.data && typeof parsed.data === 'object') {
+            rootData = parsed.data;
+          } else if (typeof parsed === 'object' && parsed !== null) {
+            rootData = parsed;
+          }
+
+          // Mapeamento de tabelas para aliases de exportações antigas/versões anteriores
+          const TABLE_ALIASES: Record<string, string[]> = {
+            residents: ['residents', 'residentes', 'moradores'],
+            vehicles: ['vehicles', 'veiculos'],
+            mails: ['mails', 'correspondencias', 'packages'],
+            access_entries: ['access_entries', 'accessEntries', 'entries', 'registros', 'acessos'],
+            devices: ['devices', 'dispositivos', 'equipamentos'],
+            controlid_config: ['controlid_config', 'controlidConfig', 'controlIdConfig'],
+            visitor_authorizations: ['visitor_authorizations', 'visitorAuthorizations', 'authorizations', 'autorizacoes'],
+            blocked_visitors: ['blocked_visitors', 'blockedVisitors', 'bloqueados'],
+            announcements: ['announcements', 'comunicados', 'avisos'],
+            announcement_attachments: ['announcement_attachments', 'announcementAttachments'],
+            announcement_reads: ['announcement_reads', 'announcementReads'],
+            chat_messages: ['chat_messages', 'chatMessages', 'mensagens'],
+            incidents: ['incidents', 'ocorrencias'],
+            notifications: ['notifications', 'notificacoes'],
+            portaria_equipment: ['portaria_equipment', 'portariaEquipment', 'equipamentosPortaria'],
+            profiles: ['profiles', 'perfis'],
+            push_subscriptions: ['push_subscriptions', 'pushSubscriptions'],
+            shift_equipment_checks: ['shift_equipment_checks', 'shiftEquipmentChecks'],
+            shifts: ['shifts', 'turnos'],
+            user_roles: ['user_roles', 'userRoles', 'roles'],
+            vapid_keys: ['vapid_keys', 'vapidKeys'],
+          };
+
+          // Mapeamento de propriedades em camelCase para snake_case do Postgres
+          const FIELD_ALIASES: Record<string, string> = {
+            vehiclePlate: 'vehicle_plate',
+            vehicleModel: 'vehicle_model',
+            vehicleColor: 'vehicle_color',
+            vehicleTag: 'vehicle_tag',
+            createdAt: 'created_at',
+            updatedAt: 'updated_at',
+            photoUrl: 'photo_url',
+            photo: 'photo_url',
+            residentId: 'resident_id',
+            packageType: 'package_type',
+            trackingCode: 'tracking_code',
+            receivedAt: 'received_at',
+            deliveredAt: 'delivered_at',
+            withdrawnBy: 'withdrawn_by',
+            registeredBy: 'registered_by',
+            visitorName: 'visitor_name',
+            visitorDocument: 'visitor_document',
+            visitorType: 'visitor_type',
+            residentName: 'resident_name',
+            entryTime: 'entry_time',
+            exitTime: 'exit_time',
+            autoRecognized: 'auto_recognized',
+            badgeNumber: 'badge_number',
+            startDate: 'start_date',
+            endDate: 'end_date',
+            ipAddress: 'ip_address',
+            serialNumber: 'serial_number',
+            lastSync: 'last_sync',
+            blockedAt: 'blocked_at',
+            blockedBy: 'blocked_by',
+            authorizedDate: 'authorized_date',
+            authorizedUntil: 'authorized_until',
+            staffNotes: 'staff_notes',
+            reviewedBy: 'reviewed_by',
+            authUserId: 'auth_user_id',
+            authUser_id: 'auth_user_id',
+            isOwner: 'is_owner',
+            deviceName: 'device_name',
+            deviceIp: 'device_ip',
+            devicePort: 'device_port',
+            deviceId: 'device_id',
+            apiPath: 'api_path',
+            isActive: 'is_active',
+          };
+
+          const normalizeRow = (row: Record<string, any>) => {
+            if (!row || typeof row !== 'object') return row;
+            const normalized: Record<string, any> = {};
+            for (const [k, v] of Object.entries(row)) {
+              if (v === undefined) continue;
+              const snakeKey = FIELD_ALIASES[k] || k.replace(/([A-Z])/g, '_$1').toLowerCase();
+              normalized[snakeKey] = v;
+            }
+            return normalized;
+          };
 
           // Ordem de importação respeitando dependências de chave estrangeira
           const ORDER = [
@@ -287,28 +378,52 @@ export const Settings = () => {
           ];
 
           const results: { table: string; ok: number; fail: number; error?: string }[] = [];
-          const CHUNK = 200;
+          const CHUNK = 100;
 
           toast.info('Restaurando backup no banco atual...');
 
           for (const table of ORDER) {
-            const rows = Array.isArray(root?.[table]) ? root[table] : [];
-            if (rows.length === 0) continue;
+            const possibleKeys = TABLE_ALIASES[table] || [table];
+            let rawRows: any[] = [];
 
+            for (const key of possibleKeys) {
+              if (Array.isArray(rootData[key]) && rootData[key].length > 0) {
+                rawRows = rootData[key];
+                break;
+              }
+            }
+
+            if (rawRows.length === 0) continue;
+
+            const rows = rawRows.map(r => normalizeRow(r));
             let ok = 0, fail = 0, lastErr = '';
+
             for (let i = 0; i < rows.length; i += CHUNK) {
               const chunk = rows.slice(i, i + CHUNK);
               const { error } = await supabase
                 .from(table as any)
                 .upsert(chunk, { onConflict: 'id' } as any);
+
               if (error) {
-                fail += chunk.length;
-                lastErr = error.message;
-                console.error(`[restore] ${table} chunk ${i}:`, error.message);
+                // Tentativa linha por linha como fallback em caso de erro no bloco
+                for (const row of chunk) {
+                  const { error: rowErr } = await supabase
+                    .from(table as any)
+                    .upsert(row, { onConflict: 'id' } as any);
+
+                  if (rowErr) {
+                    fail++;
+                    lastErr = rowErr.message;
+                    console.error(`[restore] ${table} erro na linha:`, rowErr.message, row);
+                  } else {
+                    ok++;
+                  }
+                }
               } else {
                 ok += chunk.length;
               }
             }
+
             results.push({ table, ok, fail, error: lastErr });
           }
 
@@ -317,20 +432,20 @@ export const Settings = () => {
           const failedTables = results.filter(r => r.fail > 0);
 
           if (totalOk > 0) {
-            toast.success(`Restauração concluída: ${totalOk} registros importados.`);
+            toast.success(`Restauração concluída! ${totalOk} registros importados.`);
           }
           if (failedTables.length > 0) {
-            console.warn('[restore] Tabelas com falha:', failedTables);
-            toast.error(
-              `Falhas em ${failedTables.length} tabela(s): ${failedTables.map(f => `${f.table}(${f.fail})`).join(', ')}. Veja o console para detalhes.`
+            console.warn('[restore] Tabelas com falhas em alguns registros:', failedTables);
+            toast.warning(
+              `Atenção: ${totalFail} registro(s) em ${failedTables.length} tabela(s) apresentaram erros (detalhes no console).`
             );
           }
           if (totalOk === 0 && totalFail === 0) {
-            toast.warning('Nenhum dado válido encontrado no arquivo.');
+            toast.warning('Nenhum dado reconhecido encontrado no arquivo de backup.');
           }
         } catch (error) {
           console.error('Import error:', error);
-          toast.error('Erro ao importar dados. Verifique o formato do arquivo JSON.');
+          toast.error('Erro ao processar o arquivo JSON de backup.');
         }
       };
       reader.readAsText(file);

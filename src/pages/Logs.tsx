@@ -198,7 +198,7 @@ export const Logs = () => {
                         <img src={entry.photo} alt={entry.visitorName} className="w-20 h-20 rounded-full object-cover border-2 border-primary/20" />
                       ) : (
                         <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-3xl">
-                          {entry.visitorType === 'service_provider' ? '🔧' : '👤'}
+                          {entry.visitorType === 'delivery' ? '📦' : entry.visitorType === 'service_provider' ? '🔧' : '👤'}
                         </div>
                       )}
                       <div>
@@ -331,13 +331,13 @@ export const Logs = () => {
                   <img src={selectedEntry.photo} alt={selectedEntry.visitorName} className="w-20 h-20 rounded-full object-cover border-2 border-primary" />
                 ) : (
                   <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-3xl">
-                    {selectedEntry.visitorType === 'service_provider' ? '🔧' : '👤'}
+                    {selectedEntry.visitorType === 'delivery' ? '📦' : selectedEntry.visitorType === 'service_provider' ? '🔧' : '👤'}
                   </div>
                 )}
                 <div>
                   <h3 className="text-xl font-bold text-foreground">{selectedEntry.visitorName}</h3>
-                  <Badge variant={selectedEntry.visitorType === 'service_provider' ? 'outline' : 'secondary'}>
-                    {selectedEntry.visitorType === 'service_provider' ? 'Prestador de Serviço' : 'Visitante'}
+                  <Badge variant={selectedEntry.visitorType === 'delivery' ? 'default' : selectedEntry.visitorType === 'service_provider' ? 'outline' : 'secondary'}>
+                    {selectedEntry.visitorType === 'delivery' ? 'Entregador' : selectedEntry.visitorType === 'service_provider' ? 'Prestador de Serviço' : 'Visitante'}
                   </Badge>
                   <Badge variant={selectedEntry.exitTime ? 'secondary' : 'default'} className={`ml-2 ${selectedEntry.exitTime ? '' : 'bg-success'}`}>
                     {selectedEntry.exitTime ? 'Finalizado' : 'Ativo'}

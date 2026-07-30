@@ -56,7 +56,9 @@ const normalizeMail = (item: any, index: number): Mail => {
 
 const normalizeEntry = (item: any, index: number): AccessEntry => {
   const visitorType = toStringValue(item?.visitor_type || item?.visitorType || '').toLowerCase();
-  const mappedVisitorType = visitorType === 'service_provider' || visitorType === 'prestador' || visitorType === 'provider'
+  const mappedVisitorType = visitorType === 'delivery' || visitorType === 'entregador'
+    ? 'delivery'
+    : visitorType === 'service_provider' || visitorType === 'prestador' || visitorType === 'provider'
     ? 'service_provider'
     : 'visitor';
 

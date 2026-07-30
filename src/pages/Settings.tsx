@@ -153,7 +153,7 @@ export const Settings = () => {
         head: [['Nome', 'Tipo', 'Apartamento', 'Entrada', 'Saída']],
         body: entries.map(e => [
           e.visitorName,
-          e.visitorType === 'visitor' ? 'Visitante' : 'Prestador',
+          e.visitorType === 'delivery' ? 'Entregador' : e.visitorType === 'service_provider' ? 'Prestador' : 'Visitante',
           e.apartment,
           new Date(e.entryTime).toLocaleString('pt-BR'),
           e.exitTime ? new Date(e.exitTime).toLocaleString('pt-BR') : 'Ativo'

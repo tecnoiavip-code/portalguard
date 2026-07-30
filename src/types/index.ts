@@ -31,7 +31,7 @@ export interface AccessEntry {
   id: string;
   visitorName: string;
   visitorDocument: string;
-  visitorType: 'visitor' | 'service_provider';
+  visitorType: 'visitor' | 'service_provider' | 'delivery';
   residentId: string;
   residentName: string;
   apartment: string;

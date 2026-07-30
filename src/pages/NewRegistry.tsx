@@ -53,10 +53,14 @@ export const NewRegistry = () => {
   const [selectedDetailEntry, setSelectedDetailEntry] = useState<AccessEntry | null>(null);
   const itemsPerPage = 12;
   const itemsPerPageTable = 10;
+  const DEFAULT_COMPANIES = [
+    'IFOOD', 'UBER', 'UBER EATS', 'MERCADO LIVRE', 'AMAZON', 'LOGGI', 'CORREIOS',
+    'DHL', 'FEDEX', 'RAPPI', 'ZÉ DELIVERY', 'ENEL', 'SABESP', 'COMGÁS', 'VIVO', 'CLARO', 'TIM'
+  ];
   const [formData, setFormData] = useState({
     visitorName: '',
     visitorDocument: '',
-    visitorType: 'visitor' as 'visitor' | 'service_provider',
+    visitorType: 'visitor' as 'visitor' | 'service_provider' | 'delivery',
     residentId: '',
     purpose: '',
     company: '',
@@ -73,10 +77,13 @@ export const NewRegistry = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [vehicleModelSuggestions, setVehicleModelSuggestions] = useState<string[]>([]);
   const [vehicleColorSuggestions, setVehicleColorSuggestions] = useState<string[]>([]);
+  const [companySuggestions, setCompanySuggestions] = useState<string[]>([]);
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
   const [showColorSuggestions, setShowColorSuggestions] = useState(false);
+  const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
   const [allVehicleModels, setAllVehicleModels] = useState<string[]>([]);
   const [allVehicleColors, setAllVehicleColors] = useState<string[]>([]);
+  const [allCompanies, setAllCompanies] = useState<string[]>([]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -113,9 +120,10 @@ export const NewRegistry = () => {
   };
 
   const loadVehicleSuggestions = async () => {
-    const [modelsRes, colorsRes] = await Promise.all([
+    const [modelsRes, colorsRes, companiesRes] = await Promise.all([
       supabase.from('access_entries').select('vehicle_model').not('vehicle_model', 'is', null).not('vehicle_model', 'eq', ''),
       supabase.from('access_entries').select('vehicle_color').not('vehicle_color', 'is', null).not('vehicle_color', 'eq', ''),
+      supabase.from('access_entries').select('company').not('company', 'is', null).not('company', 'eq', ''),
     ]);
     if (modelsRes.data) {
       const unique = [...new Set(modelsRes.data.map(r => String(r.vehicle_model ?? '').trim().toUpperCase()))]
@@ -129,6 +137,13 @@ export const NewRegistry = () => {
         .sort();
       setAllVehicleColors(unique);
     }
+    if (companiesRes.data) {
+      const dbCompanies = companiesRes.data.map(r => String(r.company ?? '').trim().toUpperCase()).filter(Boolean);
+      const unique = [...new Set([...DEFAULT_COMPANIES, ...dbCompanies])].sort();
+      setAllCompanies(unique);
+    } else {
+      setAllCompanies(DEFAULT_COMPANIES.sort());
+    }
   };
 
   const filterVehicleModels = (query: string) => {
@@ -141,6 +156,12 @@ export const NewRegistry = () => {
     if (!query) { setVehicleColorSuggestions(allVehicleColors.slice(0, 8)); return; }
     const q = query.toUpperCase();
     setVehicleColorSuggestions(allVehicleColors.filter(c => c.includes(q)).slice(0, 8));
+  };
+
+  const filterCompanies = (query: string) => {
+    if (!query) { setCompanySuggestions(allCompanies.slice(0, 8)); return; }
+    const q = query.toUpperCase();
+    setCompanySuggestions(allCompanies.filter(c => c.includes(q)).slice(0, 8));
   };
 
   const isVisitorBlocked = (document: string) => {
@@ -501,9 +522,14 @@ export const NewRegistry = () => {
     doc.text(`Data: ${format(new Date(), 'dd/MM/yyyy HH:mm', {
       locale: ptBR
     })}`, 14, 22);
+    const getVisitorTypeLabel = (type: string) => {
+      if (type === 'delivery') return 'Entregador';
+      if (type === 'service_provider') return 'Prestador';
+      return 'Visitante';
+    };
     const tableData = filteredActiveEntries.map(entry => {
       const resident = residents.find(r => r.id === entry.residentId);
-      return [entry.visitorName, entry.visitorDocument, resident?.name || '-', resident?.apartment || '-', entry.visitorType === 'visitor' ? 'Visitante' : 'Prestador', entry.badgeNumber || '-', format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', {
+      return [entry.visitorName, entry.visitorDocument, resident?.name || '-', resident?.apartment || '-', getVisitorTypeLabel(entry.visitorType), entry.badgeNumber || '-', format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', {
         locale: ptBR
       })];
     });
@@ -519,7 +545,7 @@ export const NewRegistry = () => {
     const headers = ['Nome', 'Documento', 'Morador', 'Apt', 'Tipo', 'Crachá', 'Entrada'];
     const rows = filteredActiveEntries.map(entry => {
       const resident = residents.find(r => r.id === entry.residentId);
-      return [entry.visitorName, entry.visitorDocument, resident?.name || '-', resident?.apartment || '-', entry.visitorType === 'visitor' ? 'Visitante' : 'Prestador', entry.badgeNumber || '-', format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', { locale: ptBR })];
+      return [entry.visitorName, entry.visitorDocument, resident?.name || '-', resident?.apartment || '-', getVisitorTypeLabel(entry.visitorType), entry.badgeNumber || '-', format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', { locale: ptBR })];
     });
     exportToCSV(`cadastros-ativos-${format(new Date(), 'dd-MM-yyyy')}`, headers, rows);
     toast.success('CSV gerado com sucesso');
@@ -659,10 +685,10 @@ export const NewRegistry = () => {
                     <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                       {searchTerm ? 'Nenhum registro encontrado' : 'Nenhuma pessoa no momento'}
                     </TableCell>
-                  </TableRow> : paginatedEntries.map(entry => <TableRow key={entry.id} className={`cursor-pointer ${entry.visitorType === 'service_provider' ? 'bg-warning/5 hover:bg-warning/10' : 'bg-success/5 hover:bg-success/10'}`} onClick={() => setSelectedDetailEntry(entry)}>
+                  </TableRow> : paginatedEntries.map(entry => <TableRow key={entry.id} className={`cursor-pointer ${entry.visitorType === 'delivery' ? 'bg-primary/5 hover:bg-primary/10' : entry.visitorType === 'service_provider' ? 'bg-warning/5 hover:bg-warning/10' : 'bg-success/5 hover:bg-success/10'}`} onClick={() => setSelectedDetailEntry(entry)}>
                       <TableCell>
                         {entry.photo ? <img src={entry.photo} alt={entry.visitorName} className="w-20 h-20 rounded-full object-cover border-2 border-primary/20" /> : <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-3xl">
-                            {entry.visitorType === 'service_provider' ? '🔧' : '👤'}
+                            {entry.visitorType === 'delivery' ? '📦' : entry.visitorType === 'service_provider' ? '🔧' : '👤'}
                           </div>}
                       </TableCell>
                       <TableCell>
@@ -738,13 +764,13 @@ export const NewRegistry = () => {
                   <img src={selectedDetailEntry.photo} alt={selectedDetailEntry.visitorName} className="w-24 h-24 rounded-full object-cover border-2 border-primary/20" />
                 ) : (
                   <div className="w-24 h-24 rounded-full bg-muted flex items-center justify-center text-4xl">
-                    {selectedDetailEntry.visitorType === 'service_provider' ? '🔧' : '👤'}
+                    {selectedDetailEntry.visitorType === 'delivery' ? '📦' : selectedDetailEntry.visitorType === 'service_provider' ? '🔧' : '👤'}
                   </div>
                 )}
                 <div>
                   <h3 className="text-xl font-semibold">{selectedDetailEntry.visitorName}</h3>
-                  <Badge variant={selectedDetailEntry.visitorType === 'service_provider' ? 'outline' : 'secondary'}>
-                    {selectedDetailEntry.visitorType === 'service_provider' ? 'Prestador de Serviço' : 'Visitante'}
+                  <Badge variant={selectedDetailEntry.visitorType === 'delivery' ? 'default' : selectedDetailEntry.visitorType === 'service_provider' ? 'outline' : 'secondary'}>
+                    {selectedDetailEntry.visitorType === 'delivery' ? 'Entregador' : selectedDetailEntry.visitorType === 'service_provider' ? 'Prestador de Serviço' : 'Visitante'}
                   </Badge>
                   <Badge variant="default" className="ml-2 bg-success">Ativo</Badge>
                 </div>
@@ -876,7 +902,7 @@ export const NewRegistry = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="space-y-1">
                   <Label htmlFor="visitorType" className="text-xs">Tipo *</Label>
-                  <Select value={formData.visitorType} onValueChange={(value: 'visitor' | 'service_provider') => setFormData({
+                  <Select value={formData.visitorType} onValueChange={(value: 'visitor' | 'service_provider' | 'delivery') => setFormData({
                 ...formData,
                 visitorType: value
               })}>
@@ -884,8 +910,9 @@ export const NewRegistry = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="visitor">👥 Visitante</SelectItem>
+                      <SelectItem value="visitor">👤 Visitante</SelectItem>
                       <SelectItem value="service_provider">🔧 Prestador</SelectItem>
+                      <SelectItem value="delivery">📦 Entregador</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -941,12 +968,18 @@ export const NewRegistry = () => {
                     </div>}
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="company">{formData.visitorType === 'service_provider' ? 'Empresa' : 'Empresa (opcional)'}</Label>
-                  <Input id="co_field" name="co_field" value={formData.company} onChange={e => setFormData({
-                ...formData,
-                company: e.target.value
-              })} placeholder="Nome da empresa" />
+                <div className="space-y-2 relative">
+                  <Label htmlFor="company">{formData.visitorType === 'visitor' ? 'Empresa (opcional)' : 'Empresa'}</Label>
+                  <Input id="co_field" name="co_field" value={formData.company} autoComplete="one-time-code" readOnly onFocus={e => { e.currentTarget.removeAttribute('readOnly'); filterCompanies(formData.company); setShowCompanySuggestions(true); }} onChange={e => { setFormData({ ...formData, company: e.target.value }); filterCompanies(e.target.value); setShowCompanySuggestions(true); }} onBlur={() => setTimeout(() => setShowCompanySuggestions(false), 150)} placeholder="iFood, Uber, Mercado Livre..." />
+                  {showCompanySuggestions && companySuggestions.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                      {companySuggestions.map(comp => (
+                        <button key={comp} type="button" className="w-full text-left px-3 py-1.5 hover:bg-accent transition-colors text-sm" onClick={() => { setFormData({ ...formData, company: comp }); setShowCompanySuggestions(false); }}>
+                          {comp}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">

@@ -21,7 +21,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Combobox } from '@/components/ui/combobox';
-import { Package, CheckCircle, Search, Pencil, Trash2, Download, Camera, X, Upload, Video, FileSpreadsheet, Plus, MessageCircle, MoreHorizontal } from 'lucide-react';
+import { Package, CheckCircle, Search, Pencil, Trash2, Download, Camera, X, Upload, Video, FileSpreadsheet, Plus, MessageCircle, MoreHorizontal, ScanLine } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,6 +57,8 @@ export const MailManagement = () => {
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const scannerInputRef = useRef<HTMLInputElement>(null);
   const [webcamActive, setWebcamActive] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -143,6 +145,97 @@ export const MailManagement = () => {
       setPhotoFile(file);
       setPhotoPreview(URL.createObjectURL(file));
     }
+    e.target.value = '';
+  };
+
+  const normalizeScanText = (value: string) => value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+  const scanMailLabel = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('Selecione uma imagem da etiqueta');
+      return;
+    }
+
+    setScanning(true);
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+
+    try {
+      const imageBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Imagem inválida'));
+        reader.onerror = () => reject(new Error('Não foi possível ler a imagem'));
+        reader.readAsDataURL(file);
+      });
+
+      const { data, error } = await supabase.functions.invoke('scan-mail', {
+        body: {
+          imageBase64,
+          residents: residents.map((resident) => ({ name: resident.name, apartment: resident.apartment })),
+        },
+      });
+
+      if (error) throw error;
+
+      const scanned = data?.data as {
+        recipientName?: string;
+        apartment?: string;
+        sender?: string;
+        trackingCode?: string;
+        packageType?: Mail['packageType'];
+        notes?: string;
+      } | undefined;
+
+      if (!scanned || Object.keys(scanned).length === 0) {
+        throw new Error('Não foi possível identificar dados na etiqueta');
+      }
+
+      const recipientName = scanned.recipientName?.trim() || '';
+      const apartment = scanned.apartment?.trim() || '';
+      const normalizedName = normalizeScanText(recipientName);
+      const normalizedApartment = normalizeScanText(apartment);
+      const matchedResident = residents.find((resident) => {
+        const sameName = normalizedName && normalizeScanText(resident.name) === normalizedName;
+        const sameApartment = normalizedApartment && normalizeScanText(resident.apartment) === normalizedApartment;
+        return Boolean(sameName || (sameApartment && normalizedName && normalizeScanText(resident.name).includes(normalizedName)));
+      });
+      const validPackageTypes: Mail['packageType'][] = ['Carta', 'Pacote Pequeno', 'Pacote Médio', 'Pacote Grande'];
+      const packageType = validPackageTypes.includes(scanned.packageType as Mail['packageType'])
+        ? scanned.packageType as Mail['packageType']
+        : formData.packageType;
+
+      setFormData((current) => ({
+        ...current,
+        residentId: matchedResident?.id || current.residentId,
+        sender: scanned.sender?.trim() || current.sender,
+        packageType,
+        trackingCode: scanned.trackingCode?.trim() || current.trackingCode,
+        notes: scanned.notes?.trim() || current.notes,
+      }));
+
+      if (matchedResident) {
+        toast.success(`Etiqueta lida. Morador identificado: ${matchedResident.name}`);
+      } else if (recipientName || apartment) {
+        toast.warning('Etiqueta lida, mas o destinatário não foi localizado nos moradores cadastrados');
+      } else {
+        toast.success('Etiqueta lida. Revise os campos antes de registrar');
+      }
+    } catch (error) {
+      console.error('Mail scan error:', error);
+      toast.error('Não foi possível ler a etiqueta. Confira a imagem e tente novamente.');
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const handleScannerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) void scanMailLabel(file);
+    e.target.value = '';
   };
 
   const startWebcam = async () => {
@@ -524,7 +617,26 @@ export const MailManagement = () => {
                     </button>
                   </div>
                 ) : (
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="sm"
+                      onClick={() => scannerInputRef.current?.click()}
+                      disabled={scanning}
+                      className="flex items-center gap-1"
+                    >
+                      <ScanLine className="h-4 w-4" />
+                      {scanning ? 'Lendo...' : 'Escanear etiqueta'}
+                    </Button>
+                    <input
+                      ref={scannerInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={handleScannerChange}
+                    />
                     <Button type="button" variant="outline" size="sm" onClick={startWebcam} className="flex items-center gap-1">
                       <Video className="h-4 w-4" /> Webcam
                     </Button>

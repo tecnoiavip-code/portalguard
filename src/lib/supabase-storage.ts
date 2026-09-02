@@ -7,17 +7,26 @@ const up = (val: string | null | undefined): string | null => val ? val.toUpperC
 export const supabaseStorage = {
   // Residents
   async getResidents(includePhotos = false): Promise<Resident[] | null> {
-    const { data, error } = await supabase
-      .from('residents')
-      .select('id, name, cpf, apartment, phone, email, photo_url, vehicle_plate, vehicle_model, vehicle_color, vehicle_tag, created_at')
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      console.error('Error fetching residents:', error);
-      return null; // Return null on error so callers can preserve existing data
+    const pageSize = 1000;
+    const allRows: Array<any> = [];
+
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from('residents')
+        .select('id, name, cpf, apartment, phone, email, photo_url, vehicle_plate, vehicle_model, vehicle_color, vehicle_tag, created_at')
+        .order('created_at', { ascending: false })
+        .range(from, from + pageSize - 1);
+
+      if (error) {
+        console.error('Error fetching residents:', error);
+        return null; // Return null on error so callers can preserve existing data
+      }
+
+      allRows.push(...(data || []));
+      if (!data || data.length < pageSize) break;
     }
 
-    const residents = (data || []).map(r => ({
+    const residents = allRows.map(r => ({
       id: r.id,
       name: r.name,
       cpf: r.cpf || '',
@@ -227,12 +236,13 @@ export const supabaseStorage = {
       }
       savedId = insertedData.id;
     } else {
-      const { error } = await supabase
+      const { data: updatedData, error } = await supabase
         .from('residents')
         .update(residentData)
         .eq('id', resident.id)
-        .select();
-      if (error) {
+        .select('id')
+        .maybeSingle();
+      if (error || !updatedData) {
         console.error('Error updating resident:', error.message);
         return null;
       }
@@ -352,17 +362,26 @@ export const supabaseStorage = {
 
   // Access Entries
   async getEntries(): Promise<AccessEntry[] | null> {
-    const { data, error } = await supabase
-      .from('access_entries')
-      .select('*')
-      .order('entry_time', { ascending: false });
-    
-    if (error) {
-      console.error('Error fetching entries:', error);
-      return null;
+    const pageSize = 1000;
+    const allRows: Array<any> = [];
+
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from('access_entries')
+        .select('*')
+        .order('entry_time', { ascending: false })
+        .range(from, from + pageSize - 1);
+
+      if (error) {
+        console.error('Error fetching entries:', error);
+        return null;
+      }
+
+      allRows.push(...(data || []));
+      if (!data || data.length < pageSize) break;
     }
     
-    return (data || []).map(e => ({
+    return allRows.map(e => ({
       id: e.id,
       visitorName: e.visitor_name,
       visitorDocument: e.visitor_document,
@@ -459,12 +478,14 @@ export const supabaseStorage = {
         return false;
       }
     } else {
-      const { error } = await supabase
+      const { data: updatedData, error } = await supabase
         .from('access_entries')
         .update(entryData)
-        .eq('id', entry.id);
+        .eq('id', entry.id)
+        .select('id')
+        .maybeSingle();
       
-      if (error) {
+      if (error || !updatedData) {
         console.error('Error updating entry:', error);
         return false;
       }

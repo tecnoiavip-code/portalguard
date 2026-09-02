@@ -120,19 +120,33 @@ export const NewRegistry = () => {
   };
 
   const loadVehicleSuggestions = async () => {
-    const [modelsRes, colorsRes, companiesRes] = await Promise.all([
+    const [modelsRes, residentVehiclesRes, vehiclesRes, colorsRes, residentColorsRes, vehicleColorsRes, companiesRes] = await Promise.all([
       supabase.from('access_entries').select('vehicle_model').not('vehicle_model', 'is', null).not('vehicle_model', 'eq', ''),
+      supabase.from('residents').select('vehicle_model').not('vehicle_model', 'is', null).not('vehicle_model', 'eq', ''),
+      supabase.from('vehicles').select('model').not('model', 'is', null).not('model', 'eq', ''),
       supabase.from('access_entries').select('vehicle_color').not('vehicle_color', 'is', null).not('vehicle_color', 'eq', ''),
+      supabase.from('residents').select('vehicle_color').not('vehicle_color', 'is', null).not('vehicle_color', 'eq', ''),
+      supabase.from('vehicles').select('color').not('color', 'is', null).not('color', 'eq', ''),
       supabase.from('access_entries').select('company').not('company', 'is', null).not('company', 'eq', ''),
     ]);
-    if (modelsRes.data) {
-      const unique = [...new Set(modelsRes.data.map(r => String(r.vehicle_model ?? '').trim().toUpperCase()))]
+    const modelRows = [
+      ...(modelsRes.data || []).map(r => r.vehicle_model),
+      ...(residentVehiclesRes.data || []).map(r => r.vehicle_model),
+      ...(vehiclesRes.data || []).map(r => r.model),
+    ];
+    if (modelRows.length > 0) {
+      const unique = [...new Set(modelRows.map(value => String(value ?? '').trim().toUpperCase()))]
         .filter((value): value is string => Boolean(value))
         .sort();
       setAllVehicleModels(unique);
     }
-    if (colorsRes.data) {
-      const unique = [...new Set(colorsRes.data.map(r => String(r.vehicle_color ?? '').trim().toUpperCase()))]
+    const colorRows = [
+      ...(colorsRes.data || []).map(r => r.vehicle_color),
+      ...(residentColorsRes.data || []).map(r => r.vehicle_color),
+      ...(vehicleColorsRes.data || []).map(r => r.color),
+    ];
+    if (colorRows.length > 0) {
+      const unique = [...new Set(colorRows.map(value => String(value ?? '').trim().toUpperCase()))]
         .filter((value): value is string => Boolean(value))
         .sort();
       setAllVehicleColors(unique);
@@ -443,7 +457,8 @@ export const NewRegistry = () => {
           autoRecognized: showSuggestions && suggestions.length > 0
         };
     
-    await saveEntry(entryData);
+    const saved = await saveEntry(entryData);
+    if (!saved) return;
     
     // Auto-sync biometrics to all facial devices if visitor/provider has a photo
     if (formData.photo && formData.visitorDocument && facialDevices.length > 0) {

@@ -516,17 +516,17 @@ export const NewRegistry = () => {
     if (!confirm('Tem certeza que deseja excluir este cadastro?')) return;
     await deleteEntry(id);
   };
+  const getVisitorTypeLabel = (type: string) => {
+    if (type === 'delivery') return 'Entregador';
+    if (type === 'service_provider') return 'Prestador';
+    return 'Visitante';
+  };
   const exportActiveEntriesToPDF = () => {
     const doc = new jsPDF();
     doc.text('Cadastros Ativos', 14, 15);
     doc.text(`Data: ${format(new Date(), 'dd/MM/yyyy HH:mm', {
       locale: ptBR
     })}`, 14, 22);
-    const getVisitorTypeLabel = (type: string) => {
-      if (type === 'delivery') return 'Entregador';
-      if (type === 'service_provider') return 'Prestador';
-      return 'Visitante';
-    };
     const tableData = filteredActiveEntries.map(entry => {
       const resident = residents.find(r => r.id === entry.residentId);
       return [entry.visitorName, entry.visitorDocument, resident?.name || '-', resident?.apartment || '-', getVisitorTypeLabel(entry.visitorType), entry.badgeNumber || '-', format(new Date(entry.entryTime), 'dd/MM/yyyy HH:mm', {

@@ -1,5 +1,11 @@
 import { supabase } from '@/integrations/supabase/client';
+import type { Database } from '@/integrations/supabase/types';
 import { Resident, Mail, AccessEntry, Device, RealtimeEvent } from '@/types';
+
+type ResidentListRow = Pick<Database['public']['Tables']['residents']['Row'],
+  'id' | 'name' | 'cpf' | 'apartment' | 'phone' | 'email' | 'photo_url' |
+  'vehicle_plate' | 'vehicle_model' | 'vehicle_color' | 'vehicle_tag' | 'created_at'>;
+type AccessEntryRow = Database['public']['Tables']['access_entries']['Row'];
 
 // Helper to uppercase string fields (except email and urls)
 const up = (val: string | null | undefined): string | null => val ? val.toUpperCase() : val as null;
@@ -8,7 +14,7 @@ export const supabaseStorage = {
   // Residents
   async getResidents(includePhotos = false): Promise<Resident[] | null> {
     const pageSize = 1000;
-    const allRows: Array<any> = [];
+    const allRows: ResidentListRow[] = [];
 
     for (let from = 0; ; from += pageSize) {
       const { data, error } = await supabase
@@ -363,7 +369,7 @@ export const supabaseStorage = {
   // Access Entries
   async getEntries(): Promise<AccessEntry[] | null> {
     const pageSize = 1000;
-    const allRows: Array<any> = [];
+    const allRows: AccessEntryRow[] = [];
 
     for (let from = 0; ; from += pageSize) {
       const { data, error } = await supabase

@@ -243,7 +243,7 @@ export const supabaseStorage = {
         .select('id')
         .maybeSingle();
       if (error || !updatedData) {
-        console.error('Error updating resident:', error.message);
+        console.error('Error updating resident:', error?.message || 'Nenhum cadastro foi atualizado');
         return null;
       }
       savedId = resident.id;

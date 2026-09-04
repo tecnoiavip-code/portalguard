@@ -60,6 +60,7 @@ export const MailManagement = () => {
   const [scanning, setScanning] = useState(false);
   const scannerInputRef = useRef<HTMLInputElement>(null);
   const [webcamActive, setWebcamActive] = useState(false);
+  const [camMode, setCamMode] = useState<'photo' | 'scan'>('photo');
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [deliveryDialog, setDeliveryDialog] = useState<{
@@ -238,15 +239,21 @@ export const MailManagement = () => {
     e.target.value = '';
   };
 
-  const startWebcam = async () => {
+  const startWebcam = async (mode: 'photo' | 'scan' = 'photo') => {
+    setCamMode(mode);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } });
       streamRef.current = stream;
       setWebcamActive(true);
       setWebcamDialogOpen(true);
     } catch (err) {
-      toast.error('Não foi possível acessar a câmera');
       console.error('Webcam error:', err);
+      if (mode === 'scan') {
+        // Sem câmera disponível: permite escolher uma imagem da etiqueta
+        scannerInputRef.current?.click();
+      } else {
+        toast.error('Não foi possível acessar a câmera');
+      }
     }
   };
 

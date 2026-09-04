@@ -60,6 +60,7 @@ export const MailManagement = () => {
   const [scanning, setScanning] = useState(false);
   const scannerInputRef = useRef<HTMLInputElement>(null);
   const [webcamActive, setWebcamActive] = useState(false);
+  const [camMode, setCamMode] = useState<'photo' | 'scan'>('photo');
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [deliveryDialog, setDeliveryDialog] = useState<{
@@ -238,15 +239,21 @@ export const MailManagement = () => {
     e.target.value = '';
   };
 
-  const startWebcam = async () => {
+  const startWebcam = async (mode: 'photo' | 'scan' = 'photo') => {
+    setCamMode(mode);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } });
       streamRef.current = stream;
       setWebcamActive(true);
       setWebcamDialogOpen(true);
     } catch (err) {
-      toast.error('Não foi possível acessar a câmera');
       console.error('Webcam error:', err);
+      if (mode === 'scan') {
+        // Sem câmera disponível: permite escolher uma imagem da etiqueta
+        scannerInputRef.current?.click();
+      } else {
+        toast.error('Não foi possível acessar a câmera');
+      }
     }
   };
 
@@ -279,14 +286,16 @@ export const MailManagement = () => {
     canvas.width = videoRef.current.videoWidth;
     canvas.height = videoRef.current.videoHeight;
     canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
+    const wasScan = camMode === 'scan';
     canvas.toBlob((blob) => {
       if (blob) {
         const file = new File([blob], `webcam_${Date.now()}.jpg`, { type: 'image/jpeg' });
         setPhotoFile(file);
         setPhotoPreview(URL.createObjectURL(blob));
         stopWebcam();
+        if (wasScan) void scanMailLabel(file);
       }
-    }, 'image/jpeg', 0.85);
+    }, 'image/jpeg', 0.9);
   };
 
   useEffect(() => {
@@ -622,7 +631,7 @@ export const MailManagement = () => {
                       type="button"
                       variant="default"
                       size="sm"
-                      onClick={() => scannerInputRef.current?.click()}
+                      onClick={() => void startWebcam('scan')}
                       disabled={scanning}
                       className="flex items-center gap-1"
                     >
@@ -633,11 +642,10 @@ export const MailManagement = () => {
                       ref={scannerInputRef}
                       type="file"
                       accept="image/*"
-                      capture="environment"
                       className="hidden"
                       onChange={handleScannerChange}
                     />
-                    <Button type="button" variant="outline" size="sm" onClick={startWebcam} className="flex items-center gap-1">
+                    <Button type="button" variant="outline" size="sm" onClick={() => void startWebcam('photo')} className="flex items-center gap-1">
                       <Video className="h-4 w-4" /> Webcam
                     </Button>
                     <label className="flex items-center gap-1 cursor-pointer border rounded-lg px-3 py-1.5 text-sm hover:bg-muted transition-colors">
@@ -652,11 +660,13 @@ export const MailManagement = () => {
                   <DialogContent className="sm:max-w-2xl max-h-[90vh]">
                     <DialogHeader>
                       <DialogTitle className="flex items-center gap-2">
-                        <Camera className="h-5 w-5" />
-                        Capturar Foto da Correspondência
+                        {camMode === 'scan' ? <ScanLine className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
+                        {camMode === 'scan' ? 'Escanear Etiqueta' : 'Capturar Foto da Correspondência'}
                       </DialogTitle>
                       <DialogDescription>
-                        Posicione a correspondência na frente da câmera e clique em capturar.
+                        {camMode === 'scan'
+                          ? 'Aproxime a etiqueta da câmera até o texto ficar nítido e clique em escanear.'
+                          : 'Posicione a correspondência na frente da câmera e clique em capturar.'}
                       </DialogDescription>
                     </DialogHeader>
                     <div className="flex flex-col items-center gap-4">
@@ -671,7 +681,8 @@ export const MailManagement = () => {
                       </div>
                       <div className="flex gap-3">
                         <Button type="button" size="lg" onClick={capturePhoto} className="gap-2">
-                          <Camera className="h-5 w-5" /> Capturar Foto
+                          {camMode === 'scan' ? <ScanLine className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
+                          {camMode === 'scan' ? 'Escanear Etiqueta' : 'Capturar Foto'}
                         </Button>
                         <Button type="button" size="lg" variant="outline" onClick={stopWebcam}>
                           Cancelar

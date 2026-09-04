@@ -286,14 +286,16 @@ export const MailManagement = () => {
     canvas.width = videoRef.current.videoWidth;
     canvas.height = videoRef.current.videoHeight;
     canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
+    const wasScan = camMode === 'scan';
     canvas.toBlob((blob) => {
       if (blob) {
         const file = new File([blob], `webcam_${Date.now()}.jpg`, { type: 'image/jpeg' });
         setPhotoFile(file);
         setPhotoPreview(URL.createObjectURL(blob));
         stopWebcam();
+        if (wasScan) void scanMailLabel(file);
       }
-    }, 'image/jpeg', 0.85);
+    }, 'image/jpeg', 0.9);
   };
 
   useEffect(() => {
@@ -629,7 +631,7 @@ export const MailManagement = () => {
                       type="button"
                       variant="default"
                       size="sm"
-                      onClick={() => scannerInputRef.current?.click()}
+                      onClick={() => void startWebcam('scan')}
                       disabled={scanning}
                       className="flex items-center gap-1"
                     >
@@ -640,11 +642,10 @@ export const MailManagement = () => {
                       ref={scannerInputRef}
                       type="file"
                       accept="image/*"
-                      capture="environment"
                       className="hidden"
                       onChange={handleScannerChange}
                     />
-                    <Button type="button" variant="outline" size="sm" onClick={startWebcam} className="flex items-center gap-1">
+                    <Button type="button" variant="outline" size="sm" onClick={() => void startWebcam('photo')} className="flex items-center gap-1">
                       <Video className="h-4 w-4" /> Webcam
                     </Button>
                     <label className="flex items-center gap-1 cursor-pointer border rounded-lg px-3 py-1.5 text-sm hover:bg-muted transition-colors">

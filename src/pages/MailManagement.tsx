@@ -660,11 +660,13 @@ export const MailManagement = () => {
                   <DialogContent className="sm:max-w-2xl max-h-[90vh]">
                     <DialogHeader>
                       <DialogTitle className="flex items-center gap-2">
-                        <Camera className="h-5 w-5" />
-                        Capturar Foto da Correspondência
+                        {camMode === 'scan' ? <ScanLine className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
+                        {camMode === 'scan' ? 'Escanear Etiqueta' : 'Capturar Foto da Correspondência'}
                       </DialogTitle>
                       <DialogDescription>
-                        Posicione a correspondência na frente da câmera e clique em capturar.
+                        {camMode === 'scan'
+                          ? 'Aproxime a etiqueta da câmera até o texto ficar nítido e clique em escanear.'
+                          : 'Posicione a correspondência na frente da câmera e clique em capturar.'}
                       </DialogDescription>
                     </DialogHeader>
                     <div className="flex flex-col items-center gap-4">

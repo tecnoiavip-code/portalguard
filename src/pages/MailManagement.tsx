@@ -277,6 +277,17 @@ export const MailManagement = () => {
     setCamMode(mode);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } });
+      // Pede foco contínuo quando a câmera suportar (webcams de foco fixo simplesmente ignoram)
+      try {
+        const track = stream.getVideoTracks()[0];
+        const caps = (track.getCapabilities?.() ?? {}) as Record<string, unknown>;
+        const advanced: Record<string, unknown>[] = [];
+        const focusModes = caps.focusMode as string[] | undefined;
+        if (focusModes?.includes('continuous')) advanced.push({ focusMode: 'continuous' });
+        const sharpness = caps.sharpness as { max?: number } | undefined;
+        if (sharpness?.max) advanced.push({ sharpness: sharpness.max });
+        if (advanced.length) await track.applyConstraints({ advanced } as MediaTrackConstraints);
+      } catch { /* recurso opcional */ }
       streamRef.current = stream;
       setWebcamActive(true);
       setWebcamDialogOpen(true);
@@ -290,6 +301,7 @@ export const MailManagement = () => {
       }
     }
   };
+
 
   // Attach stream to video element after it renders in dialog
   const videoCallbackRef = useCallback((node: HTMLVideoElement | null) => {

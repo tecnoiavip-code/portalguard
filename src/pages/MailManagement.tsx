@@ -781,7 +781,7 @@ export const MailManagement = () => {
                         />
                       </div>
                       <div className="flex gap-3">
-                        <Button type="button" size="lg" onClick={capturePhoto} className="gap-2">
+                        <Button type="button" size="lg" onClick={() => void capturePhoto()} className="gap-2">
                           {camMode === 'scan' ? <ScanLine className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
                           {camMode === 'scan' ? 'Escanear Etiqueta' : 'Capturar Foto'}
                         </Button>

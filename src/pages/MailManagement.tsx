@@ -155,6 +155,34 @@ export const MailManagement = () => {
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
 
+  const prepareLabelImage = async (file: File): Promise<string> => {
+    const source = await createImageBitmap(file);
+    const maxDimension = 1800;
+    const scale = Math.min(1, maxDimension / Math.max(source.width, source.height));
+    const width = Math.max(1, Math.round(source.width * scale));
+    const height = Math.max(1, Math.round(source.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      source.close();
+      throw new Error('Não foi possível preparar a imagem');
+    }
+
+    context.filter = 'contrast(1.2) brightness(1.05)';
+    context.drawImage(source, 0, 0, width, height);
+    source.close();
+    return canvas.toDataURL('image/jpeg', 0.92);
+  };
+
+  const scanWords = (value: string) => value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length > 1);
+
   const scanMailLabel = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       toast.error('Selecione uma imagem da etiqueta');
@@ -166,12 +194,7 @@ export const MailManagement = () => {
     setPhotoPreview(URL.createObjectURL(file));
 
     try {
-      const imageBase64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Imagem inválida'));
-        reader.onerror = () => reject(new Error('Não foi possível ler a imagem'));
-        reader.readAsDataURL(file);
-      });
+      const imageBase64 = await prepareLabelImage(file);
 
       const { data, error } = await supabase.functions.invoke('scan-mail', {
         body: {
@@ -199,11 +222,19 @@ export const MailManagement = () => {
       const apartment = scanned.apartment?.trim() || '';
       const normalizedName = normalizeScanText(recipientName);
       const normalizedApartment = normalizeScanText(apartment);
-      const matchedResident = residents.find((resident) => {
+      const recipientWords = scanWords(recipientName);
+      const rankedResidents = residents.map((resident) => {
+        const residentName = normalizeScanText(resident.name);
+        const residentApartment = normalizeScanText(resident.apartment);
+        const residentWords = new Set(scanWords(resident.name));
         const sameName = normalizedName && normalizeScanText(resident.name) === normalizedName;
-        const sameApartment = normalizedApartment && normalizeScanText(resident.apartment) === normalizedApartment;
-        return Boolean(sameName || (sameApartment && normalizedName && normalizeScanText(resident.name).includes(normalizedName)));
-      });
+        const nameContained = normalizedName.length >= 5 && (residentName.includes(normalizedName) || normalizedName.includes(residentName));
+        const sharedWords = recipientWords.filter((word) => residentWords.has(word)).length;
+        const sameApartment = Boolean(normalizedApartment && residentApartment === normalizedApartment);
+        const score = sameName ? 100 : (sameApartment ? 50 : 0) + (nameContained ? 30 : 0) + sharedWords * 10;
+        return { resident, score };
+      }).sort((a, b) => b.score - a.score);
+      const matchedResident = rankedResidents[0]?.score >= 30 ? rankedResidents[0].resident : undefined;
       const validPackageTypes: Mail['packageType'][] = ['Carta', 'Pacote Pequeno', 'Pacote Médio', 'Pacote Grande'];
       const packageType = validPackageTypes.includes(scanned.packageType as Mail['packageType'])
         ? scanned.packageType as Mail['packageType']
@@ -227,7 +258,10 @@ export const MailManagement = () => {
       }
     } catch (error) {
       console.error('Mail scan error:', error);
-      toast.error('Não foi possível ler a etiqueta. Confira a imagem e tente novamente.');
+      const message = error instanceof Error ? error.message : '';
+      toast.error(message && !message.toLowerCase().includes('edge function')
+        ? message
+        : 'Não foi possível ler a etiqueta. Mantenha-a inteira, bem iluminada e tente novamente.');
     } finally {
       setScanning(false);
     }
@@ -281,10 +315,17 @@ export const MailManagement = () => {
   }, []);
 
   const capturePhoto = () => {
-    if (!videoRef.current) return;
+    if (!videoRef.current || videoRef.current.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      toast.error('Aguarde a câmera mostrar uma imagem nítida');
+      return;
+    }
     const canvas = document.createElement('canvas');
     canvas.width = videoRef.current.videoWidth;
     canvas.height = videoRef.current.videoHeight;
+    if (!canvas.width || !canvas.height) {
+      toast.error('A câmera ainda não está pronta');
+      return;
+    }
     canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
     const wasScan = camMode === 'scan';
     canvas.toBlob((blob) => {

@@ -28,6 +28,20 @@ serve(async (req) => {
       });
     }
 
+    if (!/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(imageBase64)) {
+      return new Response(JSON.stringify({ error: "Formato de imagem inválido" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (imageBase64.length > 12_000_000) {
+      return new Response(JSON.stringify({ error: "Imagem muito grande" }), {
+        status: 413,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const url = imageBase64.startsWith("data:")
       ? imageBase64
       : `data:image/jpeg;base64,${imageBase64}`;
@@ -49,7 +63,9 @@ serve(async (req) => {
             role: "system",
             content:
               "Você lê etiquetas de encomendas e cartas brasileiras (Correios, Amazon, Mercado Livre, Shopee, transportadoras). " +
-              "Extraia os dados do destinatário e do remetente da imagem e responda SOMENTE com a função extract_mail.",
+              "Leia inclusive textos pequenos, inclinados ou parcialmente desfocados. Diferencie claramente DESTINATÁRIO de REMETENTE. " +
+              "Apartamento pode aparecer como AP, APT, UNIDADE, BL ou BLOCO. Código de rastreio costuma misturar letras e números. " +
+              "Nunca invente dados ausentes: use string vazia. Responda SOMENTE com a função extract_mail.",
           },
           {
             role: "user",
@@ -110,7 +126,8 @@ serve(async (req) => {
     }
 
     const result = await response.json();
-    const call = result.choices?.[0]?.message?.tool_calls?.[0];
+    const message = result.choices?.[0]?.message;
+    const call = message?.tool_calls?.[0];
     let data: Record<string, unknown> = {};
     if (call?.function?.arguments) {
       try {
@@ -118,6 +135,24 @@ serve(async (req) => {
       } catch (_) {
         data = {};
       }
+    }
+
+    if (Object.keys(data).length === 0 && typeof message?.content === "string") {
+      try {
+        const cleaned = message.content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+        data = JSON.parse(cleaned);
+      } catch (_) {
+        data = {};
+      }
+    }
+
+    const hasRecognizedData = ["recipientName", "apartment", "sender", "trackingCode"]
+      .some((key) => typeof data[key] === "string" && String(data[key]).trim().length > 0);
+    if (!hasRecognizedData) {
+      return new Response(JSON.stringify({ error: "Nenhum dado legível foi encontrado na etiqueta" }), {
+        status: 422,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     return new Response(JSON.stringify({ data }), {

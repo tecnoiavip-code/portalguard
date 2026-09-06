@@ -326,21 +326,68 @@ export const MailManagement = () => {
     setWebcamDialogOpen(false);
   }, []);
 
-  const capturePhoto = () => {
+  // Mede nitidez (variância do Laplaciano) de um quadro
+  const measureSharpness = (canvas: HTMLCanvasElement) => {
+    const w = 320;
+    const h = Math.max(1, Math.round((canvas.height / canvas.width) * w));
+    const small = document.createElement('canvas');
+    small.width = w; small.height = h;
+    const sctx = small.getContext('2d');
+    if (!sctx) return 0;
+    sctx.drawImage(canvas, 0, 0, w, h);
+    const { data } = sctx.getImageData(0, 0, w, h);
+    const gray = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      gray[i] = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
+    }
+    let sum = 0, sumSq = 0, n = 0;
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        const lap = 4 * gray[i] - gray[i - 1] - gray[i + 1] - gray[i - w] - gray[i + w];
+        sum += lap; sumSq += lap * lap; n++;
+      }
+    }
+    if (!n) return 0;
+    const mean = sum / n;
+    return sumSq / n - mean * mean;
+  };
+
+  const grabFrame = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d')?.drawImage(video, 0, 0);
+    return canvas;
+  };
+
+  const capturePhoto = async () => {
     if (!videoRef.current || videoRef.current.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
       toast.error('Aguarde a câmera mostrar uma imagem nítida');
       return;
     }
-    const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
-    if (!canvas.width || !canvas.height) {
+    const wasScan = camMode === 'scan';
+    let best = grabFrame();
+    if (!best) {
       toast.error('A câmera ainda não está pronta');
       return;
     }
-    canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
-    const wasScan = camMode === 'scan';
-    canvas.toBlob((blob) => {
+
+    if (wasScan) {
+      // Foco por software: várias fotos em sequência, escolhe a mais nítida
+      let bestScore = measureSharpness(best);
+      for (let i = 0; i < 5; i++) {
+        await new Promise((r) => setTimeout(r, 300));
+        const frame = grabFrame();
+        if (!frame) continue;
+        const score = measureSharpness(frame);
+        if (score > bestScore) { bestScore = score; best = frame; }
+      }
+    }
+
+    best.toBlob((blob) => {
       if (blob) {
         const file = new File([blob], `webcam_${Date.now()}.jpg`, { type: 'image/jpeg' });
         setPhotoFile(file);
@@ -348,8 +395,9 @@ export const MailManagement = () => {
         stopWebcam();
         if (wasScan) void scanMailLabel(file);
       }
-    }, 'image/jpeg', 0.9);
+    }, 'image/jpeg', 0.95);
   };
+
 
   useEffect(() => {
     return () => { stopWebcam(); };

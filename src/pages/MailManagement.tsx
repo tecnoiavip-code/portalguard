@@ -105,13 +105,6 @@ export const MailManagement = () => {
     (trackingCode ? `🔍 Rastreio: ${trackingCode}\n` : '') +
     `\nPor favor, retire na portaria. Obrigado!`;
 
-  const buildWhatsappMessage = (args: {
-    residentName: string;
-    packageType: string;
-    sender: string;
-    trackingCode?: string | null;
-    hasPhoto?: boolean;
-  }) => encodeURIComponent(buildWhatsappText(args));
 
   const openWhatsappWithFallback = (
     rawPhone: string,

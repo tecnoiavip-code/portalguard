@@ -268,15 +268,16 @@ export const MailManagement = () => {
     .split(/[^a-z0-9]+/)
     .filter((word) => word.length > 1);
 
-  const scanMailLabel = async (file: File) => {
+  const scanMailLabel = async (file: File, photoForRecord?: File) => {
     if (!file.type.startsWith('image/')) {
       toast.error('Selecione uma imagem da etiqueta');
       return;
     }
 
     setScanning(true);
-    setPhotoFile(file);
-    setPhotoPreview(URL.createObjectURL(file));
+    const recordPhoto = photoForRecord || file;
+    setPhotoFile(recordPhoto);
+    setPhotoPreview(URL.createObjectURL(recordPhoto));
 
     try {
       const imageBase64 = await prepareLabelImage(file);

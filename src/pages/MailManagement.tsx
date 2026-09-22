@@ -614,20 +614,19 @@ export const MailManagement = () => {
       }
 
       if (!editingMail) {
-        const whatsappMsg = buildWhatsappMessage({
+        const whatsappText = buildWhatsappText({
           residentName: resident.name,
           packageType: mailData.packageType,
           sender: mailData.sender,
           trackingCode: mailData.trackingCode,
-          hasPhoto: Boolean(photoUrl),
         });
         const residentPhone = resident.phone?.replace(/\D/g, '');
+        const photoToSend = photoFile;
 
         if (residentPhone) {
           toast.success(`Correspondência registrada! ${resident.name} foi notificado.`);
-          // Redireciona direto ao WhatsApp sem confirmação
           setTimeout(() => {
-            openWhatsappWithFallback(residentPhone, whatsappMsg);
+            void sendWhatsappWithPhoto(residentPhone, whatsappText, photoToSend);
           }, 300);
         } else {
           toast.success(`Correspondência registrada para ${resident.name} (sem telefone cadastrado)`);

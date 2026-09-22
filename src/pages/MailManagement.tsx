@@ -448,6 +448,29 @@ export const MailManagement = () => {
     return canvas;
   };
 
+  // Recorta a área da guia mostrada na tela e amplia, para a etiqueta ocupar toda a imagem
+  const cropToGuide = (canvas: HTMLCanvasElement) => {
+    const cw = Math.round(canvas.width * 0.86);
+    const ch = Math.round(canvas.height * 0.62);
+    const sx = Math.round((canvas.width - cw) / 2);
+    const sy = Math.round((canvas.height - ch) / 2);
+    const scale = Math.min(2.5, Math.max(1, 1800 / cw));
+    const out = document.createElement('canvas');
+    out.width = Math.round(cw * scale);
+    out.height = Math.round(ch * scale);
+    const ctx = out.getContext('2d');
+    if (!ctx) return canvas;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(canvas, sx, sy, cw, ch, 0, 0, out.width, out.height);
+    return out;
+  };
+
+  const canvasToFile = (canvas: HTMLCanvasElement, name: string) =>
+    new Promise<File | null>((resolve) => {
+      canvas.toBlob((blob) => resolve(blob ? new File([blob], name, { type: 'image/jpeg' }) : null), 'image/jpeg', 0.95);
+    });
+
   const capturePhoto = async () => {
     if (!videoRef.current || videoRef.current.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
       toast.error('Aguarde a câmera mostrar uma imagem nítida');
@@ -462,9 +485,10 @@ export const MailManagement = () => {
 
     if (wasScan) {
       // Foco por software: várias fotos em sequência, escolhe a mais nítida
+      setScanning(true);
       let bestScore = measureSharpness(best);
-      for (let i = 0; i < 5; i++) {
-        await new Promise((r) => setTimeout(r, 300));
+      for (let i = 0; i < 9; i++) {
+        await new Promise((r) => setTimeout(r, 250));
         const frame = grabFrame();
         if (!frame) continue;
         const score = measureSharpness(frame);
@@ -472,15 +496,17 @@ export const MailManagement = () => {
       }
     }
 
-    best.toBlob((blob) => {
-      if (blob) {
-        const file = new File([blob], `webcam_${Date.now()}.jpg`, { type: 'image/jpeg' });
-        setPhotoFile(file);
-        setPhotoPreview(URL.createObjectURL(blob));
-        stopWebcam();
-        if (wasScan) void scanMailLabel(file);
-      }
-    }, 'image/jpeg', 0.95);
+    const fullFile = await canvasToFile(best, `webcam_${Date.now()}.jpg`);
+    if (!fullFile) { setScanning(false); return; }
+
+    setPhotoFile(fullFile);
+    setPhotoPreview(URL.createObjectURL(fullFile));
+    stopWebcam();
+
+    if (wasScan) {
+      const cropped = await canvasToFile(cropToGuide(best), `etiqueta_${Date.now()}.jpg`);
+      void scanMailLabel(cropped || fullFile, fullFile);
+    }
   };
 
 

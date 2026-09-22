@@ -1023,23 +1023,22 @@ export const MailManagement = () => {
                                 <DropdownMenuContent align="end">
                                   {resident?.phone && (() => {
                                     const phone = resident.phone?.replace(/\D/g, '');
-                                    const msg = buildWhatsappMessage({
+                                    const text = buildWhatsappText({
                                       residentName: resident.name,
                                       packageType: mail.packageType,
                                       sender: mail.sender,
                                       trackingCode: mail.trackingCode,
-                                      hasPhoto: Boolean(mail.photoUrl),
                                     });
-                                    const waUrl = getWhatsappWebUrl(phone, msg);
+                                    const waUrl = getWhatsappWebUrl(phone, encodeURIComponent(text));
                                     return (
                                       <DropdownMenuItem asChild>
                                         <a
                                           href={waUrl}
-                                          onClick={(e) => openWhatsappWithFallback(phone, msg, e)}
+                                          onClick={(e) => void sendWhatsappWithPhoto(phone, text, mail.photoUrl, e)}
                                           className="cursor-pointer"
                                         >
                                           <MessageCircle className="h-4 w-4 mr-2 text-green-600" />
-                                          Enviar WhatsApp
+                                          Enviar WhatsApp {mail.photoUrl ? 'com foto' : ''}
                                         </a>
                                       </DropdownMenuItem>
                                     );

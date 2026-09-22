@@ -88,26 +88,30 @@ export const MailManagement = () => {
     return `https://api.whatsapp.com/send?phone=${phone}&text=${encodedMessage}`;
   };
 
-  const buildWhatsappMessage = ({
+  const buildWhatsappText = ({
     residentName,
     packageType,
     sender,
     trackingCode,
-    hasPhoto,
   }: {
     residentName: string;
     packageType: string;
     sender: string;
     trackingCode?: string | null;
-    hasPhoto?: boolean;
-  }) => encodeURIComponent(
+  }) =>
     `Olá ${residentName}! 📦\n\n` +
     `📋 Tipo: ${packageType}\n` +
     `📤 Remetente: ${sender}\n` +
     (trackingCode ? `🔍 Rastreio: ${trackingCode}\n` : '') +
-    (hasPhoto ? `\n📸 Foto: registrada na portaria\n` : '') +
-    `\nPor favor, retire na portaria. Obrigado!`
-  );
+    `\nPor favor, retire na portaria. Obrigado!`;
+
+  const buildWhatsappMessage = (args: {
+    residentName: string;
+    packageType: string;
+    sender: string;
+    trackingCode?: string | null;
+    hasPhoto?: boolean;
+  }) => encodeURIComponent(buildWhatsappText(args));
 
   const openWhatsappWithFallback = (
     rawPhone: string,
@@ -138,6 +142,58 @@ export const MailManagement = () => {
         window.open(webUrl, '_blank');
       }
     }, 1500);
+  };
+
+  // Envia a própria imagem (anexada) junto do texto, usando o compartilhamento nativo.
+  // Se o dispositivo não suportar anexar arquivo, cai para o link normal do WhatsApp.
+  const sendWhatsappWithPhoto = async (
+    rawPhone: string,
+    text: string,
+    photo: File | string | null | undefined,
+    event?: React.MouseEvent<HTMLElement>
+  ) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+
+    let file: File | null = null;
+    try {
+      if (photo instanceof File) {
+        file = photo;
+      } else if (typeof photo === 'string' && photo) {
+        const response = await fetch(photo);
+        const blob = await response.blob();
+        file = new File([blob], `correspondencia_${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
+      }
+    } catch (error) {
+      console.error('Não foi possível preparar a foto para envio:', error);
+    }
+
+    if (file && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], text });
+        return;
+      } catch (error) {
+        const name = (error as { name?: string })?.name;
+        if (name === 'AbortError') return;
+        console.error('Falha ao compartilhar foto:', error);
+      }
+    }
+
+    if (file) {
+      try {
+        await navigator.clipboard.writeText(text);
+        toast.info('Este navegador não anexa fotos automaticamente. A foto foi baixada e o texto copiado — anexe a foto no WhatsApp.');
+      } catch {
+        toast.info('Este navegador não anexa fotos automaticamente. A foto foi baixada — anexe-a no WhatsApp.');
+      }
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(file);
+      link.download = file.name;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+    }
+
+    openWhatsappWithFallback(rawPhone, encodeURIComponent(text));
   };
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {

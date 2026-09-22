@@ -88,26 +88,23 @@ export const MailManagement = () => {
     return `https://api.whatsapp.com/send?phone=${phone}&text=${encodedMessage}`;
   };
 
-  const buildWhatsappMessage = ({
+  const buildWhatsappText = ({
     residentName,
     packageType,
     sender,
     trackingCode,
-    hasPhoto,
   }: {
     residentName: string;
     packageType: string;
     sender: string;
     trackingCode?: string | null;
-    hasPhoto?: boolean;
-  }) => encodeURIComponent(
+  }) =>
     `Olá ${residentName}! 📦\n\n` +
     `📋 Tipo: ${packageType}\n` +
     `📤 Remetente: ${sender}\n` +
     (trackingCode ? `🔍 Rastreio: ${trackingCode}\n` : '') +
-    (hasPhoto ? `\n📸 Foto: registrada na portaria\n` : '') +
-    `\nPor favor, retire na portaria. Obrigado!`
-  );
+    `\nPor favor, retire na portaria. Obrigado!`;
+
 
   const openWhatsappWithFallback = (
     rawPhone: string,
@@ -140,6 +137,58 @@ export const MailManagement = () => {
     }, 1500);
   };
 
+  // Envia a própria imagem (anexada) junto do texto, usando o compartilhamento nativo.
+  // Se o dispositivo não suportar anexar arquivo, cai para o link normal do WhatsApp.
+  const sendWhatsappWithPhoto = async (
+    rawPhone: string,
+    text: string,
+    photo: File | string | null | undefined,
+    event?: React.MouseEvent<HTMLElement>
+  ) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+
+    let file: File | null = null;
+    try {
+      if (photo instanceof File) {
+        file = photo;
+      } else if (typeof photo === 'string' && photo) {
+        const response = await fetch(photo);
+        const blob = await response.blob();
+        file = new File([blob], `correspondencia_${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
+      }
+    } catch (error) {
+      console.error('Não foi possível preparar a foto para envio:', error);
+    }
+
+    if (file && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], text });
+        return;
+      } catch (error) {
+        const name = (error as { name?: string })?.name;
+        if (name === 'AbortError') return;
+        console.error('Falha ao compartilhar foto:', error);
+      }
+    }
+
+    if (file) {
+      try {
+        await navigator.clipboard.writeText(text);
+        toast.info('Este navegador não anexa fotos automaticamente. A foto foi baixada e o texto copiado — anexe a foto no WhatsApp.');
+      } catch {
+        toast.info('Este navegador não anexa fotos automaticamente. A foto foi baixada — anexe-a no WhatsApp.');
+      }
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(file);
+      link.download = file.name;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+    }
+
+    openWhatsappWithFallback(rawPhone, encodeURIComponent(text));
+  };
+
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -155,25 +204,54 @@ export const MailManagement = () => {
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
 
+  // Realça bordas do texto (unsharp mask) para compensar webcams sem foco
+  const sharpenCanvas = (canvas: HTMLCanvasElement, amount = 0.9) => {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
+    const { width: w, height: h } = canvas;
+    const src = ctx.getImageData(0, 0, w, h);
+    const out = ctx.createImageData(w, h);
+    const s = src.data, d = out.data;
+    const k = amount;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        for (let c = 0; c < 3; c++) {
+          if (x === 0 || y === 0 || x === w - 1 || y === h - 1) { d[i + c] = s[i + c]; continue; }
+          const center = s[i + c];
+          const lap = 4 * center - s[i - 4 + c] - s[i + 4 + c] - s[i - w * 4 + c] - s[i + w * 4 + c];
+          const v = center + k * lap;
+          d[i + c] = v < 0 ? 0 : v > 255 ? 255 : v;
+        }
+        d[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(out, 0, 0);
+  };
+
   const prepareLabelImage = async (file: File): Promise<string> => {
     const source = await createImageBitmap(file);
-    const maxDimension = 1800;
-    const scale = Math.min(1, maxDimension / Math.max(source.width, source.height));
+    const largest = Math.max(source.width, source.height);
+    // Amplia imagens pequenas e limita as muito grandes
+    const scale = largest < 1400 ? Math.min(2.5, 1600 / largest) : Math.min(1, 2000 / largest);
     const width = Math.max(1, Math.round(source.width * scale));
     const height = Math.max(1, Math.round(source.height * scale));
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
-    const context = canvas.getContext('2d');
+    const context = canvas.getContext('2d', { willReadFrequently: true });
     if (!context) {
       source.close();
       throw new Error('Não foi possível preparar a imagem');
     }
 
-    context.filter = 'contrast(1.2) brightness(1.05)';
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.filter = 'grayscale(1) contrast(1.6) brightness(1.08)';
     context.drawImage(source, 0, 0, width, height);
     source.close();
-    return canvas.toDataURL('image/jpeg', 0.92);
+    sharpenCanvas(canvas);
+    return canvas.toDataURL('image/jpeg', 0.95);
   };
 
   const scanWords = (value: string) => value
@@ -183,15 +261,16 @@ export const MailManagement = () => {
     .split(/[^a-z0-9]+/)
     .filter((word) => word.length > 1);
 
-  const scanMailLabel = async (file: File) => {
+  const scanMailLabel = async (file: File, photoForRecord?: File) => {
     if (!file.type.startsWith('image/')) {
       toast.error('Selecione uma imagem da etiqueta');
       return;
     }
 
     setScanning(true);
-    setPhotoFile(file);
-    setPhotoPreview(URL.createObjectURL(file));
+    const recordPhoto = photoForRecord || file;
+    setPhotoFile(recordPhoto);
+    setPhotoPreview(URL.createObjectURL(recordPhoto));
 
     try {
       const imageBase64 = await prepareLabelImage(file);
@@ -363,6 +442,29 @@ export const MailManagement = () => {
     return canvas;
   };
 
+  // Recorta a área da guia mostrada na tela e amplia, para a etiqueta ocupar toda a imagem
+  const cropToGuide = (canvas: HTMLCanvasElement) => {
+    const cw = Math.round(canvas.width * 0.86);
+    const ch = Math.round(canvas.height * 0.62);
+    const sx = Math.round((canvas.width - cw) / 2);
+    const sy = Math.round((canvas.height - ch) / 2);
+    const scale = Math.min(2.5, Math.max(1, 1800 / cw));
+    const out = document.createElement('canvas');
+    out.width = Math.round(cw * scale);
+    out.height = Math.round(ch * scale);
+    const ctx = out.getContext('2d');
+    if (!ctx) return canvas;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(canvas, sx, sy, cw, ch, 0, 0, out.width, out.height);
+    return out;
+  };
+
+  const canvasToFile = (canvas: HTMLCanvasElement, name: string) =>
+    new Promise<File | null>((resolve) => {
+      canvas.toBlob((blob) => resolve(blob ? new File([blob], name, { type: 'image/jpeg' }) : null), 'image/jpeg', 0.95);
+    });
+
   const capturePhoto = async () => {
     if (!videoRef.current || videoRef.current.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
       toast.error('Aguarde a câmera mostrar uma imagem nítida');
@@ -377,9 +479,10 @@ export const MailManagement = () => {
 
     if (wasScan) {
       // Foco por software: várias fotos em sequência, escolhe a mais nítida
+      setScanning(true);
       let bestScore = measureSharpness(best);
-      for (let i = 0; i < 5; i++) {
-        await new Promise((r) => setTimeout(r, 300));
+      for (let i = 0; i < 9; i++) {
+        await new Promise((r) => setTimeout(r, 250));
         const frame = grabFrame();
         if (!frame) continue;
         const score = measureSharpness(frame);
@@ -387,15 +490,17 @@ export const MailManagement = () => {
       }
     }
 
-    best.toBlob((blob) => {
-      if (blob) {
-        const file = new File([blob], `webcam_${Date.now()}.jpg`, { type: 'image/jpeg' });
-        setPhotoFile(file);
-        setPhotoPreview(URL.createObjectURL(blob));
-        stopWebcam();
-        if (wasScan) void scanMailLabel(file);
-      }
-    }, 'image/jpeg', 0.95);
+    const fullFile = await canvasToFile(best, `webcam_${Date.now()}.jpg`);
+    if (!fullFile) { setScanning(false); return; }
+
+    setPhotoFile(fullFile);
+    setPhotoPreview(URL.createObjectURL(fullFile));
+    stopWebcam();
+
+    if (wasScan) {
+      const cropped = await canvasToFile(cropToGuide(best), `etiqueta_${Date.now()}.jpg`);
+      void scanMailLabel(cropped || fullFile, fullFile);
+    }
   };
 
 
@@ -502,20 +607,19 @@ export const MailManagement = () => {
       }
 
       if (!editingMail) {
-        const whatsappMsg = buildWhatsappMessage({
+        const whatsappText = buildWhatsappText({
           residentName: resident.name,
           packageType: mailData.packageType,
           sender: mailData.sender,
           trackingCode: mailData.trackingCode,
-          hasPhoto: Boolean(photoUrl),
         });
         const residentPhone = resident.phone?.replace(/\D/g, '');
+        const photoToSend = photoFile;
 
         if (residentPhone) {
           toast.success(`Correspondência registrada! ${resident.name} foi notificado.`);
-          // Redireciona direto ao WhatsApp sem confirmação
           setTimeout(() => {
-            openWhatsappWithFallback(residentPhone, whatsappMsg);
+            void sendWhatsappWithPhoto(residentPhone, whatsappText, photoToSend);
           }, 300);
         } else {
           toast.success(`Correspondência registrada para ${resident.name} (sem telefone cadastrado)`);
@@ -766,12 +870,12 @@ export const MailManagement = () => {
                       </DialogTitle>
                       <DialogDescription>
                         {camMode === 'scan'
-                          ? 'Aproxime a etiqueta da câmera até o texto ficar nítido e clique em escanear.'
+                          ? 'Encaixe a etiqueta dentro da moldura, a cerca de 20 cm da câmera, segure firme e clique em escanear. A leitura leva alguns segundos.'
                           : 'Posicione a correspondência na frente da câmera e clique em capturar.'}
                       </DialogDescription>
                     </DialogHeader>
                     <div className="flex flex-col items-center gap-4">
-                      <div className="w-full rounded-xl overflow-hidden border-2 border-border bg-muted">
+                      <div className="relative w-full rounded-xl overflow-hidden border-2 border-border bg-muted">
                         <video
                           ref={videoCallbackRef}
                           autoPlay
@@ -779,11 +883,16 @@ export const MailManagement = () => {
                           muted
                           className="w-full h-auto max-h-[60vh] object-contain"
                         />
+                        {camMode === 'scan' && (
+                          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                            <div className="w-[86%] h-[62%] rounded-lg border-2 border-primary/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
+                          </div>
+                        )}
                       </div>
                       <div className="flex gap-3">
-                        <Button type="button" size="lg" onClick={() => void capturePhoto()} className="gap-2">
+                        <Button type="button" size="lg" onClick={() => void capturePhoto()} disabled={scanning} className="gap-2">
                           {camMode === 'scan' ? <ScanLine className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
-                          {camMode === 'scan' ? 'Escanear Etiqueta' : 'Capturar Foto'}
+                          {camMode === 'scan' ? (scanning ? 'Lendo...' : 'Escanear Etiqueta') : 'Capturar Foto'}
                         </Button>
                         <Button type="button" size="lg" variant="outline" onClick={stopWebcam}>
                           Cancelar
@@ -912,23 +1021,22 @@ export const MailManagement = () => {
                                 <DropdownMenuContent align="end">
                                   {resident?.phone && (() => {
                                     const phone = resident.phone?.replace(/\D/g, '');
-                                    const msg = buildWhatsappMessage({
+                                    const text = buildWhatsappText({
                                       residentName: resident.name,
                                       packageType: mail.packageType,
                                       sender: mail.sender,
                                       trackingCode: mail.trackingCode,
-                                      hasPhoto: Boolean(mail.photoUrl),
                                     });
-                                    const waUrl = getWhatsappWebUrl(phone, msg);
+                                    const waUrl = getWhatsappWebUrl(phone, encodeURIComponent(text));
                                     return (
                                       <DropdownMenuItem asChild>
                                         <a
                                           href={waUrl}
-                                          onClick={(e) => openWhatsappWithFallback(phone, msg, e)}
+                                          onClick={(e) => void sendWhatsappWithPhoto(phone, text, mail.photoUrl, e)}
                                           className="cursor-pointer"
                                         >
                                           <MessageCircle className="h-4 w-4 mr-2 text-green-600" />
-                                          Enviar WhatsApp
+                                          Enviar WhatsApp {mail.photoUrl ? 'com foto' : ''}
                                         </a>
                                       </DropdownMenuItem>
                                     );

@@ -211,25 +211,54 @@ export const MailManagement = () => {
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
 
+  // Realça bordas do texto (unsharp mask) para compensar webcams sem foco
+  const sharpenCanvas = (canvas: HTMLCanvasElement, amount = 0.9) => {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
+    const { width: w, height: h } = canvas;
+    const src = ctx.getImageData(0, 0, w, h);
+    const out = ctx.createImageData(w, h);
+    const s = src.data, d = out.data;
+    const k = amount;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        for (let c = 0; c < 3; c++) {
+          if (x === 0 || y === 0 || x === w - 1 || y === h - 1) { d[i + c] = s[i + c]; continue; }
+          const center = s[i + c];
+          const lap = 4 * center - s[i - 4 + c] - s[i + 4 + c] - s[i - w * 4 + c] - s[i + w * 4 + c];
+          const v = center + k * lap;
+          d[i + c] = v < 0 ? 0 : v > 255 ? 255 : v;
+        }
+        d[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(out, 0, 0);
+  };
+
   const prepareLabelImage = async (file: File): Promise<string> => {
     const source = await createImageBitmap(file);
-    const maxDimension = 1800;
-    const scale = Math.min(1, maxDimension / Math.max(source.width, source.height));
+    const largest = Math.max(source.width, source.height);
+    // Amplia imagens pequenas e limita as muito grandes
+    const scale = largest < 1400 ? Math.min(2.5, 1600 / largest) : Math.min(1, 2000 / largest);
     const width = Math.max(1, Math.round(source.width * scale));
     const height = Math.max(1, Math.round(source.height * scale));
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
-    const context = canvas.getContext('2d');
+    const context = canvas.getContext('2d', { willReadFrequently: true });
     if (!context) {
       source.close();
       throw new Error('Não foi possível preparar a imagem');
     }
 
-    context.filter = 'contrast(1.2) brightness(1.05)';
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.filter = 'grayscale(1) contrast(1.6) brightness(1.08)';
     context.drawImage(source, 0, 0, width, height);
     source.close();
-    return canvas.toDataURL('image/jpeg', 0.92);
+    sharpenCanvas(canvas);
+    return canvas.toDataURL('image/jpeg', 0.95);
   };
 
   const scanWords = (value: string) => value

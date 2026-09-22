@@ -40,8 +40,6 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { PackageScanner } from '@/components/PackageScanner';
-import { ParsedPackageLabel, matchResident } from '@/lib/package-label-parser';
 import { ScanLine } from 'lucide-react';
 
 export const MailManagement = () => {
@@ -73,7 +71,6 @@ export const MailManagement = () => {
   const [editingMail, setEditingMail] = useState<Mail | null>(null);
   const [withdrawnBy, setWithdrawnBy] = useState('');
   const [webcamDialogOpen, setWebcamDialogOpen] = useState(false);
-  const [scannerOpen, setScannerOpen] = useState(false);
 
   const isMobileDevice = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
 
@@ -387,47 +384,6 @@ export const MailManagement = () => {
       } else {
         toast.error('Não foi possível acessar a câmera');
       }
-    }
-  };
-
-const handleScanResult = (parsed: ParsedPackageLabel) => {
-  // Determinar o tipo de pacote
-  let packageType: Mail['packageType'] = 'Pacote Médio';
-    if (parsed.packageType) {
-      const lower = parsed.packageType.toLowerCase();
-      if (lower.includes('grande')) packageType = 'Pacote Grande';
-      else if (lower.includes('pequeno') || lower.includes('carta')) packageType = lower.includes('carta') ? 'Carta' : 'Pacote Pequeno';
-      else if (lower.includes('m')) packageType = 'Pacote Médio';
-    }
-
-    // Buscar morador correspondente pela etiqueta
-    let residentId = formData.residentId;
-    let matchedResidentName: string | null = null;
-    if (!residentId && parsed.recipientName) {
-      const match = matchResident(parsed, residents);
-      if (match) {
-        residentId = match.resident.id;
-        matchedResidentName = match.resident.name;
-        toast.success(`Morador identificado: ${match.resident.name} - ${match.resident.apartment}`);
-      } else {
-        toast.info('Não foi possível identificar o morador pela etiqueta. Selecione manualmente.');
-      }
-    }
-
-    const notes = formData.notes || (parsed.recipientName ? `Destinatário da etiqueta: ${parsed.recipientName}` : '');
-
-    setFormData(prev => ({
-      ...prev,
-      residentId: residentId,
-      sender: parsed.sender || prev.sender || 'Não identificado',
-      trackingCode: parsed.trackingCode || prev.trackingCode || '',
-      packageType: packageType,
-      notes: notes,
-    }));
-
-    if (parsed.confidence >= 30) {
-      const extra = matchedResidentName ? ` para ${matchedResidentName}` : '';
-      toast.success(`Etiqueta escaneada! Remetente: ${parsed.sender}${extra}`);
     }
   };
 
@@ -902,14 +858,6 @@ const handleScanResult = (parsed: ParsedPackageLabel) => {
                     <Button type="button" variant="outline" size="sm" onClick={() => void startWebcam('photo')} className="flex items-center gap-1">
                       <Video className="h-4 w-4" /> Webcam
                     </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => setScannerOpen(true)}
-                      className="flex items-center gap-1 bg-primary hover:bg-primary/90"
-                    >
-                      <ScanLine className="h-4 w-4" /> Escanear Encomenda
-                    </Button>
                     <label className="flex items-center gap-1 cursor-pointer border rounded-lg px-3 py-1.5 text-sm hover:bg-muted transition-colors">
                       <Upload className="h-4 w-4" /> Arquivo
                       <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
@@ -1177,13 +1125,6 @@ const handleScanResult = (parsed: ParsedPackageLabel) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <PackageScanner
-        open={scannerOpen}
-        onOpenChange={setScannerOpen}
-        onScanResult={handleScanResult}
-        residents={residents}
-      />
     </div>
   );
 };

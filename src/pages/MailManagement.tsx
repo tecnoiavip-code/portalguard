@@ -870,12 +870,12 @@ export const MailManagement = () => {
                       </DialogTitle>
                       <DialogDescription>
                         {camMode === 'scan'
-                          ? 'Aproxime a etiqueta da câmera até o texto ficar nítido e clique em escanear.'
+                          ? 'Encaixe a etiqueta dentro da moldura, a cerca de 20 cm da câmera, segure firme e clique em escanear. A leitura leva alguns segundos.'
                           : 'Posicione a correspondência na frente da câmera e clique em capturar.'}
                       </DialogDescription>
                     </DialogHeader>
                     <div className="flex flex-col items-center gap-4">
-                      <div className="w-full rounded-xl overflow-hidden border-2 border-border bg-muted">
+                      <div className="relative w-full rounded-xl overflow-hidden border-2 border-border bg-muted">
                         <video
                           ref={videoCallbackRef}
                           autoPlay
@@ -883,11 +883,16 @@ export const MailManagement = () => {
                           muted
                           className="w-full h-auto max-h-[60vh] object-contain"
                         />
+                        {camMode === 'scan' && (
+                          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                            <div className="w-[86%] h-[62%] rounded-lg border-2 border-primary/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
+                          </div>
+                        )}
                       </div>
                       <div className="flex gap-3">
-                        <Button type="button" size="lg" onClick={() => void capturePhoto()} className="gap-2">
+                        <Button type="button" size="lg" onClick={() => void capturePhoto()} disabled={scanning} className="gap-2">
                           {camMode === 'scan' ? <ScanLine className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
-                          {camMode === 'scan' ? 'Escanear Etiqueta' : 'Capturar Foto'}
+                          {camMode === 'scan' ? (scanning ? 'Lendo...' : 'Escanear Etiqueta') : 'Capturar Foto'}
                         </Button>
                         <Button type="button" size="lg" variant="outline" onClick={stopWebcam}>
                           Cancelar

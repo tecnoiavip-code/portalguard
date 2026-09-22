@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,12 +8,14 @@ const corsHeaders = {
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY não configurada");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY não configurada na edge function");
+    }
 
     const body = await req.json().catch(() => ({}));
     const imageBase64: string | undefined = body?.imageBase64;
@@ -28,121 +30,101 @@ serve(async (req) => {
       });
     }
 
-    if (!/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(imageBase64)) {
-      return new Response(JSON.stringify({ error: "Formato de imagem inválido" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    // Aceita data URL ou base64 cru
+    const url = /^data:image\/(jpeg|jpg|png|webp);base64,/i.test(imageBase64)
+      ? imageBase64
+      : `data:image/jpeg;base64,${imageBase64}`;
 
-    if (imageBase64.length > 12_000_000) {
+    if (url.length > 12_000_000) {
       return new Response(JSON.stringify({ error: "Imagem muito grande" }), {
         status: 413,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const url = imageBase64.startsWith("data:")
-      ? imageBase64
-      : `data:image/jpeg;base64,${imageBase64}`;
+    const mimeMatch = /^data:(image\/(?:jpeg|jpg|png|webp));base64,/i.exec(url);
+    const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+    const base64Data = url.replace(/^data:image\/(jpeg|jpg|png|webp);base64,/i, "");
 
     const residentsList = residents
       .map((r) => `${r.name} | ${r.apartment}`)
       .join("\n");
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3.6-flash",
-        messages: [
-          {
-            role: "system",
-            content:
-              "Você lê etiquetas de encomendas e cartas brasileiras (Correios, Amazon, Mercado Livre, Shopee, transportadoras). " +
-              "Leia inclusive textos pequenos, inclinados ou parcialmente desfocados. Diferencie claramente DESTINATÁRIO de REMETENTE. " +
-              "Apartamento pode aparecer como AP, APT, UNIDADE, BL ou BLOCO. Código de rastreio costuma misturar letras e números. " +
-              "Nunca invente dados ausentes: use string vazia. Responda SOMENTE com a função extract_mail.",
-          },
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text:
-                  "Extraia os dados desta etiqueta.\n" +
-                  "Se houver correspondência com um morador da lista abaixo (nome parecido e/ou apartamento), retorne exatamente o nome e o apartamento como estão na lista.\n" +
-                  (residentsList ? `Moradores cadastrados (NOME | APARTAMENTO):\n${residentsList}` : "Sem lista de moradores."),
-              },
-              { type: "image_url", image_url: { url } },
-            ],
-          },
-        ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "extract_mail",
-              description: "Retorna os dados extraídos da etiqueta da correspondência",
-              parameters: {
-                type: "object",
-                properties: {
-                  recipientName: { type: "string", description: "Nome do destinatário" },
-                  apartment: { type: "string", description: "Apartamento/unidade do destinatário" },
-                  sender: { type: "string", description: "Remetente / loja / transportadora" },
-                  trackingCode: { type: "string", description: "Código de rastreio" },
-                  packageType: {
-                    type: "string",
-                    enum: ["Carta", "Pacote Pequeno", "Pacote Médio", "Pacote Grande"],
+    const prompt =
+      "Você lê etiquetas de encomendas e cartas brasileiras (Correios, Amazon, Mercado Livre, Shopee, transportadoras). " +
+      "Leia inclusive textos pequenos, inclinados ou parcialmente desfocados. Diferencie claramente DESTINATÁRIO de REMETENTE. " +
+      "Apartamento pode aparecer como AP, APT, UNIDADE, BL ou BLOCO. Código de rastreio costuma misturar letras e números. " +
+      "Nunca invente dados ausentes: use string vazia. " +
+      "Responda APENAS com um JSON válido, sem markdown, sem comentários, neste formato exato: " +
+      '{"recipientName":"","apartment":"","sender":"","trackingCode":"","packageType":"Carta","notes":""} ' +
+      'onde packageType é um de: "Carta","Pacote Pequeno","Pacote Médio","Pacote Grande".\n\n' +
+      "Extraia os dados desta etiqueta.\n" +
+      "Se houver correspondência com um morador da lista abaixo (nome parecido e/ou apartamento), " +
+      "retorne exatamente o nome e o apartamento como estão na lista.\n" +
+      (residentsList
+        ? `Moradores cadastrados (NOME | APARTAMENTO):\n${residentsList}`
+        : "Sem lista de moradores.");
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: prompt },
+                {
+                  inline_data: {
+                    mime_type: mimeType,
+                    data: base64Data,
                   },
-                  notes: { type: "string", description: "Outras informações relevantes" },
                 },
-                required: ["recipientName", "sender", "packageType"],
-                additionalProperties: false,
-              },
+              ],
             },
-          },
-        ],
-        tool_choice: { type: "function", function: { name: "extract_mail" } },
-      }),
-    });
+          ],
+        }),
+      },
+    );
 
     if (!response.ok) {
       const text = await response.text();
-      console.error("AI gateway error", response.status, text);
+      console.error("Gemini API error", response.status, text);
       const message =
         response.status === 429
           ? "Muitas solicitações. Tente novamente em instantes."
-          : response.status === 402
-          ? "Créditos de IA esgotados. Adicione créditos para continuar."
-          : "Falha ao processar a imagem.";
+          : response.status === 400
+          ? "A imagem enviada não pôde ser processada."
+          : `Falha ao processar a imagem no provedor de IA (${response.status}).`;
       return new Response(JSON.stringify({ error: message }), {
-        status: response.status,
+        status: response.status === 400 ? 422 : response.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const result = await response.json();
-    const message = result.choices?.[0]?.message;
-    const call = message?.tool_calls?.[0];
-    let data: Record<string, unknown> = {};
-    if (call?.function?.arguments) {
-      try {
-        data = JSON.parse(call.function.arguments);
-      } catch (_) {
-        data = {};
-      }
-    }
+    const content = result?.candidates?.[0]?.content?.parts
+      ?.map((p: { text?: string }) => p.text ?? "")
+      .join("") || "";
 
-    if (Object.keys(data).length === 0 && typeof message?.content === "string") {
-      try {
-        const cleaned = message.content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-        data = JSON.parse(cleaned);
-      } catch (_) {
-        data = {};
+    // Extrai JSON puro mesmo se vier envolto em markdown/ruído
+    let data: Record<string, unknown> = {};
+    const cleaned = content
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/, "")
+      .trim();
+    try {
+      data = JSON.parse(cleaned);
+    } catch (_) {
+      const firstBrace = content.indexOf("{");
+      const lastBrace = content.lastIndexOf("}");
+      if (firstBrace !== -1 && lastBrace > firstBrace) {
+        try {
+          data = JSON.parse(content.slice(firstBrace, lastBrace + 1));
+        } catch (_) {
+          data = {};
+        }
       }
     }
 

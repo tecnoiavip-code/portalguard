@@ -283,7 +283,18 @@ export const MailManagement = () => {
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        // Extrai a mensagem real do corpo da resposta (FunctionsHttpError expõe .context como Response)
+        let fnMessage = '';
+        try {
+          const res = (error as unknown as { context?: Response }).context;
+          if (res) {
+            const body = await res.json().catch(() => null);
+            if (body?.error) fnMessage = String(body.error);
+          }
+        } catch { /* mantém vazio */ }
+        throw new Error(fnMessage || error.message);
+      }
 
       const scanned = data?.data as {
         recipientName?: string;

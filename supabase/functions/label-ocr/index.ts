@@ -12,9 +12,9 @@ serve(async (req) => {
   }
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY is not configured");
     }
 
     const { imageBase64 } = await req.json();
@@ -26,20 +26,16 @@ serve(async (req) => {
       );
     }
 
+    const dataUrl = /^data:image\/(jpeg|jpg|png|webp);base64,/i.test(imageBase64)
+      ? imageBase64
+      : `data:image/jpeg;base64,${imageBase64}`;
+    const mimeMatch = /^data:(image\/(?:jpeg|jpg|png|webp));base64,/i.exec(dataUrl);
+    const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+    const base64Data = dataUrl.replace(/^data:image\/(jpeg|jpg|png|webp);base64,/i, "");
+
     console.log("Processing label OCR...");
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          {
-            role: "system",
-            content: `You are a shipping label OCR specialist. Extract ALL readable text from the provided shipping/package label image.
+    const prompt = `You are a shipping label OCR specialist. Extract ALL readable text from the provided shipping/package label image.
 
 Focus on extracting:
 - Sender/shipper name (REMIMENTE, DE, SOLD BY, VENDIDO POR)
@@ -53,26 +49,30 @@ Focus on extracting:
 - Shipping company (Mercado Livre, Amazon, Loggi, Correios, Jadlog, Sequoia, Total Express, Intelipost, etc.)
 - Package type/weight if visible
 
-Output ALL text exactly as printed on the label, line by line. Do not summarize or interpret - just extract the raw text as accurately as possible. Include everything: logos, headers, barcodes numbers, etc.`,
-          },
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Extract all text from this shipping/package label. Return the raw text line by line.",
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:image/jpeg;base64,${imageBase64}`,
+Output ALL text exactly as printed on the label, line by line. Do not summarize or interpret - just extract the raw text as accurately as possible. Include everything: logos, headers, barcodes numbers, etc.`;
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: prompt },
+                {
+                  inline_data: {
+                    mime_type: mimeType,
+                    data: base64Data,
+                  },
                 },
-              },
-            ],
-          },
-        ],
-      }),
-    });
+              ],
+            },
+          ],
+        }),
+      },
+    );
 
     if (!response.ok) {
       if (response.status === 429) {
@@ -81,19 +81,15 @@ Output ALL text exactly as printed on the label, line by line. Do not summarize 
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
-      if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: "AI credits exhausted. Please add credits to continue." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
-      }
       const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
-      throw new Error(`AI gateway error: ${response.status}`);
+      console.error("Gemini API error:", response.status, errorText);
+      throw new Error(`Gemini API error: ${response.status}`);
     }
 
     const result = await response.json();
-    const extractedText = result.choices?.[0]?.message?.content || "";
+    const extractedText = result?.candidates?.[0]?.content?.parts
+      ?.map((p: { text?: string }) => p.text ?? "")
+      .join("") || "";
 
     console.log(`Label OCR extracted ${extractedText.length} characters`);
 

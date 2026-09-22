@@ -10,6 +10,20 @@ type AccessEntryRow = Database['public']['Tables']['access_entries']['Row'];
 // Helper to uppercase string fields (except email and urls)
 const up = (val: string | null | undefined): string | null => val ? val.toUpperCase() : val as null;
 
+const notifyError = (action: string, error: any) => {
+  console.error(`Error during ${action}:`, error);
+  const msg = error?.message || '';
+  if (error?.code === '42501' || msg.includes('row-level security') || msg.includes('RLS')) {
+    import('sonner').then(({ toast }) => {
+      toast.error('Sem permissão de gravação. Faça login no aplicativo.');
+    });
+  } else if (msg) {
+    import('sonner').then(({ toast }) => {
+      toast.error(`Erro no banco: ${msg}`);
+    });
+  }
+};
+
 export const supabaseStorage = {
   // Residents
   async getResidents(includePhotos = false): Promise<Resident[] | null> {

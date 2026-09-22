@@ -40,6 +40,9 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { PackageScanner } from '@/components/PackageScanner';
+import { ParsedPackageLabel, matchResident } from '@/lib/package-label-parser';
+import { ScanLine } from 'lucide-react';
 
 export const MailManagement = () => {
   const { mails, saveMail, deleteMail } = useMails();
@@ -70,6 +73,7 @@ export const MailManagement = () => {
   const [editingMail, setEditingMail] = useState<Mail | null>(null);
   const [withdrawnBy, setWithdrawnBy] = useState('');
   const [webcamDialogOpen, setWebcamDialogOpen] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   const isMobileDevice = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
 
@@ -365,8 +369,13 @@ export const MailManagement = () => {
         if (focusModes?.includes('continuous')) advanced.push({ focusMode: 'continuous' });
         const sharpness = caps.sharpness as { max?: number } | undefined;
         if (sharpness?.max) advanced.push({ sharpness: sharpness.max });
+        const whiteBalanceModes = caps.whiteBalanceMode as string[] | undefined;
+        if (whiteBalanceModes?.includes('auto')) advanced.push({ whiteBalanceMode: 'auto' });
+        const exposureModes = caps.exposureMode as string[] | undefined;
+        if (exposureModes?.includes('auto')) advanced.push({ exposureMode: 'auto' });
         if (advanced.length) await track.applyConstraints({ advanced } as MediaTrackConstraints);
       } catch { /* recurso opcional */ }
+
       streamRef.current = stream;
       setWebcamActive(true);
       setWebcamDialogOpen(true);
@@ -381,6 +390,46 @@ export const MailManagement = () => {
     }
   };
 
+const handleScanResult = (parsed: ParsedPackageLabel) => {
+  // Determinar o tipo de pacote
+  let packageType: Mail['packageType'] = 'Pacote Médio';
+    if (parsed.packageType) {
+      const lower = parsed.packageType.toLowerCase();
+      if (lower.includes('grande')) packageType = 'Pacote Grande';
+      else if (lower.includes('pequeno') || lower.includes('carta')) packageType = lower.includes('carta') ? 'Carta' : 'Pacote Pequeno';
+      else if (lower.includes('m')) packageType = 'Pacote Médio';
+    }
+
+    // Buscar morador correspondente pela etiqueta
+    let residentId = formData.residentId;
+    let matchedResidentName: string | null = null;
+    if (!residentId && parsed.recipientName) {
+      const match = matchResident(parsed, residents);
+      if (match) {
+        residentId = match.resident.id;
+        matchedResidentName = match.resident.name;
+        toast.success(`Morador identificado: ${match.resident.name} - ${match.resident.apartment}`);
+      } else {
+        toast.info('Não foi possível identificar o morador pela etiqueta. Selecione manualmente.');
+      }
+    }
+
+    const notes = formData.notes || (parsed.recipientName ? `Destinatário da etiqueta: ${parsed.recipientName}` : '');
+
+    setFormData(prev => ({
+      ...prev,
+      residentId: residentId,
+      sender: parsed.sender || prev.sender || 'Não identificado',
+      trackingCode: parsed.trackingCode || prev.trackingCode || '',
+      packageType: packageType,
+      notes: notes,
+    }));
+
+    if (parsed.confidence >= 30) {
+      const extra = matchedResidentName ? ` para ${matchedResidentName}` : '';
+      toast.success(`Etiqueta escaneada! Remetente: ${parsed.sender}${extra}`);
+    }
+  };
 
   // Attach stream to video element after it renders in dialog
   const videoCallbackRef = useCallback((node: HTMLVideoElement | null) => {
@@ -853,6 +902,14 @@ export const MailManagement = () => {
                     <Button type="button" variant="outline" size="sm" onClick={() => void startWebcam('photo')} className="flex items-center gap-1">
                       <Video className="h-4 w-4" /> Webcam
                     </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => setScannerOpen(true)}
+                      className="flex items-center gap-1 bg-primary hover:bg-primary/90"
+                    >
+                      <ScanLine className="h-4 w-4" /> Escanear Encomenda
+                    </Button>
                     <label className="flex items-center gap-1 cursor-pointer border rounded-lg px-3 py-1.5 text-sm hover:bg-muted transition-colors">
                       <Upload className="h-4 w-4" /> Arquivo
                       <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
@@ -869,8 +926,8 @@ export const MailManagement = () => {
                         {camMode === 'scan' ? 'Escanear Etiqueta' : 'Capturar Foto da Correspondência'}
                       </DialogTitle>
                       <DialogDescription>
-                        {camMode === 'scan'
-                          ? 'Encaixe a etiqueta dentro da moldura, a cerca de 20 cm da câmera, segure firme e clique em escanear. A leitura leva alguns segundos.'
+{camMode === 'scan'
+                          ? 'Encaixe a etiqueta dentro da moldura, a cerca de 20 cm da câmera, segure firme e clique em escanear. A leitura leva alguns segundos. Para câmeras sem foco manual, segure a etiqueta a ~15-20cm da lente.'
                           : 'Posicione a correspondência na frente da câmera e clique em capturar.'}
                       </DialogDescription>
                     </DialogHeader>
@@ -1120,6 +1177,13 @@ export const MailManagement = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <PackageScanner
+        open={scannerOpen}
+        onOpenChange={setScannerOpen}
+        onScanResult={handleScanResult}
+        residents={residents}
+      />
     </div>
   );
 };

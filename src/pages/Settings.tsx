@@ -382,6 +382,74 @@ export const Settings = () => {
 
           toast.info('Restaurando backup no banco atual...');
 
+          // Preencher IDs válidos de auth.users do banco destino para evitar violação de FK
+          const validUserIds = new Set<string>();
+          try {
+            const { data: { user: currentUser } } = await supabase.auth.getUser();
+            if (currentUser?.id) validUserIds.add(currentUser.id);
+
+            const { data: profiles } = await supabase.from('profiles').select('id');
+            if (profiles) profiles.forEach(p => validUserIds.add(p.id));
+
+            const { data: roles } = await supabase.from('user_roles').select('user_id');
+            if (roles) roles.forEach(r => validUserIds.add(r.user_id));
+          } catch (err) {
+            console.warn('[restore] Erro ao carregar usuários locais:', err);
+          }
+
+          // Preencher IDs de residentes existentes
+          const existingResidentIds = new Set<string>();
+          try {
+            const { data: dbRes } = await supabase.from('residents').select('id');
+            if (dbRes) dbRes.forEach(r => existingResidentIds.add(r.id));
+          } catch (err) {
+            console.warn('[restore] Erro ao carregar residentes locais:', err);
+          }
+
+          const AUTH_USER_FK_FIELDS = [
+            'created_by', 'registered_by', 'withdrawn_by',
+            'reported_by', 'resolved_by', 'blocked_by',
+            'auth_user_id', 'reviewed_by', 'granted_by'
+          ];
+
+          const sanitizeRow = (table: string, row: Record<string, any>) => {
+            const sanitized = { ...row };
+
+            // 1. Sanitizar FKs que apontam para auth.users(id) se o usuário não existir no banco local/destino
+            for (const field of AUTH_USER_FK_FIELDS) {
+              if (sanitized[field] && typeof sanitized[field] === 'string') {
+                if (!validUserIds.has(sanitized[field])) {
+                  sanitized[field] = null;
+                }
+              }
+            }
+
+            if ((table === 'realtime_events' || table === 'notifications') && sanitized.user_id) {
+              if (!validUserIds.has(sanitized.user_id)) {
+                sanitized.user_id = null;
+              }
+            }
+
+            // 2. Tabela moradores: converter CPF/email vazios ("") para NULL para não violar UNIQUE constraint no Postgres
+            if (table === 'residents') {
+              if (sanitized.cpf !== undefined && (sanitized.cpf === null || String(sanitized.cpf).trim() === '')) {
+                sanitized.cpf = null;
+              }
+              if (sanitized.email !== undefined && (sanitized.email === null || String(sanitized.email).trim() === '')) {
+                sanitized.email = null;
+              }
+            }
+
+            // 3. Tabela de acessos e correspondências: validar se resident_id existe se preenchido
+            if ((table === 'access_entries' || table === 'mails') && sanitized.resident_id) {
+              if (existingResidentIds.size > 0 && !existingResidentIds.has(sanitized.resident_id)) {
+                sanitized.resident_id = null;
+              }
+            }
+
+            return sanitized;
+          };
+
           for (const table of ORDER) {
             const possibleKeys = TABLE_ALIASES[table] || [table];
             let rawRows: any[] = [];
@@ -395,7 +463,20 @@ export const Settings = () => {
 
             if (rawRows.length === 0) continue;
 
-            const rows = rawRows.map(r => normalizeRow(r));
+            let rows = rawRows.map(r => normalizeRow(r));
+
+            // Filtrar tabelas de perfil/roles se apontarem para usuários inexistentes no destino
+            if (table === 'profiles') {
+              rows = rows.filter(r => r.id && validUserIds.has(r.id));
+            } else if (table === 'user_roles') {
+              rows = rows.filter(r => r.user_id && validUserIds.has(r.user_id));
+            }
+
+            if (rows.length === 0) continue;
+
+            // Sanitizar chaves estrangeiras e valores
+            rows = rows.map(r => sanitizeRow(table, r));
+
             let ok = 0, fail = 0, lastErr = '';
 
             for (let i = 0; i < rows.length; i += CHUNK) {
@@ -417,10 +498,16 @@ export const Settings = () => {
                     console.error(`[restore] ${table} erro na linha:`, rowErr.message, row);
                   } else {
                     ok++;
+                    if (table === 'residents' && row.id) {
+                      existingResidentIds.add(row.id);
+                    }
                   }
                 }
               } else {
                 ok += chunk.length;
+                if (table === 'residents') {
+                  chunk.forEach(r => r.id && existingResidentIds.add(r.id));
+                }
               }
             }
 

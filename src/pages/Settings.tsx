@@ -864,15 +864,16 @@ export const Settings = () => {
           </CardHeader>
           <CardContent>
             <Button
-              onClick={handleClearData}
+              onClick={handleCleanOldLogs}
               variant="destructive"
               className="w-full"
+              disabled={cleaningLogs}
             >
               <Trash2 className="h-4 w-4 mr-2" />
-              Limpar Todos os Dados
+              {cleaningLogs ? 'Limpando...' : 'Limpar Logs de Acesso Antigos (+60 dias)'}
             </Button>
             <p className="text-xs text-muted-foreground mt-2">
-              Esta ação removerá permanentemente todos os moradores, correspondências e registros de acesso.
+              Remove apenas os registros de entrada/saída com mais de 60 dias. Cadastros de pessoas, veículos e empresas são sempre preservados.
             </p>
           </CardContent>
         </Card>

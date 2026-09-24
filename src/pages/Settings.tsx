@@ -775,17 +775,31 @@ export const Settings = () => {
     input.click();
   };
 
-  const handleClearData = () => {
-    if (!confirm('ATENÇÃO: Isso removerá TODOS os dados do sistema. Esta ação não pode ser desfeita. Deseja continuar?')) {
+  const [cleaningLogs, setCleaningLogs] = useState(false);
+
+  // Limpa APENAS logs de acesso com mais de 60 dias.
+  // Cadastros de pessoas (moradores, visitantes), veículos e empresas NUNCA são excluídos.
+  const handleCleanOldLogs = async () => {
+    if (!confirm('Isso removerá apenas os LOGS DE ACESSO com mais de 60 dias. Cadastros de pessoas, veículos e empresas serão mantidos. Continuar?')) {
       return;
     }
 
-    if (!confirm('Última confirmação: Tem certeza absoluta?')) {
-      return;
-    }
+    setCleaningLogs(true);
+    try {
+      const cutoff = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+      const { error, count } = await supabase
+        .from('access_entries')
+        .delete({ count: 'exact' })
+        .lt('entry_time', cutoff);
 
-    localStorage.clear();
-    toast.success('Todos os dados foram removidos. Recarregue a página.');
+      if (error) throw error;
+      toast.success(`Limpeza concluída: ${count ?? 0} logs antigos removidos. Cadastros preservados.`);
+    } catch (err) {
+      console.error('Erro na limpeza de logs:', err);
+      toast.error('Erro ao limpar logs antigos');
+    } finally {
+      setCleaningLogs(false);
+    }
   };
 
   return (

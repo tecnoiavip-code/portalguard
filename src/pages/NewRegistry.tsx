@@ -995,8 +995,8 @@ export const NewRegistry = () => {
 
               {showSuggestions && suggestions.length > 0 && <div className="p-2 bg-primary/10 border border-primary rounded-lg">
                   <p className="text-xs font-semibold text-primary mb-1">✨ Cadastros encontrados:</p>
-                  <div className="flex gap-2 flex-wrap">
-                    {suggestions.map(suggestion => <button key={suggestion.id} type="button" onClick={() => applySuggestion(suggestion)} className="text-left p-2 bg-background rounded hover:bg-muted transition-colors text-xs flex-1 min-w-[150px]">
+                  <div className="flex flex-col gap-2">
+                    {suggestions.map(suggestion => <button key={suggestion.id} type="button" onClick={() => applySuggestion(suggestion)} className="text-left p-2 bg-background rounded hover:bg-muted transition-colors text-xs min-w-[150px] w-full">
                         <p className="font-medium">{suggestion.visitorName}</p>
                         <p className="text-muted-foreground">
                           Doc: {suggestion.visitorDocument}

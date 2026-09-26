@@ -764,7 +764,7 @@ export const NewRegistry = () => {
                               <Button
                                 size="sm"
                                 onClick={(e) => e.stopPropagation()}
-                                className="h-8 bg-primary text-primary-foreground hover:bg-primary/90"
+                                className="h-8 bg-success text-success-foreground hover:bg-success/90"
                               >
                                 Ações
                                 <ChevronDown className="h-4 w-4 ml-1" />

@@ -243,7 +243,7 @@ export const Reports = () => {
   };
 
   const loadCurrentShiftAck = async (shiftId: string) => {
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('shift_acknowledgments')
       .select('*')
       .eq('shift_id', shiftId)
@@ -375,7 +375,7 @@ export const Reports = () => {
     if (incidentPhoto) {
       const uploaded = await supabaseStorage.uploadIncidentPhoto(data.id, incidentPhoto);
       if (uploaded) {
-        await supabase.from('incidents').update({ photo_url: 'photo' }).eq('id', data.id);
+        await (supabase as any).from('incidents').update({ photo_url: 'photo' }).eq('id', data.id);
       }
     }
     toast.success('Ocorrência registrada');
@@ -397,7 +397,7 @@ export const Reports = () => {
       toast.error('Informe o nome de quem recebe o turno');
       return;
     }
-    const { error } = await supabase.from('shift_acknowledgments').insert({
+    const { error } = await (supabase as any).from('shift_acknowledgments').insert({
       shift_id: currentShift.id,
       received_by: ackName.trim(),
       notes: ackNotes.trim() || null,

@@ -858,14 +858,19 @@ export type Database = {
           authorized_date: string
           authorized_until: string | null
           created_at: string | null
+          entry_count: number
           id: string
           purpose: string | null
+          qr_code_token: string | null
           resident_id: string
           reviewed_by: string | null
+          single_use: boolean
           staff_notes: string | null
           status: string | null
           updated_at: string | null
+          used_at: string | null
           vehicle_plate: string | null
+          vehicle_model: string | null
           visitor_document: string | null
           visitor_name: string
         }
@@ -873,14 +878,19 @@ export type Database = {
           authorized_date: string
           authorized_until?: string | null
           created_at?: string | null
+          entry_count?: number
           id?: string
           purpose?: string | null
+          qr_code_token?: string | null
           resident_id: string
           reviewed_by?: string | null
+          single_use?: boolean
           staff_notes?: string | null
           status?: string | null
           updated_at?: string | null
+          used_at?: string | null
           vehicle_plate?: string | null
+          vehicle_model?: string | null
           visitor_document?: string | null
           visitor_name: string
         }
@@ -888,14 +898,19 @@ export type Database = {
           authorized_date?: string
           authorized_until?: string | null
           created_at?: string | null
+          entry_count?: number
           id?: string
           purpose?: string | null
+          qr_code_token?: string | null
           resident_id?: string
           reviewed_by?: string | null
+          single_use?: boolean
           staff_notes?: string | null
           status?: string | null
           updated_at?: string | null
+          used_at?: string | null
           vehicle_plate?: string | null
+          vehicle_model?: string | null
           visitor_document?: string | null
           visitor_name?: string
         }
@@ -929,6 +944,30 @@ export type Database = {
           _type: string
         }
         Returns: undefined
+      }
+      redeem_guest_pass: {
+        Args: {
+          _photo_url?: string | null
+          _token: string
+          _vehicle_model?: string | null
+          _vehicle_plate?: string | null
+        }
+        Returns: Json
+      }
+      update_guest_pass: {
+        Args: {
+          _single_use?: boolean | null
+          _token: string
+          _vehicle_model?: string | null
+          _vehicle_plate?: string | null
+        }
+        Returns: Json
+      }
+      validate_guest_pass: {
+        Args: {
+          _token: string
+        }
+        Returns: Json
       }
     }
     Enums: {

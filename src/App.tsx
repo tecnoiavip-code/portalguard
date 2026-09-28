@@ -13,6 +13,7 @@ import ResidentAuth from "./pages/resident/ResidentAuth";
 import ResidentApp from "./pages/resident/ResidentApp";
 import ResetPassword from "./pages/ResetPassword";
 import OAuthConsent from "./pages/OAuthConsent";
+import GuestPass from "./pages/guest/GuestPass";
 
 const App = () => (
   <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
@@ -28,6 +29,7 @@ const App = () => (
             <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
             <Route path="/morador/login" element={<ResidentAuth />} />
             <Route path="/morador" element={<ResidentApp />} />
+            <Route path="/convite/:token" element={<GuestPass />} />
             <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>

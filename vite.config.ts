@@ -58,9 +58,10 @@ export default defineConfig(({ mode }) => ({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+    dedupe: ["react", "react-dom", "react/jsx-runtime"],
   },
   optimizeDeps: {
-    include: ['pdfjs-dist'],
+    include: ['pdfjs-dist', 'react', 'react-dom', 'react/jsx-runtime', 'next-themes', 'react-router-dom'],
   },
   build: {
     target: 'es2022',

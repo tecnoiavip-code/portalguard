@@ -175,7 +175,7 @@ export const supabaseStorage = {
         const { data: signedUrl } = await supabase.storage
           .from('resident-photos')
           .createSignedUrl(`${path}/${files[0].name}`, 3600);
-        return signedUrl || '';
+        return signedUrl?.signedUrl || '';
       }
     } catch (err) {
       console.error('Error in getIncidentPhoto:', err);

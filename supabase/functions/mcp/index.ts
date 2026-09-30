@@ -176,7 +176,7 @@ var list_announcements_default = defineTool5({
 });
 
 // src/lib/mcp/index.ts
-var projectRef = "kxdqffkkufgsizszchvw";
+var projectRef = "uqbxicxpphcfcofufxca";
 var mcp_default = defineMcp({
   name: "portalguard-mcp",
   title: "PortalGuard MCP",

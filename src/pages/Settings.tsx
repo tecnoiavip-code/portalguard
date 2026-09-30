@@ -12,6 +12,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useState, useEffect } from 'react';
 import { parseBackupPayload } from '@/lib/backup-import';
+import canonicalSupabase from '../../config/supabase.json';
 
 // Funções auxiliares para CSV
 const arrayToCSV = (data: any[], headers: string[]) => {
@@ -67,14 +68,14 @@ export const Settings = () => {
   const [passwordError, setPasswordError] = useState(false);
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-  let webhookHost = 'uqbxicxpphcfcofufxca.supabase.co';
+  let webhookHost = new URL(canonicalSupabase.url).host;
   let isLocal = false;
   try {
     const urlObj = new URL(supabaseUrl);
     webhookHost = urlObj.host; // Inclui a porta (ex: 127.0.0.1:54321)
     isLocal = urlObj.hostname === 'localhost' || urlObj.hostname === '127.0.0.1';
   } catch {
-    webhookHost = 'uqbxicxpphcfcofufxca.supabase.co';
+    webhookHost = new URL(canonicalSupabase.url).host;
   }
   const monitorPath = '/functions/v1/controlid-webhook';
   const pushAddress = isLocal ? `http://${webhookHost}${monitorPath}` : `https://${webhookHost}${monitorPath}`;

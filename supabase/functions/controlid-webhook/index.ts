@@ -288,6 +288,103 @@ const resolveDeviceType = async (supabaseClient: any, deviceId: string): Promise
   }
 };
 
+// ============= CENTRAL ACCESS DECISION ENGINE =============
+// The database is the judge. If the DB doesn't answer within the budget, we
+// fall back to the device decision (hybrid contingency) so the gate never hangs.
+const DECISION_TIMEOUT_MS = 2500;
+
+type AccessDecision = { allow: boolean; reason: string; source: 'db' | 'fallback'; resident?: string };
+
+const normalizeName = (s: string) =>
+  s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
+const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise<AccessDecision> => {
+  const work = (async (): Promise<AccessDecision> => {
+    const incomingEvent = Number.parseInt(String(payload?.event ?? '0'), 10);
+    const cardValue = sanitizeString(String(payload?.card_value ?? ''), 100).replace(/^0+/, '');
+    const userName = sanitizeString(String(payload?.user_name || payload?.name || ''), 200);
+    let resident: any = null;
+
+    if (cardValue && cardValue !== '0') {
+      const { data } = await supabaseClient
+        .from('residents')
+        .select('id, name, apartment, contract_type, contract_end_date, vehicle_tag')
+        .or(`vehicle_tag.eq.${cardValue},vehicle_tag.eq.${String(payload?.card_value ?? '')}`)
+        .limit(1)
+        .maybeSingle();
+      resident = data;
+    }
+
+    if (!resident && userName) {
+      const m = userName.match(/^(\d+\w?)\s*[-–]\s*(.+)$/i);
+      if (m) {
+        const [, apt, n] = m;
+        const { data } = await supabaseClient
+          .from('residents')
+          .select('id, name, apartment, contract_type, contract_end_date')
+          .ilike('apartment', `%${apt.trim()}`);
+        const target = normalizeName(n);
+        resident = (data || []).find((r: any) => {
+          const rn = normalizeName(r.name);
+          return rn.includes(target) || target.includes(rn);
+        }) || ((data || []).length === 1 ? data[0] : null);
+      }
+    }
+
+    if (resident) {
+      if (resident.contract_end_date) {
+        const today = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10); // America/Sao_Paulo
+        if (resident.contract_end_date < today) {
+          return { allow: false, reason: 'Contrato vencido', source: 'db', resident: resident.name };
+        }
+      }
+      return { allow: true, reason: 'Morador ativo', source: 'db', resident: resident.name };
+    }
+
+    // Not a resident: check restriction list by name
+    if (userName) {
+      const cleanName = userName.replace(/^(\d+\w?)\s*[-–]\s*/, '').trim();
+      const { data: blocked } = await supabaseClient
+        .from('blocked_visitors')
+        .select('id')
+        .eq('is_active', true)
+        .ilike('visitor_name', cleanName)
+        .limit(1)
+        .maybeSingle();
+      if (blocked) return { allow: false, reason: 'Pessoa bloqueada', source: 'db' };
+    }
+
+    if (incomingEvent === 3 || incomingEvent === 6) {
+      return { allow: false, reason: 'Não identificado', source: 'db' };
+    }
+    // Known by the device (staff, service providers registered locally): allow.
+    return { allow: true, reason: 'Cadastro no equipamento', source: 'db' };
+  })();
+
+  const timeout = new Promise<AccessDecision>((resolve) =>
+    setTimeout(() => resolve({ allow: true, reason: 'Timeout - decisão do equipamento', source: 'fallback' }), DECISION_TIMEOUT_MS)
+  );
+  try {
+    return await Promise.race([work, timeout]);
+  } catch (e) {
+    console.error('Central decision error:', e);
+    return { allow: true, reason: 'Erro - decisão do equipamento', source: 'fallback' };
+  }
+};
+
+const buildDeniedResponse = (payload: any, url: URL) => {
+  const userId = Number.parseInt(String(payload?.user_id ?? '0'), 10);
+  const portalId = Number.parseInt(String(payload?.portal_id ?? '1'), 10);
+  const result = {
+    event: 6,
+    user_id: Number.isFinite(userId) ? userId : 0,
+    user_name: sanitizeString(payload?.user_name || payload?.name || '', 200),
+    user_image: false,
+    portal_id: Number.isFinite(portalId) && portalId > 0 ? portalId : 1,
+  };
+  return url.pathname.toLowerCase().includes('.fcgi') ? { result } : result;
+};
+
 const tryParseJsonString = (value: unknown) => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -564,7 +661,9 @@ Deno.serve(async (req) => {
 
       // No pending commands — check if we need to auto-refresh push config
       // to prevent devices from dropping connection after ~90 minutes
-      if (deviceId) {
+      // Disabled by default: devices configured with the local utility keep
+      // their settings in flash; periodic re-sends were overwriting them.
+      if (deviceId && Deno.env.get('CONTROLID_AUTO_REFRESH') === '1') {
         const now = Date.now();
         const lastCheck = lastConfigRefreshCheckMap.get(deviceId) || 0;
         if (now - lastCheck > CONFIG_REFRESH_CHECK_INTERVAL_MS) {
@@ -890,8 +989,14 @@ Deno.serve(async (req) => {
     // Critical: the device has a short timeout (~15s) and will NOT open the door if
     // the response is delayed by database operations.
     if (eventType === 'identification_event') {
-      const deviceType = await resolveDeviceType(supabaseClient, effectiveDeviceId);
-      const identResponse = buildIdentificationResponse(payload, url, deviceType);
+      const [deviceType, decision] = await Promise.all([
+        resolveDeviceType(supabaseClient, effectiveDeviceId),
+        evaluateCentralAccess(supabaseClient, payload),
+      ]);
+      const identResponse = decision.allow
+        ? buildIdentificationResponse(payload, url, deviceType)
+        : buildDeniedResponse(payload, url);
+      console.log('Central access decision:', { device_id: effectiveDeviceId, ...decision });
       console.log('Identification response (immediate):', {
         device_id: effectiveDeviceId,
         device_type: deviceType,

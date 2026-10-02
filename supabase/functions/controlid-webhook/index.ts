@@ -348,7 +348,7 @@ const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise
         .from('blocked_visitors')
         .select('id')
         .eq('is_active', true)
-        .ilike('name', cleanName)
+        .ilike('visitor_name', cleanName)
         .limit(1)
         .maybeSingle();
       if (blocked) return { allow: false, reason: 'Pessoa bloqueada', source: 'db' };

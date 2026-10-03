@@ -11,6 +11,7 @@ import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 import { setAppBadge } from '@/lib/pwa-badge';
 import { notifyResident, requestNotificationPermission } from '@/lib/pwa-notify';
 import { subscribeToPush, sendPushToUser } from '@/lib/push-subscription';
+import { PanicButton } from '@/components/resident/PanicButton';
 
 interface ResidentLayoutProps {
   children: ReactNode;
@@ -347,6 +348,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
             </div>
           </div>
           <div className="flex items-center gap-1">
+            <PanicButton />
             <ThemeToggle />
             <Button
               variant="ghost"

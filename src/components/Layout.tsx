@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { PanicAlertMonitor } from '@/components/PanicAlertMonitor';
 
 interface LayoutProps {
   children: ReactNode;
@@ -194,6 +195,7 @@ export const Layout = ({ children }: LayoutProps) => {
       <div className="flex">
         {children}
       </div>
+      <PanicAlertMonitor />
     </div>
   );
 };

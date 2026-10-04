@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Shield, ShieldCheck, Loader2 } from 'lucide-react';
+import { Shield, ShieldCheck, Loader2, X } from 'lucide-react';
 
 const db = supabase as any;
 const HOLD_MS = 2000;
@@ -106,6 +106,11 @@ export const PanicButton = () => {
           onPointerDownOutside={e => e.preventDefault()}
           onInteractOutside={e => e.preventDefault()}
         >
+          {step === 'error' && (
+            <Button variant="ghost" size="icon" className="absolute right-3 top-3 h-8 w-8" aria-label="Fechar aviso" onClick={() => { reset(); setOpen(false); }}>
+              <X className="h-4 w-4" />
+            </Button>
+          )}
           <DialogTitle className="text-center">Segurança</DialogTitle>
           <DialogDescription className="text-center">
             {step === 'idle' && 'Segure o botão por 2 segundos para chamar a guarita em modo discreto.'}

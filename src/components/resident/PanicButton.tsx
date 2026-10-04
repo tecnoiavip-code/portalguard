@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Shield, ShieldCheck, Loader2 } from 'lucide-react';
+import { Shield, ShieldCheck, Loader2, X } from 'lucide-react';
 
 const db = supabase as any;
 const HOLD_MS = 2000;
@@ -24,6 +24,7 @@ export const PanicButton = () => {
   const [countdown, setCountdown] = useState(AUTO_SEND_S);
   const [cancelLeft, setCancelLeft] = useState(CANCEL_S);
   const [alertId, setAlertId] = useState<string | null>(null);
+  const [lastLocation, setLastLocation] = useState('other');
   const holdRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sentRef = useRef(false);
@@ -40,17 +41,24 @@ export const PanicButton = () => {
   const send = async (location: string) => {
     if (sentRef.current) return;
     sentRef.current = true;
+    setLastLocation(location);
     clearTimer();
     setStep('sending');
-    const { data, error } = await db.rpc('trigger_panic_alert', { _location: location });
-    if (error) { setStep('error'); return; }
-    setAlertId(data as string);
-    setStep('sent');
-    if (navigator.vibrate) navigator.vibrate(80);
-    setCancelLeft(CANCEL_S);
-    timerRef.current = setInterval(() => {
-      setCancelLeft(s => { if (s <= 1) { clearTimer(); return 0; } return s - 1; });
-    }, 1000);
+    try {
+      const { data, error } = await db.rpc('trigger_panic_alert', { _location: location });
+      if (error || !data) throw error || new Error('Alerta sem confirmação');
+      setAlertId(data as string);
+      setStep('sent');
+      if (navigator.vibrate) navigator.vibrate(80);
+      setCancelLeft(CANCEL_S);
+      timerRef.current = setInterval(() => {
+        setCancelLeft(s => { if (s <= 1) { clearTimer(); return 0; } return s - 1; });
+      }, 1000);
+    } catch (error) {
+      console.error('Falha ao comunicar a guarita:', error);
+      sentRef.current = false;
+      setStep('error');
+    }
   };
 
   const startHold = () => {
@@ -88,16 +96,21 @@ export const PanicButton = () => {
 
   return (
     <>
-      <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl" onClick={() => { reset(); setOpen(true); }} aria-label="Segurança">
+      <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => { reset(); setOpen(true); }} aria-label="Segurança">
         <Shield className="h-5 w-5" />
       </Button>
       <Dialog open={open} onOpenChange={() => {}}>
         <DialogContent
-          className="max-w-sm [&>button]:hidden"
+          className="max-w-sm [&>button:last-child]:hidden"
           onEscapeKeyDown={e => e.preventDefault()}
           onPointerDownOutside={e => e.preventDefault()}
           onInteractOutside={e => e.preventDefault()}
         >
+          {step === 'error' && (
+            <Button variant="ghost" size="icon" className="absolute right-3 top-3 h-8 w-8" aria-label="Fechar aviso" onClick={() => { reset(); setOpen(false); }}>
+              <X className="h-4 w-4" />
+            </Button>
+          )}
           <DialogTitle className="text-center">Segurança</DialogTitle>
           <DialogDescription className="text-center">
             {step === 'idle' && 'Segure o botão por 2 segundos para chamar a guarita em modo discreto.'}
@@ -133,6 +146,10 @@ export const PanicButton = () => {
 
           {step === 'sending' && <div className="flex justify-center py-6"><Loader2 className="h-8 w-8 animate-spin" /></div>}
 
+          {step === 'error' && (
+            <Button variant="outline" className="w-full" onClick={() => send(lastLocation)}>Tentar novamente</Button>
+          )}
+
           {step === 'sent' && (
             <div className="flex flex-col items-center gap-3 py-4">
               <ShieldCheck className="h-12 w-12 text-muted-foreground" />
@@ -143,7 +160,7 @@ export const PanicButton = () => {
           )}
 
           <Button variant="destructive" onClick={() => { reset(); setOpen(false); }} className="w-full">
-            {step === 'sent' ? 'Fechar' : 'Cancelar'}
+            {step === 'sent' || step === 'error' ? 'Fechar' : 'Cancelar'}
           </Button>
         </DialogContent>
       </Dialog>

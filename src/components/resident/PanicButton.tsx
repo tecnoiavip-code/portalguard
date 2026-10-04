@@ -101,7 +101,7 @@ export const PanicButton = () => {
       </Button>
       <Dialog open={open} onOpenChange={() => {}}>
         <DialogContent
-          className="max-w-sm [&>button]:hidden"
+          className="max-w-sm [&>button:last-child]:hidden"
           onEscapeKeyDown={e => e.preventDefault()}
           onPointerDownOutside={e => e.preventDefault()}
           onInteractOutside={e => e.preventDefault()}

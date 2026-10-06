@@ -448,6 +448,34 @@ const extractPhotoBase64 = (payload: any): string | null => {
   return null;
 };
 
+// Remove as fotos (base64) do payload antes de gravar no banco: a foto ja fica
+// no Storage (`saved_photo_path`) e manter o base64 em `controlid_logs` /
+// `push_command_queue` consumiria a cota gratuita de 500 MB muito rapido.
+const PHOTO_MIN_LENGTH = 500;
+
+const stripPhotoFields = (value: unknown): unknown => {
+  if (typeof value === 'string') {
+    const parsed = tryParseJsonString(value);
+    if (parsed && typeof parsed === 'object') {
+      return JSON.stringify(stripPhotoFields(parsed));
+    }
+    if (value.length >= PHOTO_MIN_LENGTH && normalizeBase64Candidate(value)) return undefined;
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(stripPhotoFields).filter((item) => item !== undefined);
+  }
+  if (value && typeof value === 'object') {
+    const cleaned: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) {
+      const itemCleaned = stripPhotoFields(item);
+      if (itemCleaned !== undefined) cleaned[key] = itemCleaned;
+    }
+    return cleaned;
+  }
+  return value;
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -551,7 +579,7 @@ Deno.serve(async (req) => {
             console.log('Ignoring stale result for command:', executingCmd.id, 'device:', deviceId);
             await supabaseClient
               .from('push_command_queue')
-              .update({ status: 'error', result: { error: 'stale_result_discarded', received_payload: payload } })
+              .update({ status: 'error', result: { error: 'stale_result_discarded', received_payload: stripPhotoFields(payload) } })
               .eq('id', executingCmd.id);
           } else {
             console.log('Push result (via /push POST) from device:', deviceId, JSON.stringify(payload).substring(0, 300));
@@ -575,7 +603,7 @@ Deno.serve(async (req) => {
                     if (origLog) {
                       await supabaseClient
                         .from('controlid_logs')
-                        .update({ payload: { ...origLog.payload, saved_photo_path: photoPath } })
+                        .update({ payload: stripPhotoFields({ ...origLog.payload, saved_photo_path: photoPath }) })
                         .eq('id', cmd.meta.log_id);
                       console.log('Photo linked to identification log:', cmd.meta.log_id, photoPath);
                     }
@@ -590,13 +618,13 @@ Deno.serve(async (req) => {
                 .update({
                   status: 'done',
                   executed_at: new Date().toISOString(),
-                  result: payload,
+                  result: stripPhotoFields(payload),
                 })
                 .eq('id', executingCmd.id),
               supabaseClient.from('controlid_logs').insert({
                 device_id: deviceId || 'unknown',
                 event_type: 'push_result',
-                payload: { ...payload, command_id: executingCmd.id },
+                payload: stripPhotoFields({ ...payload, command_id: executingCmd.id }),
                 processed: true,
               }),
               photoUpdatePromise,
@@ -763,7 +791,7 @@ Deno.serve(async (req) => {
                 if (origLog) {
                   await supabaseClient
                     .from('controlid_logs')
-                    .update({ payload: { ...origLog.payload, saved_photo_path: photoPath } })
+                    .update({ payload: stripPhotoFields({ ...origLog.payload, saved_photo_path: photoPath }) })
                     .eq('id', cmd.meta.log_id);
                   console.log('Photo linked to identification log:', cmd.meta.log_id, photoPath);
                 }
@@ -778,13 +806,13 @@ Deno.serve(async (req) => {
             .update({
               status: 'done',
               executed_at: new Date().toISOString(),
-              result: payload,
+              result: stripPhotoFields(payload),
             })
             .eq('id', executingCmd.id),
           supabaseClient.from('controlid_logs').insert({
             device_id: deviceId || 'unknown',
             event_type: 'push_result',
-            payload: { ...payload, command_id: executingCmd?.id || null },
+            payload: stripPhotoFields({ ...payload, command_id: executingCmd?.id || null }),
             processed: true,
           }),
           photoUpdatePromise,
@@ -1020,9 +1048,10 @@ Deno.serve(async (req) => {
             }
           }
 
+          const sanitizedPayload = stripPhotoFields(payload) as Record<string, unknown>;
           const enrichedPayload = savedPhotoPath
-            ? { ...payload, saved_photo_path: savedPhotoPath }
-            : payload;
+            ? { ...sanitizedPayload, saved_photo_path: savedPhotoPath }
+            : sanitizedPayload;
 
           // 2. Save log entry
           const { data: logData } = await supabaseClient
@@ -1148,9 +1177,10 @@ Deno.serve(async (req) => {
       }
     }
 
+    const sanitizedPayload = stripPhotoFields(payload) as Record<string, unknown>;
     const enrichedPayload = savedPhotoPath
-      ? { ...payload, saved_photo_path: savedPhotoPath }
-      : payload;
+      ? { ...sanitizedPayload, saved_photo_path: savedPhotoPath }
+      : sanitizedPayload;
 
     const { error: logError } = await supabaseClient
       .from('controlid_logs')

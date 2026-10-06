@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabaseStorage } from '@/lib/supabase-storage';
+import { blobToDataUrl, compressImage } from '@/lib/image-utils';
 import { exportToCSV } from '@/lib/export-csv';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -261,14 +262,17 @@ export const Residents = () => {
     setShowCamera(false);
   };
 
-  const capturePhoto = () => {
-    if (videoRef.current && canvasRef.current) {
-      const context = canvasRef.current.getContext('2d');
+  const capturePhoto = async () => {
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    if (video && canvas) {
+      const context = canvas.getContext('2d');
       if (context) {
-        canvasRef.current.width = videoRef.current.videoWidth;
-        canvasRef.current.height = videoRef.current.videoHeight;
-        context.drawImage(videoRef.current, 0, 0);
-        const photoData = canvasRef.current.toDataURL('image/jpeg', 0.7);
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0);
+        const compressed = await compressImage(canvas);
+        const photoData = compressed?.dataUrl ?? canvas.toDataURL('image/jpeg', 0.7);
         setFormData({ ...formData, photo: photoData });
         stopCamera();
         toast.success('Foto capturada!');
@@ -276,15 +280,13 @@ export const Residents = () => {
     }
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData({ ...formData, photo: reader.result as string });
-        toast.success('Foto carregada!');
-      };
-      reader.readAsDataURL(file);
+      const compressed = await compressImage(file);
+      const photo = compressed?.dataUrl ?? (await blobToDataUrl(file));
+      setFormData({ ...formData, photo });
+      toast.success('Foto carregada!');
     }
   };
 

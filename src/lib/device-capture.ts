@@ -1,5 +1,6 @@
 import { Device } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
+import { compressImage } from '@/lib/image-utils';
 
 export function hashCode(str: string): number {
   let hash = 0;
@@ -470,8 +471,16 @@ export async function syncBiometricToAllDevices(
     : personInfo.name;
   const deviceRegistration = personInfo.registration || personInfo.document || personInfo.identifier;
 
+  // Os dispositivos Control iD esperam JPEG: reencoda caso a foto venha em
+  // outro formato (ex.: WebP otimizado para o Storage)
+  let readyPhoto = photoBase64;
+  if (!/^data:image\/jpeg;base64,/i.test(photoBase64)) {
+    const jpeg = await compressImage(photoBase64, { format: 'jpeg', quality: 0.92, maxDimension: 2000 });
+    if (jpeg) readyPhoto = jpeg.dataUrl;
+  }
+
   // Clean base64 for device (remove data URI prefix)
-  const cleanBase64 = photoBase64.replace(/^data:image\/[a-z]+;base64,/, '');
+  const cleanBase64 = readyPhoto.replace(/^data:image\/[a-z]+;base64,/, '');
 
   let synced = 0;
   let errors = 0;

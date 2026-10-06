@@ -34,6 +34,7 @@ import { useResidents } from '@/hooks/useResidents';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { sendPushToUser } from '@/lib/push-subscription';
+import { compressImage, compressToFile } from '@/lib/image-utils';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import StandardPagination from '@/components/StandardPagination';
 import jsPDF from 'jspdf';
@@ -157,6 +158,10 @@ export const MailManagement = () => {
         const blob = await response.blob();
         file = new File([blob], `correspondencia_${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
       }
+      if (file && file.type !== 'image/jpeg') {
+        const jpeg = await compressImage(file, { format: 'jpeg', quality: 0.9, maxDimension: 2000 });
+        if (jpeg) file = new File([jpeg.blob], `correspondencia_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      }
     } catch (error) {
       console.error('Não foi possível preparar a foto para envio:', error);
     }
@@ -189,11 +194,13 @@ export const MailManagement = () => {
     openWhatsappWithFallback(rawPhone, encodeURIComponent(text));
   };
 
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setPhotoFile(file);
-      setPhotoPreview(URL.createObjectURL(file));
+      const compressed = await compressToFile(file, `correspondencia_${Date.now()}`);
+      const next = compressed ?? file;
+      setPhotoFile(next);
+      setPhotoPreview(URL.createObjectURL(next));
     }
     e.target.value = '';
   };
@@ -268,7 +275,7 @@ export const MailManagement = () => {
     }
 
     setScanning(true);
-    const recordPhoto = photoForRecord || file;
+    const recordPhoto = photoForRecord ?? (await compressToFile(file, `correspondencia_${Date.now()}`)) ?? file;
     setPhotoFile(recordPhoto);
     setPhotoPreview(URL.createObjectURL(recordPhoto));
 
@@ -505,7 +512,7 @@ export const MailManagement = () => {
       }
     }
 
-    const fullFile = await canvasToFile(best, `webcam_${Date.now()}.jpg`);
+    const fullFile = (await compressToFile(best, `webcam_${Date.now()}`)) ?? (await canvasToFile(best, `webcam_${Date.now()}.jpg`));
     if (!fullFile) { setScanning(false); return; }
 
     setPhotoFile(fullFile);

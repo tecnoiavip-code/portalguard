@@ -44,6 +44,8 @@ export interface AccessEntry {
   vehicleModel?: string;
   vehicleColor?: string;
   photo?: string;
+  /** Caminho no Storage quando a foto não é mais base64; `photo` guarda a URL assinada de exibição. */
+  photoPath?: string;
   company?: string;
   autoRecognized?: boolean;
   badgeNumber?: string;

@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { Database } from '@/integrations/supabase/types';
 import { Resident, Mail, AccessEntry, Device, RealtimeEvent } from '@/types';
+import { compressImage } from '@/lib/image-utils';
 
 type ResidentListRow = Pick<Database['public']['Tables']['residents']['Row'],
   'id' | 'name' | 'cpf' | 'apartment' | 'phone' | 'email' | 'photo_url' |
@@ -9,6 +10,40 @@ type AccessEntryRow = Database['public']['Tables']['access_entries']['Row'];
 
 // Helper to uppercase string fields (except email and urls)
 const up = (val: string | null | undefined): string | null => val ? val.toUpperCase() : val as null;
+
+const ENTRY_PHOTOS_BUCKET = 'entry-photos';
+const SIGNED_URL_TTL = 60 * 60;
+
+const extFromMime = (mime: string): string => {
+  const subtype = (mime.split('/')[1] || '').split('+')[0];
+  if (!subtype) return 'jpg';
+  if (subtype === 'jpeg') return 'jpg';
+  return subtype;
+};
+
+const dataUrlToBlob = async (value: string): Promise<Blob> => {
+  const response = await fetch(value);
+  return response.blob();
+};
+
+const isStoragePath = (value: string | null | undefined): boolean =>
+  !!value && !value.startsWith('data:') && !value.startsWith('blob:') && !/^https?:/i.test(value);
+
+interface PreparedPhoto {
+  blob: Blob;
+  ext: string;
+  mime: string;
+}
+
+// Comprime e converte o formato antes de subir, para não estourar as cotas
+// do Storage (1 GB) e do banco (500 MB) do plano gratuito.
+const preparePhoto = async (input: string | File): Promise<PreparedPhoto> => {
+  const source: Blob = typeof input === 'string' ? await dataUrlToBlob(input) : input;
+  const compressed = await compressImage(source);
+  const blob = compressed?.blob ?? source;
+  const mime = blob.type || source.type || 'image/jpeg';
+  return { blob, ext: extFromMime(mime), mime };
+};
 
 const notifyError = (action: string, error: any) => {
   console.error(`Error during ${action}:`, error);
@@ -114,25 +149,20 @@ export const supabaseStorage = {
 
   async uploadResidentPhoto(residentId: string, base64OrFile: string | File): Promise<string | null> {
     try {
-      let file: File;
-      if (typeof base64OrFile === 'string') {
-        // Convert base64 to File
-        const res = await fetch(base64OrFile);
-        const blob = await res.blob();
-        file = new File([blob], 'photo.jpg', { type: blob.type || 'image/jpeg' });
-      } else {
-        file = base64OrFile;
-      }
-
-      const ext = file.name.split('.').pop() || 'jpg';
+      const { blob, ext } = await preparePhoto(base64OrFile);
       const path = `${residentId}/photo.${ext}`;
 
-      // Remove old photo if exists
-      await supabase.storage.from('resident-photos').remove([path]);
+      // Remove qualquer foto antiga (inclusive com extensão diferente)
+      const { data: existing } = await supabase.storage.from('resident-photos').list(residentId);
+      if (existing && existing.length > 0) {
+        await supabase.storage
+          .from('resident-photos')
+          .remove(existing.map(f => `${residentId}/${f.name}`));
+      }
 
       const { error } = await supabase.storage
         .from('resident-photos')
-        .upload(path, file, { upsert: true });
+        .upload(path, blob, { upsert: true, contentType: blob.type });
 
       if (error) {
         console.error('Error uploading photo:', error);
@@ -185,16 +215,7 @@ export const supabaseStorage = {
 
   async uploadIncidentPhoto(incidentId: string, base64OrFile: string | File): Promise<boolean> {
     try {
-      let file: File;
-      if (typeof base64OrFile === 'string') {
-        const res = await fetch(base64OrFile);
-        const blob = await res.blob();
-        file = new File([blob], 'photo.jpg', { type: blob.type || 'image/jpeg' });
-      } else {
-        file = base64OrFile;
-      }
-
-      const ext = file.name.split('.').pop() || 'jpg';
+      const { blob, ext } = await preparePhoto(base64OrFile);
       const folder = `incidents/${incidentId}`;
       const path = `${folder}/photo.${ext}`;
 
@@ -208,7 +229,7 @@ export const supabaseStorage = {
 
       const { error } = await supabase.storage
         .from('resident-photos')
-        .upload(path, file, { upsert: true });
+        .upload(path, blob, { upsert: true, contentType: blob.type });
       if (error) {
         console.error('Error uploading incident photo:', error);
         return false;
@@ -455,6 +476,64 @@ export const supabaseStorage = {
     return true;
   },
 
+  // ---- Fotos de entradas de visitantes ----
+  // Guardadas no bucket `entry-photos`; a coluna `photo_url` recebe apenas o
+  // caminho, nunca o base64, para não consumir a cota do banco (500 MB).
+
+  async uploadEntryPhoto(path: string, photo: string | File): Promise<string | null> {
+    try {
+      const { blob, ext } = await preparePhoto(photo);
+      const storagePath = /\.[a-z0-9]+$/i.test(path) ? path : `${path}.${ext}`;
+      const { error } = await supabase.storage
+        .from(ENTRY_PHOTOS_BUCKET)
+        .upload(storagePath, blob, { upsert: true, contentType: blob.type });
+      if (error) {
+        console.error('Error uploading entry photo:', error);
+        return null;
+      }
+      return storagePath;
+    } catch (err) {
+      console.error('Error in uploadEntryPhoto:', err);
+      return null;
+    }
+  },
+
+  async deleteEntryPhoto(path: string | null | undefined): Promise<void> {
+    if (!isStoragePath(path)) return;
+    try {
+      await supabase.storage.from(ENTRY_PHOTOS_BUCKET).remove([path as string]);
+    } catch (err) {
+      console.error('Error deleting entry photo:', err);
+    }
+  },
+
+  async resolveEntryPhotos(entries: AccessEntry[]): Promise<AccessEntry[]> {
+    const paths = entries
+      .map(e => e.photoPath)
+      .filter((p): p is string => isStoragePath(p));
+    const unique = [...new Set(paths)];
+    if (unique.length === 0) return entries;
+
+    const { data, error } = await supabase.storage
+      .from(ENTRY_PHOTOS_BUCKET)
+      .createSignedUrls(unique, SIGNED_URL_TTL);
+
+    if (error || !data) {
+      console.error('Error signing entry photos:', error);
+      return entries;
+    }
+
+    const byPath = new Map<string, string>();
+    data.forEach((item, index) => {
+      if (item?.signedUrl) byPath.set(unique[index], item.signedUrl);
+    });
+
+    return entries.map(entry => {
+      const signedUrl = entry.photoPath ? byPath.get(entry.photoPath) : undefined;
+      return signedUrl ? { ...entry, photo: signedUrl } : entry;
+    });
+  },
+
   // Access Entries
   async getEntries(): Promise<AccessEntry[] | null> {
     const pageSize = 1000;
@@ -476,7 +555,7 @@ export const supabaseStorage = {
       if (!data || data.length < pageSize) break;
     }
     
-    return allRows.map(e => ({
+    const entries: AccessEntry[] = allRows.map(e => ({
       id: e.id,
       visitorName: e.visitor_name,
       visitorDocument: e.visitor_document,
@@ -491,10 +570,13 @@ export const supabaseStorage = {
       vehicleModel: e.vehicle_model || '',
       vehicleColor: e.vehicle_color || '',
       photo: e.photo_url || '',
+      photoPath: isStoragePath(e.photo_url) ? (e.photo_url as string) : '',
       company: e.company || '',
       autoRecognized: e.auto_recognized || false,
       badgeNumber: (e as any).badge_number || '',
     }));
+
+    return supabaseStorage.resolveEntryPhotos(entries);
   },
 
   async checkEntryDuplicate(entry: AccessEntry, excludeId?: string): Promise<string | null> {
@@ -545,6 +627,22 @@ export const supabaseStorage = {
       }
     }
     
+    const photoValue = entry.photo || '';
+    let photoPath = isStoragePath(entry.photoPath) ? (entry.photoPath as string) : '';
+    let photoFallback: string | null = null;
+
+    if (photoValue && (photoValue.startsWith('data:') || !photoPath)) {
+      // Foto nova, base64 legado ou cópia de outra entrada: sobe para o
+      // Storage e grava só o caminho (URL assinada expira e não pode ser salva)
+      const targetPath = photoPath || `entries/${crypto.randomUUID()}/photo`;
+      const uploaded = await supabaseStorage.uploadEntryPhoto(targetPath, photoValue);
+      if (uploaded) photoPath = uploaded;
+      else photoFallback = photoValue;
+    } else if (!photoValue && photoPath) {
+      await supabaseStorage.deleteEntryPhoto(photoPath);
+      photoPath = '';
+    }
+
     const entryData: any = {
       visitor_name: up(entry.visitorName) || entry.visitorName,
       visitor_document: up(entry.visitorDocument) || entry.visitorDocument,
@@ -557,7 +655,8 @@ export const supabaseStorage = {
       vehicle_plate: up(entry.vehiclePlate) || null,
       vehicle_model: up(entry.vehicleModel) || null,
       vehicle_color: up(entry.vehicleColor) || null,
-      photo_url: entry.photo || null,
+      // Nunca grava URL assinada (expira): caminho no Storage, base64 só como fallback
+      photo_url: photoPath || photoFallback || (/^https?:/i.test(photoValue) ? null : photoValue || null),
       company: up(entry.company) || null,
       auto_recognized: entry.autoRecognized || false,
       badge_number: up(entry.badgeNumber) || null,
@@ -590,6 +689,12 @@ export const supabaseStorage = {
   },
 
   async deleteEntry(id: string): Promise<boolean> {
+    const { data: row } = await supabase
+      .from('access_entries')
+      .select('photo_url')
+      .eq('id', id)
+      .maybeSingle();
+
     const { error } = await supabase
       .from('access_entries')
       .delete()
@@ -599,7 +704,10 @@ export const supabaseStorage = {
       console.error('Error deleting entry:', error);
       return false;
     }
-    
+
+    if (isStoragePath(row?.photo_url)) {
+      await supabaseStorage.deleteEntryPhoto(row?.photo_url);
+    }
     return true;
   },
 
@@ -662,6 +770,7 @@ export const supabaseStorage = {
       vehicleModel: e.vehicle_model || '',
       vehicleColor: e.vehicle_color || '',
       photo: e.photo_url || '',
+      photoPath: isStoragePath(e.photo_url) ? (e.photo_url as string) : '',
       company: e.company || '',
       autoRecognized: e.auto_recognized || false,
       badgeNumber: (e as any).badge_number || '',
@@ -675,7 +784,7 @@ export const supabaseStorage = {
         uniqueMap.set(key, entry);
       }
     }
-    return Array.from(uniqueMap.values());
+    return supabaseStorage.resolveEntryPhotos(Array.from(uniqueMap.values()));
   },
 
   // Devices

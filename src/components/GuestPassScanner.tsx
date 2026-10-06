@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { compressImage } from '@/lib/image-utils';
+import { supabaseStorage } from '@/lib/supabase-storage';
 import { formatPlate } from '@/lib/utils';
 import { format, parse } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -182,7 +184,7 @@ const GuestPassScanner = ({ open, onOpenChange, onEntryConfirmed }: GuestPassSca
     }
   };
 
-  const capturePhoto = () => {
+  const capturePhoto = async () => {
     const video = videoRef.current;
     if (!video || video.videoWidth === 0) return;
     const c = document.createElement('canvas');
@@ -191,17 +193,24 @@ const GuestPassScanner = ({ open, onOpenChange, onEntryConfirmed }: GuestPassSca
     const ctx = c.getContext('2d');
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, c.width, c.height);
-    setPhoto(c.toDataURL('image/jpeg', 0.6));
+    const compressed = await compressImage(c);
+    setPhoto(compressed?.dataUrl ?? c.toDataURL('image/jpeg', 0.6));
   };
 
   const confirmEntry = async () => {
     if (!token) return;
     setRedeeming(true);
+    let photoUrl: string | null = photo || null;
+    if (photoUrl) {
+      const uploaded = await supabaseStorage.uploadEntryPhoto(`entries/${crypto.randomUUID()}/photo`, photoUrl);
+      // Sem bucket aplicado ainda, mantem o base64 ja comprimido para nao perder a foto
+      photoUrl = uploaded ?? photoUrl;
+    }
     const { data, error: rpcErr } = await (supabase.rpc as any)('redeem_guest_pass', {
       _token: token,
       _vehicle_plate: plate.trim().toUpperCase() || null,
       _vehicle_model: null,
-      _photo_url: photo,
+      _photo_url: photoUrl,
     });
     if (rpcErr || !data?.ok) {
       toast.error(data?.message || rpcErr?.message || 'Falha ao registrar entrada');

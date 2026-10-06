@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Settings as SettingsIcon, Trash2, Download, Upload, Send, FileText, FileSpreadsheet, Lock, BarChart3 } from 'lucide-react';
+import { Settings as SettingsIcon, Trash2, Download, Send, FileText, FileSpreadsheet, Lock, BarChart3 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { supabase } from '@/integrations/supabase/client';
 import { supabaseStorage } from '@/lib/supabase-storage';
@@ -804,74 +804,9 @@ export const Settings = () => {
   };
 
   const [cleaningLogs, setCleaningLogs] = useState(false);
-  const [optimizingPhotos, setOptimizingPhotos] = useState(false);
 
   // Move as fotos em base64 das entradas para o Storage, comprimindo cada uma.
   // O base64 na coluna consumia a cota gratuita do banco (500 MB).
-  const handleOptimizeEntryPhotos = async () => {
-    if (!confirm('Isso moverá as fotos em base64 das entradas de visitantes para o Storage, comprimindo cada uma antes do envio. As entradas não são alteradas. Continuar?')) {
-      return;
-    }
-
-    setOptimizingPhotos(true);
-    const toastId = 'optimize-entry-photos';
-    let processed = 0;
-    let moved = 0;
-    try {
-      for (;;) {
-        const { data, error } = await supabase
-          .from('access_entries')
-          .select('id, photo_url')
-          .like('photo_url', 'data:%')
-          .limit(500);
-        if (error) throw error;
-
-        const rows = (data || []) as { id: string; photo_url: string }[];
-        if (rows.length === 0) break;
-
-        let movedInBatch = 0;
-        for (const row of rows) {
-          const uploaded = await supabaseStorage.uploadEntryPhoto(
-            `entries/${crypto.randomUUID()}/photo`,
-            row.photo_url,
-          );
-          if (uploaded) {
-            const { error: updateError } = await supabase
-              .from('access_entries')
-              .update({ photo_url: uploaded })
-              .eq('id', row.id);
-            if (!updateError) { moved++; movedInBatch++; }
-          }
-          processed++;
-        }
-
-        toast.loading(`Otimizando fotos: ${moved} de ${processed} movidas...`, { id: toastId });
-        // Nada subiu: o bucket entry-photos ainda não existe no projeto Supabase
-        if (movedInBatch === 0) throw new Error('bucket-indisponivel');
-        if (rows.length < 500) break;
-      }
-
-      if (processed === 0) {
-        toast.success('Nenhuma foto em base64 para otimizar.', { id: toastId });
-      } else {
-        toast.success(
-          `${moved} foto(s) movida(s) para o Storage e comprimida(s). O banco ficou mais leve.`,
-          { id: toastId },
-        );
-      }
-    } catch (err) {
-      console.error('Erro ao otimizar fotos das entradas:', err);
-      toast.error(
-        err instanceof Error && err.message === 'bucket-indisponivel'
-          ? 'Nenhuma foto pôde subir. Aplique a migration 20261006120000_entry_photos_bucket.sql no projeto Supabase e tente novamente.'
-          : 'Erro ao otimizar fotos das entradas',
-        { id: toastId },
-      );
-    } finally {
-      setOptimizingPhotos(false);
-    }
-  };
-
   // Limpa APENAS logs de acesso com mais de 60 dias.
   // Cadastros de pessoas (moradores, visitantes), veículos e empresas NUNCA são excluídos.
   const handleCleanOldLogs = async () => {
@@ -1093,7 +1028,6 @@ export const Settings = () => {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Button onClick={handleImportData} className="w-full" variant="outline">
-                <Upload className="h-4 w-4 mr-2" />
                 Importar JSON
               </Button>
               <Button onClick={handleImportCSV} className="w-full" variant="outline">
@@ -1131,29 +1065,6 @@ export const Settings = () => {
             <p className="text-xs text-muted-foreground mt-2">
               Remove apenas os registros de entrada/saída com mais de 60 dias. Cadastros de pessoas, veículos e empresas são sempre preservados.
             </p>
-          </CardContent>
-        </Card>
-
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <Upload className="h-5 w-5 text-primary" />
-              <span>Otimização de fotos das entradas</span>
-            </CardTitle>
-            <CardDescription>
-              Reduz o uso do banco de dados movendo as fotos para o Storage
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              As fotos dos visitantes eram gravadas em base64 dentro do banco, o que consome a cota gratuita (500 MB).
-              Este processo comprime cada foto e a grava no Storage, preservando todas as entradas. Pode ser executado
-              mais de uma vez.
-            </p>
-            <Button onClick={handleOptimizeEntryPhotos} disabled={optimizingPhotos}>
-              <Upload className="h-4 w-4 mr-2" />
-              {optimizingPhotos ? 'Otimizando...' : 'Otimizar fotos de acesso'}
-            </Button>
           </CardContent>
         </Card>
 

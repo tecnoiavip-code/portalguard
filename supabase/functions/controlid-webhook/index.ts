@@ -107,7 +107,9 @@ const getMonitorConfig = () => {
 
 const getGeneralConfig = () => ({
   general: {
-    online: "1"
+    online: "1",
+    local_identification: "1",
+    ihm_enterprise_mode: "0"
   }
 });
 

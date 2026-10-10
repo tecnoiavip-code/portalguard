@@ -96,7 +96,7 @@ const ResidentAuthorizations = () => {
       return;
     }
 
-    const { error } = await supabase.from('visitor_authorizations').insert({
+    const { data: inserted, error } = await supabase.from('visitor_authorizations').insert({
       resident_id: residentId,
       visitor_name: form.visitor_name,
       visitor_document: form.visitor_document || null,
@@ -104,7 +104,7 @@ const ResidentAuthorizations = () => {
       authorized_until: form.authorized_until || null,
       purpose: form.purpose || null,
       vehicle_plate: form.vehicle_plate || null,
-    } as any);
+    } as any).select('id');
     if (error) { toast.error('Erro ao enviar autorização'); return; }
     toast.success('Autorização enviada à portaria!');
     setOpen(false);
@@ -115,6 +115,7 @@ const ResidentAuthorizations = () => {
       _title: 'Nova autorização de visitante',
       _body: `Morador autorizou a entrada de ${form.visitor_name}`,
       _type: 'authorization',
+      _related_id: (inserted as any)?.[0]?.id || null,
     });
   };
 

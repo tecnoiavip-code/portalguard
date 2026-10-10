@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Send, MessageSquare, ArrowLeft, Plus, Search, CheckCheck, Check } from 'lucide-react';
 import StandardPagination from '@/components/StandardPagination';
 import { cn } from '@/lib/utils';
+import { useAppNav } from '@/lib/app-nav';
 import { format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -132,6 +133,36 @@ const StaffChat = () => {
   };
 
   useEffect(() => { loadThreads(); }, []);
+
+  const openThreadForResident = async (rid: string) => {
+    const existing = threads.find(t => t.resident_id === rid);
+    if (existing) {
+      setSelectedThread(existing);
+      return;
+    }
+    const { data: res } = await supabase
+      .from('residents')
+      .select('name, apartment')
+      .eq('id', rid)
+      .maybeSingle();
+    if (res) {
+      setSelectedThread({
+        resident_id: rid,
+        resident_name: String((res as any).name || 'Morador'),
+        apartment: String((res as any).apartment || ''),
+        unread_count: 0,
+        last_message: '',
+        last_time: '',
+      });
+    } else {
+      setSelectedThread(null);
+      loadThreads();
+    }
+  };
+
+  useAppNav('staff-chat', ({ id }) => {
+    if (id) openThreadForResident(id);
+  });
 
   // Global listener: play sound when any resident sends a message (even if not viewing that thread)
   useEffect(() => {

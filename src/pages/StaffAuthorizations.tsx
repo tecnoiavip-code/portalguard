@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import StandardPagination from '@/components/StandardPagination';
 import { supabase } from '@/integrations/supabase/client';
 import { sendPushToUser } from '@/lib/push-subscription';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAppNav } from '@/lib/app-nav';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -53,6 +54,8 @@ const StaffAuthorizations = () => {
   const [page, setPage] = useState(1);
   const [guestPage, setGuestPage] = useState(1);
   const [selectedAuth, setSelectedAuth] = useState<(Authorization & { resident?: ResidentInfo }) | null>(null);
+  const [tab, setTab] = useState('individual');
+  const pendingTargetRef = useRef<{ id?: string | null; action?: string | null } | null>(null);
   const PAGE_SIZE = 10;
 
   const loadAuths = async () => {
@@ -79,6 +82,38 @@ const StaffAuthorizations = () => {
   };
 
   useEffect(() => { loadAuths(); }, []);
+
+  const resolveTarget = () => {
+    const t = pendingTargetRef.current;
+    if (!t) return;
+    if (t.action === 'guests') {
+      setTab('guests');
+      pendingTargetRef.current = null;
+      return;
+    }
+    if (t.id) {
+      const target = auths.find(a => a.id === t.id);
+      if (!target) return;
+      if (target.purpose) {
+        const same = auths.filter(a => a.purpose === target.purpose && a.authorized_date === target.authorized_date && a.resident_id === target.resident_id);
+        if (same.length >= 2) setTab('guests');
+        else setTab('individual');
+      } else {
+        setTab('individual');
+      }
+      setReviewId(t.id);
+      pendingTargetRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    resolveTarget();
+  }, [auths]);
+
+  useAppNav('authorizations', (target) => {
+    pendingTargetRef.current = { id: target.id, action: target.action };
+    resolveTarget();
+  });
 
   // Set up realtime subscription to auto-refresh when authorizations change
   useEffect(() => {
@@ -229,7 +264,7 @@ const StaffAuthorizations = () => {
         <h2 className="text-2xl font-bold">Autorizações de Visitantes</h2>
       </div>
 
-      <Tabs defaultValue="individual" className="w-full">
+      <Tabs value={tab} onValueChange={setTab} className="w-full">
         <TabsList className="w-full">
           <TabsTrigger value="individual" className="flex-1 gap-1.5">
             <Shield className="h-4 w-4" /> Individuais

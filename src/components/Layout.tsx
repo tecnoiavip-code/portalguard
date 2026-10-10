@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { PanicAlertMonitor } from '@/components/PanicAlertMonitor';
+import { navigateInApp, AppNavTarget } from '@/lib/app-nav';
 
 interface LayoutProps {
   children: ReactNode;
@@ -90,6 +91,19 @@ export const Layout = ({ children }: LayoutProps) => {
     await supabase.from('notifications').update({ read: true }).eq('id', id);
   };
 
+  const staffTarget = (n: any): AppNavTarget => {
+    switch (n.type) {
+      case 'authorization':
+        return n.related_id
+          ? { section: 'authorizations', id: n.related_id }
+          : { section: 'authorizations', action: 'guests' };
+      case 'chat':
+        return { section: 'staff-chat', id: n.related_id || null };
+      default:
+        return { section: 'dashboard', id: null };
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <header className="bg-primary text-primary-foreground shadow-elegant sticky top-0 z-30">
@@ -146,7 +160,7 @@ export const Layout = ({ children }: LayoutProps) => {
                       </div>
                     ) : (
                       notifications.map((n) => (
-                        <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-1 p-3 cursor-pointer" onClick={() => markOneRead(n.id)}>
+                        <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-1 p-3 cursor-pointer" onClick={() => { markOneRead(n.id); navigateInApp(staffTarget(n)); }}>
                           <p className="text-sm font-medium leading-tight">{n.title}</p>
                           <p className="text-xs text-muted-foreground leading-tight">{n.body}</p>
                           <p className="text-[10px] text-muted-foreground">

@@ -3,10 +3,19 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
-import { Home, LogOut, Bell, ArrowLeft } from 'lucide-react';
+import { Home, LogOut, Bell, ArrowLeft, ChevronRight } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 import { setAppBadge } from '@/lib/pwa-badge';
 import { notifyResident, requestNotificationPermission } from '@/lib/pwa-notify';
@@ -44,8 +53,33 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
   const residentIdRef = useRef<string | null>(null);
   const isFirstLoad = useRef(true);
   const suppressedKeysRef = useRef<Set<keyof Counts>>(new Set());
+  const [notifList, setNotifList] = useState<any[]>([]);
 
   const totalBadge = counts.chat + counts.notif + counts.mails + counts.announcements;
+
+  const loadNotifList = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('read', false)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    setNotifList(data || []);
+  };
+
+  const residentTabFor = (n: any): string => {
+    switch (n.type) {
+      case 'mail': return 'mails';
+      case 'authorization': return 'authorizations';
+      case 'announcement': return 'announcements';
+      case 'chat': return 'chat';
+      case 'entry':
+      case 'visitor': return 'visitors';
+      default: return 'home';
+    }
+  };
 
   // Suppress counts and mark as read when navigating to a tab
   useEffect(() => {
@@ -228,11 +262,13 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
     };
 
     loadCounts();
+    loadNotifList();
 
     const channel = supabase
       .channel('resident-notifs')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (payload) => {
         const notif = payload.new as any;
+        setNotifList(prev => [notif, ...prev.filter(x => x.id !== notif.id)].slice(0, 20));
         setCounts(prev => {
           const next = { ...prev, notif: prev.notif + 1 };
           const total = next.chat + next.notif + next.mails + next.announcements;
@@ -246,6 +282,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => {
         loadCounts();
+        loadNotifList();
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
         const msg = payload.new as any;
@@ -304,11 +341,18 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
   const markNotifsRead = async () => {
     if (!user) return;
     setCounts(prev => ({ ...prev, notif: 0 }));
+    setNotifList([]);
     await supabase
       .from('notifications')
       .update({ read: true })
       .eq('user_id', user.id)
       .eq('read', false);
+  };
+
+  const markOneNotifRead = async (id: string) => {
+    setNotifList(prev => prev.filter(x => x.id !== id));
+    setCounts(prev => ({ ...prev, notif: Math.max(0, prev.notif - 1) }));
+    await supabase.from('notifications').update({ read: true }).eq('id', id);
   };
 
   const handleSignOut = async () => {
@@ -350,19 +394,57 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
           <div className="flex items-center gap-1">
             <PanicButton />
             <ThemeToggle />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="relative h-9 w-9 rounded-xl"
-              onClick={() => { markNotifsRead(); }}
-            >
-              <Bell className="h-5 w-5" />
-              {counts.notif > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 bg-destructive text-destructive-foreground text-[10px] rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 font-bold shadow-lg animate-pulse">
-                  {counts.notif > 99 ? '99+' : counts.notif}
-                </span>
-              )}
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="relative h-9 w-9 rounded-xl"
+                >
+                  <Bell className="h-5 w-5" />
+                  {counts.notif > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 bg-destructive text-destructive-foreground text-[10px] rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 font-bold shadow-lg animate-pulse">
+                      {counts.notif > 99 ? '99+' : counts.notif}
+                    </span>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-80 bg-background">
+                <DropdownMenuLabel className="flex items-center justify-between">
+                  <span>Notificações</span>
+                  {counts.notif > 0 && (
+                    <button onClick={markNotifsRead} className="text-xs text-primary hover:underline font-normal">
+                      Marcar todas como lidas
+                    </button>
+                  )}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <ScrollArea className="max-h-64">
+                  {notifList.length === 0 ? (
+                    <div className="p-4 text-sm text-muted-foreground text-center">
+                      Nenhuma notificação
+                    </div>
+                  ) : (
+                    notifList.map((n) => (
+                      <DropdownMenuItem
+                        key={n.id}
+                        className="flex flex-col items-start gap-1 p-3 cursor-pointer"
+                        onClick={() => { markOneNotifRead(n.id); onTabChange(residentTabFor(n)); }}
+                      >
+                        <p className="text-sm font-medium leading-tight text-foreground">{n.title}</p>
+                        <p className="text-xs text-muted-foreground leading-tight">{n.body}</p>
+                        <div className="flex items-center justify-between w-full">
+                          <span className="text-[10px] text-muted-foreground">
+                            {new Date(n.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                        </div>
+                      </DropdownMenuItem>
+                    ))
+                  )}
+                </ScrollArea>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               variant="ghost"
               size="icon"

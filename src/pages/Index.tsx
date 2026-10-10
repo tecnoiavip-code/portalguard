@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { onAppNav } from '@/lib/app-nav';
 import { Layout } from '@/components/Layout';
 import { Sidebar } from '@/components/Sidebar';
 import { Dashboard } from './Dashboard';
@@ -18,6 +19,13 @@ import StaffAnnouncements from './StaffAnnouncements';
 const Index = () => {
   const [activeSection, setActiveSection] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    return onAppNav((target) => {
+      setActiveSection((current) => (target.section === current ? current : target.section));
+      setSidebarOpen(false);
+    });
+  }, []);
 
   const renderSection = () => {
     switch (activeSection) {

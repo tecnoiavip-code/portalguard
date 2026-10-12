@@ -310,7 +310,7 @@ const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise
     if (cardValue && cardValue !== '0') {
       const { data } = await supabaseClient
         .from('residents')
-        .select('id, name, apartment, contract_type, contract_end_date, vehicle_tag')
+        .select('id, name, apartment, contract_type, contract_end_date, person_type, vehicle_tag')
         .or(`vehicle_tag.eq.${cardValue},vehicle_tag.eq.${String(payload?.card_value ?? '')}`)
         .limit(1)
         .maybeSingle();
@@ -323,7 +323,7 @@ const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise
         const [, apt, n] = m;
         const { data } = await supabaseClient
           .from('residents')
-          .select('id, name, apartment, contract_type, contract_end_date')
+          .select('id, name, apartment, contract_type, contract_end_date, person_type')
           .ilike('apartment', `%${apt.trim()}`);
         const target = normalizeName(n);
         resident = (data || []).find((r: any) => {
@@ -339,6 +339,9 @@ const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise
         if (resident.contract_end_date < today) {
           return { allow: false, reason: 'Contrato vencido', source: 'db', resident: resident.name };
         }
+      }
+      if (resident.person_type && resident.person_type !== 'morador') {
+        return { allow: true, reason: 'Acesso autorizado - colaborador ativo', source: 'db', resident: resident.name };
       }
       return { allow: true, reason: 'Morador ativo', source: 'db', resident: resident.name };
     }

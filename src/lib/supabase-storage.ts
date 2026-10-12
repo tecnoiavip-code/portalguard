@@ -5,7 +5,7 @@ import { compressImage } from '@/lib/image-utils';
 
 type ResidentListRow = Pick<Database['public']['Tables']['residents']['Row'],
   'id' | 'name' | 'cpf' | 'apartment' | 'phone' | 'email' | 'photo_url' |
-  'vehicle_plate' | 'vehicle_model' | 'vehicle_color' | 'vehicle_tag' | 'contract_type' | 'contract_end_date' | 'created_at'>;
+  'vehicle_plate' | 'vehicle_model' | 'vehicle_color' | 'vehicle_tag' | 'contract_type' | 'contract_end_date' | 'person_type' | 'created_at'>;
 type AccessEntryRow = Database['public']['Tables']['access_entries']['Row'];
 
 // Helper to uppercase string fields (except email and urls)
@@ -68,7 +68,7 @@ export const supabaseStorage = {
     for (let from = 0; ; from += pageSize) {
       const { data, error } = await supabase
         .from('residents')
-        .select('id, name, cpf, apartment, phone, email, photo_url, vehicle_plate, vehicle_model, vehicle_color, vehicle_tag, contract_type, contract_end_date, created_at')
+        .select('id, name, cpf, apartment, phone, email, photo_url, vehicle_plate, vehicle_model, vehicle_color, vehicle_tag, contract_type, contract_end_date, person_type, created_at')
         .order('created_at', { ascending: false })
         .range(from, from + pageSize - 1);
 
@@ -95,6 +95,7 @@ export const supabaseStorage = {
       vehicleTag: r.vehicle_tag || '',
       contractType: r.contract_type || '',
       contractEndDate: r.contract_end_date || '',
+      personType: r.person_type === 'empregado' || r.person_type === 'prestador' ? r.person_type : 'morador',
       createdAt: r.created_at,
     }));
 
@@ -333,6 +334,7 @@ export const supabaseStorage = {
       vehicle_tag: up(resident.vehicleTag) || null,
       contract_type: resident.contractType || null,
       contract_end_date: resident.contractEndDate || null,
+      person_type: resident.personType || 'morador',
     };
 
     // Determine resident ID for photo upload

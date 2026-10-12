@@ -642,6 +642,7 @@ export type Database = {
           id: string
           name: string
           phone: string | null
+          person_type: string | null
           photo_url: string | null
           updated_at: string | null
           vehicle_color: string | null
@@ -661,6 +662,7 @@ export type Database = {
           id?: string
           name: string
           phone?: string | null
+          person_type?: string | null
           photo_url?: string | null
           updated_at?: string | null
           vehicle_color?: string | null
@@ -680,6 +682,7 @@ export type Database = {
           id?: string
           name?: string
           phone?: string | null
+          person_type?: string | null
           photo_url?: string | null
           updated_at?: string | null
           vehicle_color?: string | null

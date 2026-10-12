@@ -34,27 +34,27 @@ pre{background:#000;padding:12px;border-radius:6px;white-space:pre-wrap;font-siz
 <button onclick="run()">Aplicar configuração</button><pre id="log"></pre>
 <script>
 const CONFIG=${JSON.stringify(config)};
-const ONLINE_SERVER_HOST=${JSON.stringify(WEBHOOK_HOST)};
-const ONLINE_SERVER_PORT='443';
+const ONLINE_SERVER_URL=${JSON.stringify(WEBHOOK_URL)};
 const log=m=>{document.getElementById('log').textContent+=m+'\\n'};
 async function post(ip,path,body){const r=await fetch('http://'+ip+'/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});const t=await r.text();if(!r.ok)throw new Error(path+' HTTP '+r.status+' '+t);try{return JSON.parse(t)}catch{return {}}}
-async function ensureOnlineServer(ip,s){
-const host=ONLINE_SERVER_HOST,prt=String(ONLINE_SERVER_PORT);
+async function ensureOnlineServer(ip,s,baseUrl){
+const SRV='PortalGuard Servidor';
 const loaded=await post(ip,'load_objects.fcgi?session='+s,{object:'devices',fields:['id','name','ip']});
 const list=(loaded&&loaded.devices)||[];
-async function upsert(vals){if(list.length>0){const sid=list[0].id;await post(ip,'create_or_modify_objects.fcgi?session='+s,{object:'devices',values:[{id:sid,name:'PortalGuard',...vals}]});return sid}const c=await post(ip,'create_objects.fcgi?session='+s,{object:'devices',values:[{name:'PortalGuard',public_key:'',...vals}]});return c.ids&&c.ids[0]}
-let sid=null;
-try{sid=await upsert({ip:host,port:prt})}catch(e){log('['+ip+'] campo porta nao aceito, gravando so o host');sid=await upsert({ip:host})}
+const existing=list.find(d=>String(d.name)===SRV);
+let sid=existing?existing.id:null;
+if(sid){await post(ip,'create_or_modify_objects.fcgi?session='+s,{object:'devices',values:[{id:sid,name:SRV,ip:baseUrl}]})}
+else{const c=await post(ip,'create_objects.fcgi?session='+s,{object:'devices',values:[{name:SRV,ip:baseUrl,public_key:''}]});sid=c&&c.ids&&c.ids[0]}
 if(!sid)throw new Error('não foi possível registrar o servidor online');
 await post(ip,'set_configuration.fcgi?session='+s,{general:{online:'1',local_identification:'1',ihm_enterprise_mode:'0'},online_client:{server_id:String(sid),extract_template:'0',max_request_attempts:'3'}});
-log('['+ip+'] servidor online gravado ('+host+':'+prt+') e modo online (Pro) ativado ✔')}
+log('['+ip+'] servidor online gravado ('+baseUrl+') id='+sid+' e modo online (Pro) ativado ✔')}
 async function run(){document.getElementById('log').textContent='';
 const ips=document.getElementById('ips').value.split(/\\s+/).filter(Boolean);
 for(const ip of ips){try{log('['+ip+'] login...');
 const s=(await post(ip,'login.fcgi',{login:document.getElementById('u').value,password:document.getElementById('p').value})).session;
 if(!s)throw new Error('sessão não retornada (usuário/senha?)');
 await post(ip,'set_configuration.fcgi?session='+s,CONFIG);log('['+ip+'] Servidor Push e Monitor gravados ✔');
-try{await ensureOnlineServer(ip,s)}catch(e){log('['+ip+'] AVISO: modo online falhou: '+e.message)}
+try{await ensureOnlineServer(ip,s,ONLINE_SERVER_URL)}catch(e){log('['+ip+'] AVISO: modo online falhou: '+e.message)}
 if(document.getElementById('rb').checked){try{await post(ip,'reboot.fcgi?session='+s)}catch(e){}log('['+ip+'] reiniciando...')}
 }catch(e){log('['+ip+'] ERRO: '+e.message+' — confira IP, rede e se o modo iDCloud está desligado.')}}
 log('Concluído.')}

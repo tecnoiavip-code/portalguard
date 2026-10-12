@@ -34,18 +34,20 @@ pre{background:#000;padding:12px;border-radius:6px;white-space:pre-wrap;font-siz
 <button onclick="run()">Aplicar configuração</button><pre id="log"></pre>
 <script>
 const CONFIG=${JSON.stringify(config)};
-const ONLINE_SERVER_IP=${JSON.stringify(WEBHOOK_URL)};
+const ONLINE_SERVER_HOST=${JSON.stringify(WEBHOOK_HOST)};
+const ONLINE_SERVER_PORT='443';
 const log=m=>{document.getElementById('log').textContent+=m+'\\n'};
 async function post(ip,path,body){const r=await fetch('http://'+ip+'/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});const t=await r.text();if(!r.ok)throw new Error(path+' HTTP '+r.status+' '+t);try{return JSON.parse(t)}catch{return {}}}
 async function ensureOnlineServer(ip,s){
+const host=ONLINE_SERVER_HOST,prt=String(ONLINE_SERVER_PORT);
 const loaded=await post(ip,'load_objects.fcgi?session='+s,{object:'devices',fields:['id','name','ip']});
 const list=(loaded&&loaded.devices)||[];
+async function upsert(vals){if(list.length>0){const sid=list[0].id;await post(ip,'create_or_modify_objects.fcgi?session='+s,{object:'devices',values:[{id:sid,name:'PortalGuard',...vals}]});return sid}const c=await post(ip,'create_objects.fcgi?session='+s,{object:'devices',values:[{name:'PortalGuard',public_key:'',...vals}]});return c.ids&&c.ids[0]}
 let sid=null;
-if(list.length>0){sid=list[0].id;await post(ip,'create_or_modify_objects.fcgi?session='+s,{object:'devices',values:[{id:sid,name:'PortalGuard',ip:ONLINE_SERVER_IP}]});log('['+ip+'] servidor online atualizado (id '+sid+')')}
-else{const c=await post(ip,'create_objects.fcgi?session='+s,{object:'devices',values:[{name:'PortalGuard',ip:ONLINE_SERVER_IP,public_key:''}]});sid=c.ids&&c.ids[0];log('['+ip+'] servidor online criado (id '+sid+')')}
+try{sid=await upsert({ip:host,port:prt})}catch(e){log('['+ip+'] campo porta nao aceito, gravando so o host');sid=await upsert({ip:host})}
 if(!sid)throw new Error('não foi possível registrar o servidor online');
 await post(ip,'set_configuration.fcgi?session='+s,{general:{online:'1',local_identification:'1',ihm_enterprise_mode:'0'},online_client:{server_id:String(sid),extract_template:'0',max_request_attempts:'3'}});
-log('['+ip+'] modo online (Pro) ativado ✔')}
+log('['+ip+'] servidor online gravado ('+host+':'+prt+') e modo online (Pro) ativado ✔')}
 async function run(){document.getElementById('log').textContent='';
 const ips=document.getElementById('ips').value.split(/\\s+/).filter(Boolean);
 for(const ip of ips){try{log('['+ip+'] login...');

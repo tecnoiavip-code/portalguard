@@ -6,7 +6,9 @@ import supabaseConfig from '../../config/supabase.json';
 export const WEBHOOK_HOST = new URL(supabaseConfig.url).hostname;
 export const WEBHOOK_URL = `https://${WEBHOOK_HOST}/functions/v1/controlid-webhook`;
 
-export function buildControlIdUtilityHtml(ips: string[]): string {
+export function buildControlIdUtilityHtml(devices: { ip: string; name?: string }[]): string {
+  const ips = devices.map((d) => d.ip);
+  const names = Object.fromEntries(devices.filter((d) => d.name).map((d) => [d.ip, d.name as string]));
   const config = {
     push_server: {
       push_remote_address: WEBHOOK_URL,
@@ -35,6 +37,7 @@ pre{background:#000;padding:12px;border-radius:6px;white-space:pre-wrap;font-siz
 <script>
 const CONFIG=${JSON.stringify(config)};
 const ONLINE_SERVER_URL=${JSON.stringify(WEBHOOK_URL)};
+const NAMES=${JSON.stringify(names)};
 const log=m=>{document.getElementById('log').textContent+=m+'\\n'};
 async function post(ip,path,body){const r=await fetch('http://'+ip+'/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});const t=await r.text();if(!r.ok)throw new Error(path+' HTTP '+r.status+' '+t);try{return JSON.parse(t)}catch{return {}}}
 async function ensureOnlineServer(ip,s,baseUrl){
@@ -48,12 +51,14 @@ else{const c=await post(ip,'create_objects.fcgi?session='+s,{object:'devices',va
 if(!sid)throw new Error('não foi possível registrar o servidor online');
 await post(ip,'set_configuration.fcgi?session='+s,{general:{online:'1',local_identification:'1',ihm_enterprise_mode:'0'},online_client:{server_id:String(sid),extract_template:'0',max_request_attempts:'3'}});
 log('['+ip+'] servidor online gravado ('+baseUrl+') id='+sid+' e modo online (Pro) ativado ✔')}
+async function applyDeviceName(ip,s,name){if(!name)return;try{const loaded=await post(ip,'load_objects.fcgi?session='+s,{object:'devices',fields:['id','name','ip','public_key']});const list=(loaded&&loaded.devices)||[];const did=String((await post(ip,'system_information.fcgi?session='+s,{})).device_id||'');const self=list.find(d=>String(d.id)===did);if(self){await post(ip,'create_or_modify_objects.fcgi?session='+s,{object:'devices',values:[{id:self.id,name,ip:self.ip,public_key:self.public_key||''}]});log('['+ip+'] nome do aparelho gravado: '+name+' ✔')}}catch(e){log('['+ip+'] AVISO: nome do aparelho falhou: '+e.message)}}
 async function run(){document.getElementById('log').textContent='';
 const ips=document.getElementById('ips').value.split(/\\s+/).filter(Boolean);
 for(const ip of ips){try{log('['+ip+'] login...');
 const s=(await post(ip,'login.fcgi',{login:document.getElementById('u').value,password:document.getElementById('p').value})).session;
 if(!s)throw new Error('sessão não retornada (usuário/senha?)');
 await post(ip,'set_configuration.fcgi?session='+s,CONFIG);log('['+ip+'] Servidor Push e Monitor gravados ✔');
+await applyDeviceName(ip,s,NAMES[ip]);
 try{await ensureOnlineServer(ip,s,ONLINE_SERVER_URL)}catch(e){log('['+ip+'] AVISO: modo online falhou: '+e.message)}
 if(document.getElementById('rb').checked){try{await post(ip,'reboot.fcgi?session='+s)}catch(e){}log('['+ip+'] reiniciando...')}
 }catch(e){log('['+ip+'] ERRO: '+e.message+' — confira IP, rede e se o modo iDCloud está desligado.')}}
@@ -61,8 +66,8 @@ log('Concluído.')}
 </script></body></html>`;
 }
 
-export function downloadControlIdUtility(ips: string[]) {
-  const blob = new Blob([buildControlIdUtilityHtml(ips)], { type: 'text/html;charset=utf-8' });
+export function downloadControlIdUtility(devices: { ip: string; name?: string }[]) {
+  const blob = new Blob([buildControlIdUtilityHtml(devices)], { type: 'text/html;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'config-controlid.html';

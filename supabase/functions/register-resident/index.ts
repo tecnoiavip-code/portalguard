@@ -24,10 +24,10 @@ serve(async (req) => {
       return jsonResponse({ error: "Email e senha são obrigatórios" });
     }
 
-    const supabaseAdmin = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const url = Deno.env.get("SUPABASE_URL");
+    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!url || !key) return jsonResponse({ error: "Serviço indisponível." }, 503);
+    const supabaseAdmin = createClient(url, key);
 
     // Check if email exists in residents table (case-insensitive, with wildcard for whitespace)
     const normalizedEmail = email.trim().toLowerCase();
@@ -67,11 +67,15 @@ serve(async (req) => {
 
     const userId = authData.user.id;
 
-    // Assign resident role
-    await supabaseAdmin.from("user_roles").insert({ user_id: userId, role: "resident" });
-
-    // Link auth user to resident
-    await supabaseAdmin.from("residents").update({ auth_user_id: userId }).eq("id", resident.id);
+    // The auth lifecycle trigger may already have linked this account and granted the role.
+    const { error: linkError } = await supabaseAdmin.from("residents")
+      .update({ auth_user_id: userId }).eq("id", resident.id);
+    const { error: roleError } = linkError ? { error: linkError } : await supabaseAdmin.from("user_roles")
+      .upsert({ user_id: userId, role: "resident" }, { onConflict: "user_id,role" });
+    if (linkError || roleError) {
+      await supabaseAdmin.auth.admin.deleteUser(userId);
+      return jsonResponse({ error: "Não foi possível concluir o vínculo do morador. Tente novamente." }, 500);
+    }
 
     return jsonResponse({ success: true, message: "Conta criada com sucesso!" });
   } catch (error) {

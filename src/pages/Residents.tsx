@@ -47,7 +47,7 @@ export const Residents = () => {
   const [contractFilter, setContractFilter] = useState<ContractFilter>('all');
   const [personFilter, setPersonFilter] = useState<PersonFilter>('all');
   const itemsPerPage = 10;
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<Omit<Resident, 'id' | 'createdAt'>>({
     name: '',
     cpf: '',
     apartment: '',

@@ -8,6 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import appLogo from '@/assets/app-icon-v18-preview.png';
+import { resolvePortalAccess } from '@/lib/portal-access';
+import { portalDestination } from '@/lib/portal-access-policy';
 
 const ResidentAuth = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -58,21 +60,14 @@ const ResidentAuth = () => {
         return;
       }
 
-      const { data: role } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', data.user.id)
-        .eq('role', 'resident')
-        .maybeSingle();
-
-      if (!role) {
-        toast.success('Login realizado! Redirecionando para a portaria.');
-        navigate('/');
+      const access = await resolvePortalAccess();
+      if (access === 'denied') {
+        await auth.signOut();
+        toast.error('Esta conta não possui acesso autorizado. Verifique seu cadastro com a portaria.');
         return;
       }
-
       toast.success('Login realizado!');
-      navigate('/morador');
+      navigate(portalDestination(access), { replace: true });
     } catch {
       toast.error('Erro ao fazer login');
     } finally {

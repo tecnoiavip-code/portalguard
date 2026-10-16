@@ -5,7 +5,11 @@ import { compressImage } from '@/lib/image-utils';
 
 type ResidentListRow = Pick<Database['public']['Tables']['residents']['Row'],
   'id' | 'name' | 'cpf' | 'apartment' | 'phone' | 'email' | 'photo_url' |
-  'vehicle_plate' | 'vehicle_model' | 'vehicle_color' | 'vehicle_tag' | 'contract_type' | 'contract_end_date' | 'person_type' | 'created_at'>;
+  'vehicle_plate' | 'vehicle_model' | 'vehicle_color' | 'vehicle_tag' | 'created_at'> & {
+    contract_type: string | null;
+    contract_end_date: string | null;
+    person_type: string | null;
+  };
 type AccessEntryRow = Database['public']['Tables']['access_entries']['Row'];
 
 // Helper to uppercase string fields (except email and urls)
@@ -77,11 +81,11 @@ export const supabaseStorage = {
         return null; // Return null on error so callers can preserve existing data
       }
 
-      allRows.push(...(data || []));
+      allRows.push(...((data || []) as unknown as ResidentListRow[]));
       if (!data || data.length < pageSize) break;
     }
 
-    const residents = allRows.map(r => ({
+    const residents: Resident[] = allRows.map(r => ({
       id: r.id,
       name: r.name,
       cpf: r.cpf || '',

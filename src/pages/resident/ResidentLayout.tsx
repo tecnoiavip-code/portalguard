@@ -155,16 +155,7 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
     }
     if (!user) return;
 
-    const checkRole = async () => {
-      const { data: role } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user.id)
-        .eq('role', 'resident')
-        .maybeSingle();
-      if (!role) navigate('/morador/login');
-    };
-    checkRole();
+    // ProtectedRoute validates resident access before mounting this layout.
 
     let isActive = true;
     let pollTimeout: ReturnType<typeof setTimeout>;
@@ -179,7 +170,8 @@ const ResidentLayout = ({ children, activeTab, onTabChange, counts, setCounts }:
         if (!res) return;
         residentIdRef.current = res.id;
       }
-      const rid = residentIdRef.current!;
+      const rid = residentIdRef.current;
+      if (!rid) return;
 
       const [chatRes, notifRes, mailsRes, announcementsRes, readsRes] = await Promise.all([
         supabase

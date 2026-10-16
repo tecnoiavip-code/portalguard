@@ -8,6 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { toast } from 'sonner';
 import { KeyRound, Loader2 } from 'lucide-react';
 import { translateAuthError } from '@/lib/translate-auth-error';
+import { resolvePortalAccess } from '@/lib/portal-access';
+import { portalDestination } from '@/lib/portal-access-policy';
 
 const ResetPassword = () => {
   const [password, setPassword] = useState('');
@@ -60,19 +62,7 @@ const ResetPassword = () => {
 
       toast.success('Senha atualizada com sucesso!');
       
-      const { data: { user } } = await auth.getUser();
-      if (user) {
-        const { data: residentRole } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', user.id)
-          .eq('role', 'resident')
-          .maybeSingle();
-
-        navigate(residentRole ? '/morador' : '/');
-      } else {
-        navigate('/auth');
-      }
+      navigate(portalDestination(await resolvePortalAccess()), { replace: true });
     } catch {
       toast.error('Erro ao atualizar senha');
     } finally {

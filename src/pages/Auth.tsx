@@ -11,6 +11,8 @@ import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { translateAuthError } from '@/lib/translate-auth-error';
 import appLogo from '@/assets/app-icon-v18-preview.png';
+import { resolvePortalAccess } from '@/lib/portal-access';
+import { portalDestination } from '@/lib/portal-access-policy';
 
 export const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -64,24 +66,14 @@ export const Auth = () => {
         return;
       }
 
-      const { data: { user } } = await auth.getUser();
-      if (user) {
-        const { data: residentRole } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', user.id)
-          .eq('role', 'resident')
-          .maybeSingle();
-
-        if (residentRole) {
-          toast.success('Login realizado! Redirecionando para o Portal do Morador.');
-          navigate(safeNext ?? '/morador');
-          return;
-        }
+      const access = await resolvePortalAccess();
+      if (access === 'denied') {
+        await auth.signOut();
+        toast.error('Esta conta não possui acesso autorizado. Verifique seu cadastro com a portaria.');
+        return;
       }
-
       toast.success('Login realizado com sucesso!');
-      navigate(safeNext ?? '/');
+      navigate(portalDestination(access, safeNext), { replace: true });
     } catch {
       toast.error('Erro ao fazer login');
     } finally {
@@ -106,7 +98,7 @@ export const Auth = () => {
         return;
       }
 
-      toast.success('Conta criada com sucesso! Você já pode fazer login.');
+      toast.success('Confira seu email para confirmar a conta. O acesso depende do cadastro autorizado.');
       // Switch to login tab
       document.querySelector<HTMLButtonElement>('[value="login"]')?.click();
     } catch (error) {

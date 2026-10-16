@@ -27,7 +27,7 @@ const App = () => (
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
             <Route path="/morador/login" element={<ResidentAuth />} />
-            <Route path="/morador" element={<ResidentApp />} />
+            <Route path="/morador" element={<ProtectedRoute portal="resident"><ResidentApp /></ProtectedRoute>} />
             
             <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />

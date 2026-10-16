@@ -108,8 +108,6 @@ export const Auth = () => {
     }
   };
 
-  const isLocalEnv = import.meta.env.VITE_SUPABASE_URL?.includes('127.0.0.1') || import.meta.env.VITE_SUPABASE_URL?.includes('localhost');
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5 p-4">
       <Card className="w-full max-w-md">
@@ -128,32 +126,9 @@ export const Auth = () => {
             </TabsList>
             
             <TabsContent value="login">
-              {isLocalEnv && (
-                <div className="mb-4 p-3 bg-primary/10 border border-primary/30 rounded-lg text-xs space-y-2">
-                  <p className="font-bold text-primary flex items-center gap-1">
-                    💻 BANCO DE DADOS LOCAL CONECTADO
-                  </p>
-                  <p className="text-muted-foreground">
-                    Para acessar o ambiente local no seu PC, utilize as credenciais padrão de administrador:
-                  </p>
-                  <div className="font-mono bg-background/80 p-2 rounded border text-foreground select-all space-y-0.5">
-                    <p><strong>Email:</strong> admin@portalguard.local</p>
-                    <p><strong>Senha:</strong> portaguard@2024</p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-full text-xs h-7 mt-1"
-                    onClick={() => {
-                      setLoginEmail('admin@portalguard.local');
-                      setLoginPassword('portaguard@2024');
-                    }}
-                  >
-                    ⚡ Preencher credenciais locais
-                  </Button>
-                </div>
-              )}
+              {searchParams.get('access') === 'denied' && <p role="alert" className="mb-4 text-destructive">
+                Esta conta não possui acesso autorizado. Verifique seu cadastro com a portaria.
+              </p>}
               <form onSubmit={handleLogin} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="login-email">Email</Label>

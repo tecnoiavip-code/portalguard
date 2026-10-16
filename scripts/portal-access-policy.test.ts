@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parsePortalAccess, portalDestination } from './portal-access-policy';
+import { parsePortalAccess, portalDestination } from '../src/lib/portal-access-policy';
 
 describe('Portal access rules', () => {
   test('server-approved staff reaches portaria', () => {

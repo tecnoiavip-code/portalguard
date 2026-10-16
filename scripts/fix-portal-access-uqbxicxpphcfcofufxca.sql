@@ -136,6 +136,23 @@ CREATE POLICY "Portal role boundary" ON public.user_roles AS RESTRICTIVE FOR ALL
 USING (user_id = auth.uid() OR public.has_role(auth.uid(), 'admin'))
 WITH CHECK (public.has_role(auth.uid(), 'admin'));
 
+-- Prevent generic authenticated legacy policies from exposing staff-only records.
+DO $$
+DECLARE table_name text;
+BEGIN
+  FOREACH table_name IN ARRAY ARRAY['devices', 'controlid_config', 'controlid_logs',
+    'push_command_queue', 'blocked_visitors', 'shifts', 'shift_equipment_checks',
+    'portaria_equipment', 'incidents'] LOOP
+    IF to_regclass('public.' || table_name) IS NOT NULL THEN
+      EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', table_name);
+      EXECUTE format('DROP POLICY IF EXISTS "Portal staff boundary" ON public.%I', table_name);
+      EXECUTE format('CREATE POLICY "Portal staff boundary" ON public.%I AS RESTRICTIVE FOR ALL TO authenticated
+        USING (public.has_role(auth.uid(), ''admin'') OR public.has_role(auth.uid(), ''receptionist'') OR public.has_role(auth.uid(), ''security_guard''))
+        WITH CHECK (public.has_role(auth.uid(), ''admin'') OR public.has_role(auth.uid(), ''receptionist'') OR public.has_role(auth.uid(), ''security_guard''))', table_name);
+    END IF;
+  END LOOP;
+END $$;
+
 COMMIT;
 -- Validation: must show 0 unauthorized staff and 0 unlinked resident accounts.
 SELECT count(*) AS unauthorized_staff FROM public.user_roles ur JOIN auth.users u ON u.id = ur.user_id

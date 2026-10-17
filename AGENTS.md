@@ -6,3 +6,4 @@
 - Enforce staff eligibility and resident linkage server-side in role validation and has_role, never through client email comparisons or stored flags.
 - Keep external resident extension fields typed locally without modifying generated database types, so preview schema differences do not break compilation.
 - Keep Control iD identification responses in a pure function-local module: database grants override local unknown events, database denials never actuate relays, and contingency requires an explicit device grant.
+- Select one Control iD relay action via CONTROLID_RELAY_ACTION (default sec_box); never blindly pulse both independent outputs, and reuse synchronization's resident ID algorithm.

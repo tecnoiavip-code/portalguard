@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { buildIdentificationResponse, type AccessDecision } from '../supabase/functions/controlid-webhook/identification-response';
+import { buildIdentificationResponse, residentHardwareId, type AccessDecision } from '../supabase/functions/controlid-webhook/identification-response';
 
 const url = new URL('http://localhost/functions/v1/controlid-webhook');
 const grant: AccessDecision = { allow: true, reason: 'Morador ativo', source: 'db', resident: 'MARIA SILVA' };
@@ -16,15 +16,16 @@ describe('Control iD centralized authorization', () => {
   test('authorized response carries the resident name from the database', () => {
     expect(response({ user_name: 'Nome antigo' }).user_name).toBe('MARIA SILVA');
   });
-  test('authorized response includes SecBox and the requested internal relay', () => {
+  test('authorized response pulses only the configured relay', () => {
     expect(response({ portal_id: '2' }).actions).toEqual([
       { action: 'sec_box', parameters: 'id=65793, reason=1' },
-      { action: 'door', parameters: 'door=2' },
     ]);
+    const internal = buildIdentificationResponse({ portal_id: '2' }, url, grant, 'door') as Record<string, unknown>;
+    expect(internal.actions).toEqual([{ action: 'door', parameters: 'door=2' }]);
   });
   test('invalid portal defaults to relay 1', () => {
-    expect(response({ portal_id: 'invalid' }).actions).toEqual([
-      { action: 'sec_box', parameters: 'id=65793, reason=1' },
+    const internal = buildIdentificationResponse({ portal_id: 'invalid' }, url, grant, 'door') as Record<string, unknown>;
+    expect(internal.actions).toEqual([
       { action: 'door', parameters: 'door=1' },
     ]);
   });
@@ -52,5 +53,9 @@ describe('Control iD centralized authorization', () => {
   });
   test('preserves the synced hardware user ID rather than replacing it with a constant', () => {
     expect(response({ user_id: '12345' }).user_id).toBe(12345);
+  });
+  test('unknown TAG gets the same deterministic resident ID as synchronization', () => {
+    expect(residentHardwareId('abc')).toBe(96354);
+    expect(response({ user_id: 0 }, { ...grant, resolved_user_id: residentHardwareId('abc') }).user_id).toBe(96354);
   });
 });

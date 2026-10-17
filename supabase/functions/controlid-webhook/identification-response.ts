@@ -6,6 +6,13 @@ export type AccessDecision = {
   resolved_user_id?: number;
 };
 
+// Matches the ID used by resident synchronization/enrollment.
+export const residentHardwareId = (id: string): number => {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0;
+  return Math.abs(hash);
+};
+
 const positiveId = (value: unknown, fallback: number) => {
   const id = Number(value);
   return Number.isSafeInteger(id) && id > 0 ? id : fallback;
@@ -21,6 +28,7 @@ export const buildIdentificationResponse = (
   payload: Record<string, unknown>,
   url: URL,
   decision: AccessDecision,
+  relayAction: 'sec_box' | 'door' = 'sec_box',
 ) => {
   // A database grant overrides an unknown local TAG. Contingency never upgrades
   // a device denial into a grant when the database is unavailable.
@@ -35,10 +43,10 @@ export const buildIdentificationResponse = (
     portal_id: portalId,
   };
   if (granted) {
-    result.actions = [
-      { action: 'sec_box', parameters: 'id=65793, reason=1' },
-      { action: 'door', parameters: `door=${portalId}` },
-    ];
+    // Never pulse both outputs blindly: some models have independent relays.
+    result.actions = [relayAction === 'door'
+      ? { action: 'door', parameters: `door=${portalId}` }
+      : { action: 'sec_box', parameters: 'id=65793, reason=1' }];
   }
   return url.pathname.toLowerCase().includes('.fcgi') ? { result } : result;
 };

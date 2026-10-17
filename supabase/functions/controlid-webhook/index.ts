@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.75.0';
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
-import { buildIdentificationResponse, isDeviceAuthorized, type AccessDecision } from './identification-response.ts';
+import { buildIdentificationResponse, isDeviceAuthorized, residentHardwareId, type AccessDecision } from './identification-response.ts';
 
 // Input validation helpers
 const sanitizeString = (val: any, maxLength = 255): string => {
@@ -277,16 +277,22 @@ const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise
     }
 
     if (resident) {
+      const residentIdentity = {
+        resident: resident.name,
+        resolved_user_id: Number(payload?.user_id) > 0
+          ? Number(payload.user_id)
+          : residentHardwareId(String(resident.id)),
+      };
       if (resident.contract_end_date) {
         const today = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10); // America/Sao_Paulo
         if (resident.contract_end_date < today) {
-          return { allow: false, reason: 'Contrato vencido', source: 'db', resident: resident.name };
+          return { allow: false, reason: 'Contrato vencido', source: 'db', ...residentIdentity };
         }
       }
       if (resident.person_type && resident.person_type !== 'morador') {
-        return { allow: true, reason: 'Acesso autorizado - colaborador ativo', source: 'db', resident: resident.name };
+        return { allow: true, reason: 'Acesso autorizado - colaborador ativo', source: 'db', ...residentIdentity };
       }
-      return { allow: true, reason: 'Morador ativo', source: 'db', resident: resident.name };
+      return { allow: true, reason: 'Morador ativo', source: 'db', ...residentIdentity };
     }
 
     // Not a resident: check restriction list by name
@@ -956,7 +962,8 @@ Deno.serve(async (req) => {
         resolveDeviceType(supabaseClient, effectiveDeviceId),
         evaluateCentralAccess(supabaseClient, payload),
       ]);
-      const identResponse = buildIdentificationResponse(payload, url, decision);
+      const relayAction = Deno.env.get('CONTROLID_RELAY_ACTION') === 'door' ? 'door' : 'sec_box';
+      const identResponse = buildIdentificationResponse(payload, url, decision, relayAction);
       console.log('Central access decision:', { device_id: effectiveDeviceId, ...decision });
       console.log('Identification response (immediate):', {
         device_id: effectiveDeviceId,

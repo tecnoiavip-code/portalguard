@@ -1,9 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.75.0';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-webhook-signature, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-};
+import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
+import { buildIdentificationResponse, isDeviceAuthorized, residentHardwareId, type AccessDecision } from './identification-response.ts';
 
 // Input validation helpers
 const sanitizeString = (val: any, maxLength = 255): string => {
@@ -212,61 +209,6 @@ const extractDeviceId = (url: URL, payload: any, req: Request): string => {
   return '';
 };
 
-const buildIdentificationActions = (payload: any, deviceType?: string | null) => {
-  const portalId = Number.parseInt(String(payload?.portal_id ?? '1'), 10);
-  const resolvedPortal = Number.isFinite(portalId) && portalId > 0 ? portalId : 1;
-
-  // V6 readers (iDFlex / iDAccess Pro / Nano / iDFace) typically expect sec_box.
-  // For the dedicated vehicle TAG reader we also send the explicit portal open action
-  // so the gate receives a direct open command in firmwares that don't trigger it from
-  // sec_box alone during online authorization.
-  if (deviceType === 'vehicle_tag') {
-    return [
-      { action: 'sec_box', parameters: 'id=65793, reason=1' },
-      { action: 'door', parameters: `door=${resolvedPortal}` },
-    ];
-  }
-
-  return [{ action: 'sec_box', parameters: 'id=65793, reason=1' }];
-};
-
-const buildIdentificationResponse = (payload: any, url: URL, deviceType?: string | null) => {
-  const userId = Number.parseInt(String(payload?.user_id ?? '0'), 10);
-  const portalId = Number.parseInt(String(payload?.portal_id ?? '1'), 10);
-  const incomingEvent = Number.parseInt(String(payload?.event ?? '0'), 10);
-  const userName = sanitizeString(payload?.user_name || payload?.name || '', 200);
-
-  const isIdentified = (Number.isFinite(userId) && userId > 0) || userName.length > 0;
-  // Event 3/6 = device-side denial (unknown card, etc.). Don't grant.
-  const isDeniedByDevice = incomingEvent === 3 || incomingEvent === 6;
-  const granted = isIdentified && !isDeniedByDevice;
-
-  const resolvedPortal = Number.isFinite(portalId) && portalId > 0 ? portalId : 1;
-
-  // MINIMAL Control iD response. Extra fields like message/user_image/duress can
-  // break the firmware JSON parser and trigger "server communication error".
-  const result: Record<string, unknown> = {
-    event: granted ? 7 : 6,
-    user_id: Number.isFinite(userId) ? userId : 0,
-    user_name: userName,
-    user_image: payload?.user_has_image === 1 || payload?.user_has_image === '1' || payload?.user_has_image === true || payload?.user_has_image === 'true',
-    portal_id: resolvedPortal,
-  };
-
-  if (granted) {
-    result.actions = buildIdentificationActions(payload, deviceType);
-  }
-
-  // Control iD expects DIFFERENT response shapes depending on the callback path:
-  // - official .fcgi callbacks => { result: { ... } }
-  // - direct monitor/online posts to the base webhook URL => flat JSON { ... }
-  // Returning the wrapped payload to base monitor posts causes the device to
-  // recognize the user but still show "server communication error" and not open.
-  const path = url.pathname.toLowerCase();
-  const shouldWrapResult = path.includes('.fcgi');
-  return shouldWrapResult ? { result } : result;
-};
-
 const resolveDeviceType = async (supabaseClient: any, deviceId: string): Promise<string | null> => {
   if (!deviceId) return null;
   if (deviceTypeCache.has(deviceId)) {
@@ -295,25 +237,25 @@ const resolveDeviceType = async (supabaseClient: any, deviceId: string): Promise
 // fall back to the device decision (hybrid contingency) so the gate never hangs.
 const DECISION_TIMEOUT_MS = 2500;
 
-type AccessDecision = { allow: boolean; reason: string; source: 'db' | 'fallback'; resident?: string };
-
 const normalizeName = (s: string) =>
   s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
 const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise<AccessDecision> => {
   const work = (async (): Promise<AccessDecision> => {
     const incomingEvent = Number.parseInt(String(payload?.event ?? '0'), 10);
-    const cardValue = sanitizeString(String(payload?.card_value ?? ''), 100).replace(/^0+/, '');
+    const rawCardValue = sanitizeString(payload?.card_value, 100);
+    const cardValue = rawCardValue.replace(/^0+/, '');
     const userName = sanitizeString(String(payload?.user_name || payload?.name || ''), 200);
     let resident: any = null;
 
     if (cardValue && cardValue !== '0') {
-      const { data } = await supabaseClient
+      const { data, error } = await supabaseClient
         .from('residents')
         .select('id, name, apartment, contract_type, contract_end_date, person_type, vehicle_tag')
-        .or(`vehicle_tag.eq.${cardValue},vehicle_tag.eq.${String(payload?.card_value ?? '')}`)
+        .in('vehicle_tag', [...new Set([cardValue, rawCardValue])])
         .limit(1)
         .maybeSingle();
+      if (error) throw error;
       resident = data;
     }
 
@@ -321,10 +263,11 @@ const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise
       const m = userName.match(/^(\d+\w?)\s*[-–]\s*(.+)$/i);
       if (m) {
         const [, apt, n] = m;
-        const { data } = await supabaseClient
+        const { data, error } = await supabaseClient
           .from('residents')
           .select('id, name, apartment, contract_type, contract_end_date, person_type')
           .ilike('apartment', `%${apt.trim()}`);
+        if (error) throw error;
         const target = normalizeName(n);
         resident = (data || []).find((r: any) => {
           const rn = normalizeName(r.name);
@@ -334,28 +277,35 @@ const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise
     }
 
     if (resident) {
+      const residentIdentity = {
+        resident: resident.name,
+        resolved_user_id: Number(payload?.user_id) > 0
+          ? Number(payload.user_id)
+          : residentHardwareId(String(resident.id)),
+      };
       if (resident.contract_end_date) {
         const today = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10); // America/Sao_Paulo
         if (resident.contract_end_date < today) {
-          return { allow: false, reason: 'Contrato vencido', source: 'db', resident: resident.name };
+          return { allow: false, reason: 'Contrato vencido', source: 'db', ...residentIdentity };
         }
       }
       if (resident.person_type && resident.person_type !== 'morador') {
-        return { allow: true, reason: 'Acesso autorizado - colaborador ativo', source: 'db', resident: resident.name };
+        return { allow: true, reason: 'Acesso autorizado - colaborador ativo', source: 'db', ...residentIdentity };
       }
-      return { allow: true, reason: 'Morador ativo', source: 'db', resident: resident.name };
+      return { allow: true, reason: 'Morador ativo', source: 'db', ...residentIdentity };
     }
 
     // Not a resident: check restriction list by name
     if (userName) {
       const cleanName = userName.replace(/^(\d+\w?)\s*[-–]\s*/, '').trim();
-      const { data: blocked } = await supabaseClient
+      const { data: blocked, error } = await supabaseClient
         .from('blocked_visitors')
         .select('id')
         .eq('is_active', true)
         .ilike('visitor_name', cleanName)
         .limit(1)
         .maybeSingle();
+      if (error) throw error;
       if (blocked) return { allow: false, reason: 'Pessoa bloqueada', source: 'db' };
     }
 
@@ -363,31 +313,18 @@ const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise
       return { allow: false, reason: 'Não identificado', source: 'db' };
     }
     // Known by the device (staff, service providers registered locally): allow.
-    return { allow: true, reason: 'Cadastro no equipamento', source: 'db' };
+    return { allow: isDeviceAuthorized(payload), reason: 'Decisão do equipamento', source: 'fallback' };
   })();
 
   const timeout = new Promise<AccessDecision>((resolve) =>
-    setTimeout(() => resolve({ allow: true, reason: 'Timeout - decisão do equipamento', source: 'fallback' }), DECISION_TIMEOUT_MS)
+    setTimeout(() => resolve({ allow: isDeviceAuthorized(payload), reason: 'Timeout - decisão do equipamento', source: 'fallback' }), DECISION_TIMEOUT_MS)
   );
   try {
     return await Promise.race([work, timeout]);
   } catch (e) {
     console.error('Central decision error:', e);
-    return { allow: true, reason: 'Erro - decisão do equipamento', source: 'fallback' };
+    return { allow: isDeviceAuthorized(payload), reason: 'Erro - decisão do equipamento', source: 'fallback' };
   }
-};
-
-const buildDeniedResponse = (payload: any, url: URL) => {
-  const userId = Number.parseInt(String(payload?.user_id ?? '0'), 10);
-  const portalId = Number.parseInt(String(payload?.portal_id ?? '1'), 10);
-  const result = {
-    event: 6,
-    user_id: Number.isFinite(userId) ? userId : 0,
-    user_name: sanitizeString(payload?.user_name || payload?.name || '', 200),
-    user_image: false,
-    portal_id: Number.isFinite(portalId) && portalId > 0 ? portalId : 1,
-  };
-  return url.pathname.toLowerCase().includes('.fcgi') ? { result } : result;
 };
 
 const tryParseJsonString = (value: unknown) => {
@@ -1018,17 +955,15 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ===== IDENTIFICATION EVENT: Return door-open response IMMEDIATELY, then do DB work =====
-    // Critical: the device has a short timeout (~15s) and will NOT open the door if
-    // the response is delayed by database operations.
+    // Authorization must finish before responding. Logs/photos remain background
+    // work; the central decision has a bounded budget below the device timeout.
     if (eventType === 'identification_event') {
       const [deviceType, decision] = await Promise.all([
         resolveDeviceType(supabaseClient, effectiveDeviceId),
         evaluateCentralAccess(supabaseClient, payload),
       ]);
-      const identResponse = decision.allow
-        ? buildIdentificationResponse(payload, url, deviceType)
-        : buildDeniedResponse(payload, url);
+      const relayAction = Deno.env.get('CONTROLID_RELAY_ACTION') === 'door' ? 'door' : 'sec_box';
+      const identResponse = buildIdentificationResponse(payload, url, decision, relayAction);
       console.log('Central access decision:', { device_id: effectiveDeviceId, ...decision });
       console.log('Identification response (immediate):', {
         device_id: effectiveDeviceId,
@@ -1039,7 +974,7 @@ Deno.serve(async (req) => {
         response: identResponse,
       });
 
-      // ALL database work runs in background AFTER response is sent
+      // Non-authorizing database work runs in background.
       runBackground('identificationPostProcess', (async () => {
         try {
           // 1. Save photo if present in payload

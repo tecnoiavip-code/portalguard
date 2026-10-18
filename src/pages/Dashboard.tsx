@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Users, Mail, UserCheck, Clock, Activity, Radio, CheckCheck, User, ShieldCheck, ShieldAlert, X, Car, AlertTriangle } from 'lucide-react';
+import { Users, Mail, UserCheck, Clock, Activity, Radio, CheckCheck, User, ShieldCheck, ShieldAlert, X, Car, AlertTriangle, ScanFace } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { StatsCard } from '@/components/StatsCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -400,6 +400,12 @@ export const Dashboard = () => {
                   const isTagRecognized = isTagEvent && isRecognized;
                   const isTagUnknown = isTagEvent && !isRecognized;
 
+                  // Qual autorização abriu o portão: facial (motor central) ou tag/cartão.
+                  const faceMatched = !!p.face_identification?.matched;
+                  const hasCardValue = cardValue.replace(/^0+/, '') !== '';
+                  const isFacialAuth = isAccess && faceMatched;
+                  const isTagAuth = isAccess && !isFacialAuth && (isTagEvent || hasCardValue);
+
                   const displayName = parsedName || (isTagEvent ? 'TAG não identificada' : log.event_type === 'device_is_alive' ? 'Dispositivo online' : log.event_type === 'door' ? 'Evento de porta' : 'Acesso pela interface web');
                   const displayLabel = apartment && parsedName ? `${apartment} - ${parsedName.toUpperCase()}` : displayName.toUpperCase();
 
@@ -438,7 +444,7 @@ export const Dashboard = () => {
                         </Avatar>
                         {isAccess && (
                           <div className={`absolute -bottom-1 -right-1 rounded-full p-1 ${isRecognized ? 'bg-success text-success-foreground' : 'bg-destructive text-destructive-foreground'}`}>
-                            {isTagEvent ? <Car className="h-4 w-4" /> : isRecognized ? <ShieldCheck className="h-4 w-4" /> : <ShieldAlert className="h-4 w-4" />}
+                            {isFacialAuth ? <ScanFace className="h-4 w-4" /> : isTagAuth ? <Car className="h-4 w-4" /> : isRecognized ? <ShieldCheck className="h-4 w-4" /> : <ShieldAlert className="h-4 w-4" />}
                           </div>
                         )}
                       </div>

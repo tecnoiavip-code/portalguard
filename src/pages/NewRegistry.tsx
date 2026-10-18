@@ -241,7 +241,7 @@ export const NewRegistry = () => {
   const filteredAllEntries = allEntries.filter(entry => entry.visitorName.toLowerCase().includes(searchTerm.toLowerCase()) || entry.apartment.toLowerCase().includes(searchTerm.toLowerCase()) || entry.visitorDocument.toLowerCase().includes(searchTerm.toLowerCase()));
   const totalPagesAll = Math.ceil(filteredAllEntries.length / itemsPerPageTable);
   const paginatedAllEntries = filteredAllEntries.slice((currentPageAll - 1) * itemsPerPageTable, currentPageAll * itemsPerPageTable);
-  const filteredResidents = residents.filter(r => r.name.toLowerCase().includes(visitedLocationSearch.toLowerCase()) || r.apartment.toLowerCase().includes(visitedLocationSearch.toLowerCase()));
+  const filteredResidents = residents.filter(r => (r.personType ?? 'morador') === 'morador').filter(r => r.name.toLowerCase().includes(visitedLocationSearch.toLowerCase()) || r.apartment.toLowerCase().includes(visitedLocationSearch.toLowerCase()));
   
   const handleVisitedLocationSelect = (residentId: string, residentName: string, apartment: string) => {
     setVisitedLocationSearch(`${residentName} - ${apartment}`);

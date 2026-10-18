@@ -174,6 +174,9 @@ export const supabaseStorage = {
         .from('resident-photos')
         .createSignedUrl(path, 3600);
 
+      // Recalcula o descritor facial em segundo plano (não bloqueia o cadastro).
+      supabaseStorage.enrollResidentFace(residentId).catch(() => {});
+
       return signedUrl?.signedUrl || null;
     } catch (err) {
       console.error('Error in uploadResidentPhoto:', err);
@@ -189,6 +192,26 @@ export const supabaseStorage = {
       await supabase.storage
         .from('resident-photos')
         .remove(files.map(f => `${residentId}/${f.name}`));
+    }
+  },
+
+  // Dispara o cálculo/recalculo do descritor facial na nuvem (edge function).
+  // Best-effort: falhas não devem atrapalhar o cadastro do morador.
+  async enrollResidentFace(residentId: string): Promise<void> {
+    if (!residentId) return;
+    const baseUrl = (supabase as any).supabaseUrl || '';
+    if (!baseUrl) return;
+    const url = `${baseUrl}/functions/v1/controlid-webhook?faceEnroll=${encodeURIComponent(residentId)}`;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch(url, { method: 'POST' });
+        const data = await res.json().catch(() => null);
+        if (data?.ok) return;
+        // Sem foto (ainda não visível no Storage) ou nada a fazer: tenta de novo.
+      } catch (err) {
+        console.error('Error enrolling resident face:', err);
+      }
+      await new Promise((r) => setTimeout(r, 1500));
     }
   },
 
@@ -441,6 +464,7 @@ export const supabaseStorage = {
     };
 
     if (isNew) {
+      if (mail.receivedAt) mailData.received_at = mail.receivedAt;
       const { error } = await supabase
         .from('mails')
         .insert(mailData);

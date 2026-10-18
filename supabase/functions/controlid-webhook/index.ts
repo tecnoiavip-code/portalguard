@@ -1,4 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.75.0';
+// Import estatico garante que o arquivo faca parte do bundle; as libs pesadas
+// (tfjs/face-api) continuam lazy dentro do modulo.
+import * as faceModule from './face-engine.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -148,6 +151,12 @@ const detectEventType = (url: URL, payload: any): string => {
   // Push sub-routes that must be handled before generic /push
   if (path.includes('/push/result') || path.endsWith('/result')) return 'push_result';
   if (path.includes('device_is_alive.fcgi') || path.includes('/device_is_alive')) return 'device_is_alive';
+  // Enterprise mode (local_identification desligado): o leitor envia a imagem
+  // em tons de cinza no corpo binario e espera a decisao do servidor.
+  if (path.includes('new_biometric_image')) return 'biometric_image';
+  // Enterprise mode: cartao/TAG e QR Code tambem passam a ser decididos aqui.
+  if (path.includes('new_card')) return 'card_event';
+  if (path.includes('new_qrcode')) return 'qrcode_event';
   if (path.includes('identification_event.fcgi') || path.includes('new_user_identified.fcgi')) return 'identification_event';
   if (path.includes('session_is_valid.fcgi')) return 'session_is_valid';
 
@@ -288,17 +297,20 @@ const DECISION_TIMEOUT_MS = 2500;
 type AccessDecision = {
   allow: boolean;
   reason: string;
-  source: 'db' | 'fallback';
+  source: 'db' | 'fallback' | 'face';
   resident?: string;
   resident_name?: string | null;
-  resident_id?: number | null;
-  resolved_user_id?: number;
+  resident_id?: string | number | null;
+  resolved_user_id?: string | number;
+  face_distance?: number;
+  person_type?: string | null;
+  apartment?: string | null;
 };
 
 const normalizeName = (s: string) =>
   s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
-const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise<AccessDecision> => {
+const evaluateCentralAccess = async (supabaseClient: any, payload: any, opts: { enterprise?: boolean } = {}): Promise<AccessDecision> => {
   const work = (async (): Promise<AccessDecision> => {
     const incomingEvent = Number.parseInt(String(payload?.event ?? '0'), 10);
     const rawCard = sanitizeString(String(payload?.card_value ?? ''), 100);
@@ -316,6 +328,17 @@ const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise
         .select('id, name, apartment, contract_type, contract_end_date, person_type, vehicle_tag')
         .or(orFilter)
         .limit(1)
+        .maybeSingle();
+      resident = data;
+    }
+
+    // Rosto reconhecido pelo motor central: resolve pelo id do morador.
+    const residentIdHint = String(payload?.resident_id || '').trim();
+    if (!resident && residentIdHint) {
+      const { data } = await supabaseClient
+        .from('residents')
+        .select('id, name, apartment, contract_type, contract_end_date, person_type, vehicle_tag')
+        .eq('id', residentIdHint)
         .maybeSingle();
       resident = data;
     }
@@ -347,6 +370,8 @@ const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise
         resident_name: resident.name,
         resident_id: resident.id,
         resolved_user_id: resident.id,
+        person_type: resident.person_type ?? 'morador',
+        apartment: resident.apartment ?? null,
       };
       if (resident.contract_end_date) {
         const today = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10); // America/Sao_Paulo
@@ -376,18 +401,28 @@ const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise
     if (incomingEvent === 3 || incomingEvent === 6) {
       return { allow: false, reason: 'Não identificado', source: 'db' };
     }
+    // No modo Enterprise o servidor e a unica autoridade: um cartao/TAG que nao
+    // pertence a nenhum morador deve ser NEGADO (nao ha "cadastro no equipamento").
+    if (opts.enterprise) {
+      return { allow: false, reason: 'Não identificado (Enterprise)', source: 'db' };
+    }
     // Known by the device (staff, service providers registered locally): allow.
     return { allow: true, reason: 'Cadastro no equipamento', source: 'db' };
   })();
 
+  const fallbackDecision: AccessDecision = opts.enterprise
+    ? { allow: false, reason: 'Timeout - negado (Enterprise)', source: 'fallback' }
+    : { allow: true, reason: 'Timeout - decisão do equipamento', source: 'fallback' };
   const timeout = new Promise<AccessDecision>((resolve) =>
-    setTimeout(() => resolve({ allow: true, reason: 'Timeout - decisão do equipamento', source: 'fallback' }), DECISION_TIMEOUT_MS)
+    setTimeout(() => resolve(fallback), DECISION_TIMEOUT_MS)
   );
   try {
     return await Promise.race([work, timeout]);
   } catch (e) {
     console.error('Central decision error:', e);
-    return { allow: true, reason: 'Erro - decisão do equipamento', source: 'fallback' };
+    return opts.enterprise
+      ? { allow: false, reason: 'Erro - negado (Enterprise)', source: 'fallback' }
+      : { allow: true, reason: 'Erro - decisão do equipamento', source: 'fallback' };
   }
 };
 
@@ -402,6 +437,206 @@ const buildDeniedResponse = (payload: any, url: URL) => {
     portal_id: Number.isFinite(portalId) && portalId > 0 ? portalId : 1,
   };
   return url.pathname.toLowerCase().includes('.fcgi') ? { result } : result;
+};
+
+// Registra, no log de acesso (access_entries), a passagem de um prestador de
+// servico fixo ou empregado domestico reconhecido pelo leitor. A entrada e
+// gravada como CONCLUIDA (entry_time = exit_time) para constar nos "Logs de
+// Acesso" e nos relatorios, sem ficar em "Ativos no Condominio". Moradores nao
+// geram registro (nada muda para eles).
+const recordCollaboratorAccess = async (
+  supabaseClient: any,
+  decision: AccessDecision | null,
+): Promise<void> => {
+  try {
+    const personType = String(decision?.person_type || 'morador');
+    if (!decision || personType === 'morador') return;
+    if (!decision.resident_id) return;
+    const ts = new Date().toISOString();
+    const name = decision.resident_name || decision.resident || '';
+    await supabaseClient.from('access_entries').insert({
+      visitor_name: name,
+      visitor_document: '',
+      visitor_type: 'service_provider',
+      resident_id: decision.resident_id,
+      resident_name: name || null,
+      apartment: decision.apartment || '',
+      purpose: 'Acesso automatico (leitor)',
+      entry_time: ts,
+      exit_time: ts,
+      auto_recognized: true,
+    });
+  } catch (e) {
+    console.error('recordCollaboratorAccess error:', e);
+  }
+};
+
+// ===== MODO ENTERPRISE: o leitor envia a imagem e o servidor decide =====
+// POST /new_biometric_image.fcgi (application/octet-stream). Os parametros vem
+// na query string e a imagem crua (cinza, 1 byte por pixel) no corpo.
+const handleBiometricImage = async (
+  supabaseClient: any,
+  url: URL,
+  binaryBody: Uint8Array | null,
+) => {
+  const width = Number.parseInt(url.searchParams.get('width') || '0', 10) || 0;
+  const height = Number.parseInt(url.searchParams.get('height') || '0', 10) || 0;
+  const deviceId = sanitizeString(url.searchParams.get('device_id') || '', 100);
+  const portalId = Number.parseInt(url.searchParams.get('portal_id') || '1', 10) || 1;
+
+  const synthPayload = { portal_id: portalId, user_id: 0, user_has_image: false };
+
+  let faceResult: { matched: boolean; reason?: string; name?: string; resident_id?: string; distance?: number } | null = null;
+  try {
+    await faceModule.init();
+    await faceModule.refreshIndex(supabaseClient);
+    const descriptor = binaryBody
+      ? await faceModule.descriptorFromGrayscale(binaryBody, width, height)
+      : null;
+    faceResult = descriptor
+      ? await faceModule.matchDescriptor(descriptor)
+      : { matched: false, reason: binaryBody ? 'rosto_nao_detectado' : 'sem_corpo' };
+  } catch (e) {
+    faceResult = { matched: false, reason: `erro:${(e as Error)?.message || e}` };
+  }
+
+  // Mesmo com o rosto reconhecido, a decisao final do banco manda: contrato
+  // vencido ou morador bloqueado NAO abrem o portao.
+  let allow = false;
+  let decision: AccessDecision = {
+    allow: false,
+    source: 'face',
+    reason: 'Rosto nao reconhecido',
+    resident: faceResult?.name,
+    resident_name: faceResult?.name || null,
+    resident_id: faceResult?.resident_id ?? null,
+    face_distance: faceResult?.distance,
+  };
+
+  if (faceResult?.matched && faceResult.resident_id) {
+    const validation = await evaluateCentralAccess(
+      supabaseClient,
+      { resident_id: faceResult.resident_id },
+      { enterprise: true },
+    );
+    allow = validation.allow;
+    decision = {
+      ...validation,
+      source: 'face',
+      resident: faceResult.name,
+      resident_name: faceResult.name || validation.resident_name || null,
+      resident_id: faceResult.resident_id,
+      face_distance: faceResult.distance,
+      reason: allow
+        ? `Rosto reconhecido: ${faceResult.name}`
+        : `Rosto reconhecido (${faceResult.name}) mas ${validation.reason || 'acesso negado pelo cadastro'}`,
+    };
+  }
+
+  const identResponse = allow
+    ? buildIdentificationResponse(synthPayload, url, null, decision)
+    : buildDeniedResponse(synthPayload, url);
+
+  console.log('Biometric image decision:', {
+    device_id: deviceId,
+    width,
+    height,
+    bytes: binaryBody?.length || 0,
+    ...faceResult,
+  });
+
+  // Log para visualizacao da portaria (sem guardar imagem), em background.
+  runBackground('recordCollaboratorAccess', recordCollaboratorAccess(supabaseClient, decision));
+  runBackground('biometricImageLog', (async () => {
+    try {
+      await supabaseClient.from('controlid_logs').insert({
+        device_id: deviceId || 'unknown-device',
+        event_type: 'biometric_image',
+        payload: {
+          portal_id: portalId,
+          event: allow ? 7 : 6,
+          face_identification: {
+            matched: allow,
+            reason: faceResult?.reason || null,
+            distance: faceResult?.distance ?? null,
+            resident_id: faceResult?.resident_id ?? null,
+            resident_name: faceResult?.name || null,
+          },
+        },
+        processed: false,
+      });
+    } catch (e) {
+      console.error('Error saving biometric_image log:', e);
+    }
+  })());
+
+  return new Response(JSON.stringify(identResponse), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+};
+
+const handleFaceSelfTest = async (
+  supabaseClient: any,
+  url: URL,
+  binaryBody: Uint8Array | null,
+) => {
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body, null, 2), {
+      status,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+
+  try {
+    await faceModule.init();
+
+    const enrollId = sanitizeString(url.searchParams.get('enroll') || '', 100);
+    if (enrollId) {
+      const result = await faceModule.enrollResident(supabaseClient, enrollId);
+      return json({ ok: result.ok, ...faceModule.status(), enroll: { resident_id: enrollId, ...result } });
+    }
+
+    if (url.searchParams.get('sync') !== null) {
+      const offset = Number.parseInt(url.searchParams.get('offset') || '0', 10) || 0;
+      const limit = Number.parseInt(url.searchParams.get('limit') || '6', 10) || 6;
+      const result = await faceModule.syncAll(supabaseClient, offset, limit);
+      return json({ ok: true, ...faceModule.status(), sync: result });
+    }
+
+    const indexed = await faceModule.refreshIndex(supabaseClient, true);
+
+    if (url.searchParams.get('list') !== null) {
+      return json({ ok: true, ...faceModule.status(), indexed, residents: faceModule.listIndexed() });
+    }
+
+    if (binaryBody && binaryBody.length && url.searchParams.get('enrollMem') !== null) {
+      const isEncoded = (binaryBody[0] === 0xFF && binaryBody[1] === 0xD8) || (binaryBody[0] === 0x89 && binaryBody[1] === 0x50);
+      const descriptor = isEncoded ? await faceModule.descriptorFromImage(binaryBody) : null;
+      if (descriptor) faceModule.debugAddDescriptor('debug-1', 'Debug', descriptor);
+      return json({ ok: true, ...faceModule.status(), detected: !!descriptor });
+    }
+
+    if (binaryBody && binaryBody.length && url.searchParams.get('match') !== null) {
+      const isEncoded = (binaryBody[0] === 0xFF && binaryBody[1] === 0xd8) || (binaryBody[0] === 0x89 && binaryBody[1] === 0x50);
+      const width = Number.parseInt(url.searchParams.get('width') || '0', 10) || 0;
+      const height = Number.parseInt(url.searchParams.get('height') || '0', 10) || 0;
+      const descriptor = isEncoded
+        ? await faceModule.descriptorFromImage(binaryBody)
+        : await faceModule.descriptorFromGrayscale(binaryBody, width, height);
+      const match = descriptor
+        ? await faceModule.matchDescriptor(descriptor)
+        : { matched: false, reason: 'rosto_nao_detectado' };
+      return json({ ok: true, ...faceModule.status(), indexed, detected: !!descriptor, match });
+    }
+
+    return new Response(JSON.stringify({ ok: true, ...faceModule.status(), indexed }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  } catch (e) {
+    return new Response(JSON.stringify({ ok: false, error: String((e as Error)?.message || e) }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
 };
 
 const tryParseJsonString = (value: unknown) => {
@@ -518,21 +753,34 @@ Deno.serve(async (req) => {
     // Parse payload
     let payload: any = {};
     let rawPayload = '';
-    
-    if (req.method === 'POST') {
-      rawPayload = await req.text();
-      
-      if (rawPayload && rawPayload.trim()) {
-        try {
-          payload = JSON.parse(rawPayload);
-        } catch {
-          const formPayload = parseFormEncodedPayload(rawPayload);
+    // Corpo binario (imagem em cinza) do modo Enterprise. So e preenchido para
+    // /new_biometric_image (application/octet-stream): ler como texto corromperia
+    // a imagem.
+    let binaryBody: Uint8Array | null = null;
+    const pathLower = url.pathname.toLowerCase();
 
-          if (Object.keys(formPayload).length > 0) {
-            payload = formPayload;
-          } else {
-            console.log('Non-JSON payload received, treating as raw data');
-            payload = { raw_data: rawPayload.substring(0, 1000) };
+    if (req.method === 'POST') {
+      const wantsBinary = pathLower.includes('new_biometric_image')
+        || pathLower.includes('new_biometric_template')
+        || url.searchParams.get('faceSelfTest') !== null;
+      if (wantsBinary) {
+        const ab = await req.arrayBuffer();
+        binaryBody = new Uint8Array(ab);
+      } else {
+        rawPayload = await req.text();
+
+        if (rawPayload && rawPayload.trim()) {
+          try {
+            payload = JSON.parse(rawPayload);
+          } catch {
+            const formPayload = parseFormEncodedPayload(rawPayload);
+
+            if (Object.keys(formPayload).length > 0) {
+              payload = formPayload;
+            } else {
+              console.log('Non-JSON payload received, treating as raw data');
+              payload = { raw_data: rawPayload.substring(0, 1000) };
+            }
           }
         }
       }
@@ -551,6 +799,31 @@ Deno.serve(async (req) => {
         device_id: deviceId || 'unknown',
         timestamp: new Date().toISOString()
       });
+    }
+
+    // ===== ENROLAMENTO FACIAL: chamado pelo app apos subir/alterar a foto do morador =====
+    const faceEnrollId = sanitizeString(url.searchParams.get('faceEnroll') || '', 100);
+    if (faceEnrollId) {
+      try {
+        await faceModule.init();
+        const result = await faceModule.enrollResident(supabaseClient, faceEnrollId, { force: true });
+        return new Response(JSON.stringify({ ok: result.ok, resident_id: faceEnrollId, ...result }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } catch (e) {
+        console.error('faceEnroll error:', e);
+        return new Response(JSON.stringify({ ok: false, error: String(e) }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // ===== DIAGNOSTICO: auto-teste do motor facial (nao e usado pelo leitor) =====
+    // GET  /?faceSelfTest=1              -> status do motor (backend, modelos, indice)
+    // GET  /?faceSelfTest=1&enroll=<id>  -> recalcula o descritor de um morador
+    // POST /?faceSelfTest=1&width=&height= (corpo = imagem cinza/JPEG) -> testa o match
+    if (url.searchParams.get('faceSelfTest') !== null) {
+      return await handleFaceSelfTest(supabaseClient, url, binaryBody);
     }
 
     // ===== PUSH MODE: Device polls for commands (GET/POST /push) =====
@@ -1032,19 +1305,28 @@ Deno.serve(async (req) => {
       );
     }
 
+    // ===== ENTERPRISE MODE: imagem biometrica enviada pelo leitor =====
+    // O servidor calcula o rosto e devolve a decisao (event 7/6) imediatamente.
+    if (eventType === 'biometric_image') {
+      return await handleBiometricImage(supabaseClient, url, binaryBody);
+    }
+
     // ===== IDENTIFICATION EVENT: Return door-open response IMMEDIATELY, then do DB work =====
     // Critical: the device has a short timeout (~15s) and will NOT open the door if
     // the response is delayed by database operations.
-    if (eventType === 'identification_event') {
+    // Em modo Enterprise, cartao/TAG (new_card.fcgi) e QR (new_qrcode.fcgi) passam
+    // pelo MESMO motor central, mas com o servidor como unica autoridade.
+    if (eventType === 'identification_event' || eventType === 'card_event' || eventType === 'qrcode_event') {
+      const enterprise = eventType === 'card_event' || eventType === 'qrcode_event';
       const [deviceType, decision] = await Promise.all([
         resolveDeviceType(supabaseClient, effectiveDeviceId),
-        evaluateCentralAccess(supabaseClient, payload),
+        evaluateCentralAccess(supabaseClient, payload, { enterprise }),
       ]);
       // A decisão do banco é autoritativa. Se o motor central não respondeu a
       // tempo (fallback/timeout), respeitamos a decisão do próprio equipamento
       // (event 7 = identificou localmente) para o portão nunca abrir às cegas.
       const deviceGranted = Number.parseInt(String(payload?.event ?? '0'), 10) === 7;
-      const allowByDb = decision.source === 'db' ? decision.allow : deviceGranted;
+      const allowByDb = decision.source === 'db' ? decision.allow : (enterprise ? decision.allow : deviceGranted);
       const identResponse = allowByDb
         ? buildIdentificationResponse(payload, url, deviceType, decision)
         : buildDeniedResponse(payload, url);
@@ -1057,6 +1339,10 @@ Deno.serve(async (req) => {
         event_in: payload?.event,
         response: identResponse,
       });
+
+      // Prestador de servico fixo / empregado domestico: registra a passagem no
+      // log de acesso (nao em "Ativos no Condominio"). Moradores: nada muda.
+      runBackground('recordCollaboratorAccess', recordCollaboratorAccess(supabaseClient, allowByDb ? decision : null));
 
       // ALL database work runs in background AFTER response is sent
       runBackground('identificationPostProcess', (async () => {

@@ -32,6 +32,7 @@ pre{background:#000;padding:12px;border-radius:6px;white-space:pre-wrap;font-siz
 <p>Abra este arquivo no PC da portaria (mesma rede dos equipamentos). Ele grava o Servidor Push, o Monitor e ativa o modo online (Pro) apontando para:<br><b>${WEBHOOK_URL}</b></p>
 <label>IPs dos equipamentos (um por linha)</label><textarea id="ips" rows="4">${ips.join('\n')}</textarea>
 <label>Usuário</label><input id="u" value="admin"><label>Senha</label><input id="p" type="password" value="admin">
+<label><input type="checkbox" id="ent" style="width:auto"> Modo Enterprise (reconhecimento facial na nuvem — desliga a identificação local do leitor)</label>
 <label><input type="checkbox" id="rb" checked style="width:auto"> Reiniciar após gravar</label>
 <button onclick="run()">Aplicar configuração</button><pre id="log"></pre>
 <script>
@@ -49,14 +50,17 @@ let sid=existing?existing.id:null;
 if(sid){await post(ip,'create_or_modify_objects.fcgi?session='+s,{object:'devices',values:[{id:sid,name:SRV,ip:baseUrl}]})}
 else{const c=await post(ip,'create_objects.fcgi?session='+s,{object:'devices',values:[{name:SRV,ip:baseUrl,public_key:''}]});sid=c&&c.ids&&c.ids[0]}
 if(!sid)throw new Error('não foi possível registrar o servidor online');
-await post(ip,'set_configuration.fcgi?session='+s,{general:{online:'1',local_identification:'1',ihm_enterprise_mode:'0'},online_client:{server_id:String(sid),extract_template:'0',max_request_attempts:'3'}});
-log('['+ip+'] servidor online gravado ('+baseUrl+') id='+sid+' e modo online (Pro) ativado ✔')}
+const ent=document.getElementById('ent').checked;
+await post(ip,'set_configuration.fcgi?session='+s,{general:{online:'1',local_identification:ent?'0':'1',ihm_enterprise_mode:ent?'1':'0'},online_client:{server_id:String(sid),extract_template:'0',max_request_attempts:'3'}});
+log('['+ip+'] servidor online gravado ('+baseUrl+') id='+sid+' e modo '+(ent?'Enterprise (facial na nuvem) ativado ✔':'online (Pro) ativado ✔'))}
 async function applyDeviceName(ip,s,name){if(!name)return;try{const loaded=await post(ip,'load_objects.fcgi?session='+s,{object:'devices',fields:['id','name','ip','public_key']});const list=(loaded&&loaded.devices)||[];const did=String((await post(ip,'system_information.fcgi?session='+s,{})).device_id||'');const self=list.find(d=>String(d.id)===did);if(self){await post(ip,'create_or_modify_objects.fcgi?session='+s,{object:'devices',values:[{id:self.id,name,ip:self.ip,public_key:self.public_key||''}]});log('['+ip+'] nome do aparelho gravado: '+name+' ✔')}}catch(e){log('['+ip+'] AVISO: nome do aparelho falhou: '+e.message)}}
 async function run(){document.getElementById('log').textContent='';
 const ips=document.getElementById('ips').value.split(/\\s+/).filter(Boolean);
 for(const ip of ips){try{log('['+ip+'] login...');
 const s=(await post(ip,'login.fcgi',{login:document.getElementById('u').value,password:document.getElementById('p').value})).session;
 if(!s)throw new Error('sessão não retornada (usuário/senha?)');
+const ent=document.getElementById('ent').checked;
+CONFIG.general={online:'1',local_identification:ent?'0':'1',ihm_enterprise_mode:ent?'1':'0'};
 await post(ip,'set_configuration.fcgi?session='+s,CONFIG);log('['+ip+'] Servidor Push e Monitor gravados ✔');
 await applyDeviceName(ip,s,NAMES[ip]);
 try{await ensureOnlineServer(ip,s,ONLINE_SERVER_URL)}catch(e){log('['+ip+'] AVISO: modo online falhou: '+e.message)}

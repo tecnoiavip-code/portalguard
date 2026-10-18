@@ -781,10 +781,12 @@ export const MailManagement = () => {
               <div className="space-y-2">
                 <Label htmlFor="residentId">Morador *</Label>
                 <Combobox
-                  options={residents.map((resident) => ({
-                    value: resident.id,
-                    label: `${resident.name} - ${resident.apartment}`,
-                  }))}
+                  options={residents
+                    .filter((resident) => resident.personType !== 'empregado' && resident.personType !== 'prestador')
+                    .map((resident) => ({
+                      value: resident.id,
+                      label: `${resident.name} - ${resident.apartment}`,
+                    }))}
                   value={formData.residentId}
                   onValueChange={(value) => setFormData({ ...formData, residentId: value })}
                   placeholder="Selecione o morador"

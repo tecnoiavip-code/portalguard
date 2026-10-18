@@ -34,7 +34,7 @@ import { useResidents } from '@/hooks/useResidents';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { sendPushToUser } from '@/lib/push-subscription';
-import { compressImage, compressToFile } from '@/lib/image-utils';
+import { compressToFile } from '@/lib/image-utils';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import StandardPagination from '@/components/StandardPagination';
 import jsPDF from 'jspdf';
@@ -138,60 +138,24 @@ export const MailManagement = () => {
     }, 1500);
   };
 
-  // Envia a própria imagem (anexada) junto do texto, usando o compartilhamento nativo.
-  // Se o dispositivo não suportar anexar arquivo, cai para o link normal do WhatsApp.
-  const sendWhatsappWithPhoto = async (
+  // Monta a mensagem com o link da foto da encomenda e abre o WhatsApp direto,
+  // sem precisar anexar arquivo manualmente.
+  const sendWhatsappWithPhoto = (
     rawPhone: string,
     text: string,
-    photo: File | string | null | undefined,
+    photoUrl: string | null | undefined,
     event?: React.MouseEvent<HTMLElement>
   ) => {
     event?.preventDefault();
     event?.stopPropagation();
 
-    let file: File | null = null;
-    try {
-      if (photo instanceof File) {
-        file = photo;
-      } else if (typeof photo === 'string' && photo) {
-        const response = await fetch(photo);
-        const blob = await response.blob();
-        file = new File([blob], `correspondencia_${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
-      }
-      if (file && file.type !== 'image/jpeg') {
-        const jpeg = await compressImage(file, { format: 'jpeg', quality: 0.9, maxDimension: 2000 });
-        if (jpeg) file = new File([jpeg.blob], `correspondencia_${Date.now()}.jpg`, { type: 'image/jpeg' });
-      }
-    } catch (error) {
-      console.error('Não foi possível preparar a foto para envio:', error);
+    let message = text;
+    if (photoUrl) {
+      const url = photoUrl.startsWith('http') ? photoUrl : `${window.location.origin}${photoUrl}`;
+      message += `\n\n📸 Foto da encomenda: ${url}`;
     }
 
-    if (file && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], text });
-        return;
-      } catch (error) {
-        const name = (error as { name?: string })?.name;
-        if (name === 'AbortError') return;
-        console.error('Falha ao compartilhar foto:', error);
-      }
-    }
-
-    if (file) {
-      try {
-        await navigator.clipboard.writeText(text);
-        toast.info('Este navegador não anexa fotos automaticamente. A foto foi baixada e o texto copiado — anexe a foto no WhatsApp.');
-      } catch {
-        toast.info('Este navegador não anexa fotos automaticamente. A foto foi baixada — anexe-a no WhatsApp.');
-      }
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(file);
-      link.download = file.name;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(link.href), 10000);
-    }
-
-    openWhatsappWithFallback(rawPhone, encodeURIComponent(text));
+    openWhatsappWithFallback(rawPhone, encodeURIComponent(message));
   };
 
   const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -636,7 +600,7 @@ export const MailManagement = () => {
           trackingCode: mailData.trackingCode,
         });
         const residentPhone = resident.phone?.replace(/\D/g, '');
-        const photoToSend = photoFile;
+        const photoToSend = photoUrl;
 
         if (residentPhone) {
           toast.success(`Correspondência registrada! ${resident.name} foi notificado.`);

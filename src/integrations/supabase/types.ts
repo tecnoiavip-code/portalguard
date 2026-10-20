@@ -324,6 +324,7 @@ export type Database = {
           created_at: string | null
           id: string
           ip_address: string | null
+          is_active: boolean | null
           last_sync: string | null
           location: string
           name: string
@@ -335,6 +336,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           ip_address?: string | null
+          is_active?: boolean | null
           last_sync?: string | null
           location: string
           name: string
@@ -346,6 +348,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           ip_address?: string | null
+          is_active?: boolean | null
           last_sync?: string | null
           location?: string
           name?: string

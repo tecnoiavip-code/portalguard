@@ -43,6 +43,26 @@ const MAX_REQUESTS_PER_WINDOW = 200;
 const lastDeviceStatusWriteMap = new Map<string, number>();
 const deviceTypeCache = new Map<string, string | null>();
 const deviceRowIdCache = new Map<string, string>(); // deviceId -> devices.id (avoid repeat lookups)
+const deviceActiveCache = new Map<string, boolean>();
+
+const isDeviceActive = async (supabaseClient: any, deviceId: string): Promise<boolean> => {
+  if (!deviceId) return true;
+  if (deviceActiveCache.has(deviceId)) {
+    return deviceActiveCache.get(deviceId) !== false;
+  }
+  try {
+    const { data } = await supabaseClient
+      .from('devices')
+      .select('is_active')
+      .or(`serial_number.eq.${deviceId},ip_address.eq.${deviceId}`)
+      .maybeSingle();
+    const active = !(data?.is_active === false || data?.is_active === 0 || data?.is_active === '0');
+    deviceActiveCache.set(deviceId, active);
+    return active;
+  } catch (e) {
+    return true;
+  }
+};
 
 // Throttle config refresh checks (check DB at most every 5 min per device)
 const lastConfigRefreshCheckMap = new Map<string, number>();
@@ -947,6 +967,30 @@ Deno.serve(async (req) => {
     // For events without device_id
     const effectiveDeviceId = deviceId || 'unknown-device';
 
+    if (eventType === 'identification_event') {
+      const active = await isDeviceActive(supabaseClient, effectiveDeviceId);
+      if (!active) {
+        console.log('Device disabled, denying identification:', effectiveDeviceId);
+        const identResponse = buildIdentificationResponse(payload, url, { allow: false, reason: 'Dispositivo desativado', source: 'db' }, 'sec_box');
+        runBackground('identificationPostProcessDisabled', (async () => {
+          try {
+            await supabaseClient.from('controlid_logs').insert({
+              device_id: effectiveDeviceId,
+              event_type: eventType,
+              payload: stripPhotoFields(payload),
+              processed: false
+            });
+          } catch (e) {
+            console.error('Error in disabled device post-processing:', e);
+          }
+        })());
+        return new Response(JSON.stringify(identResponse), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     if (!checkRateLimit(effectiveDeviceId)) {
       console.error('Rate limit exceeded', { device_id: effectiveDeviceId });
       return new Response(
@@ -958,6 +1002,27 @@ Deno.serve(async (req) => {
     // Authorization must finish before responding. Logs/photos remain background
     // work; the central decision has a bounded budget below the device timeout.
     if (eventType === 'identification_event') {
+      const active = await isDeviceActive(supabaseClient, effectiveDeviceId);
+      if (!active) {
+        console.log('Device disabled, denying identification:', effectiveDeviceId);
+        const identResponse = buildIdentificationResponse(payload, url, { allow: false, reason: 'Dispositivo desativado', source: 'db' }, 'sec_box');
+        runBackground('identificationPostProcessDisabled', (async () => {
+          try {
+            await supabaseClient.from('controlid_logs').insert({
+              device_id: effectiveDeviceId,
+              event_type: eventType,
+              payload: stripPhotoFields(payload),
+              processed: false
+            });
+          } catch (e) {
+            console.error('Error in disabled device post-processing:', e);
+          }
+        })());
+        return new Response(JSON.stringify(identResponse), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
       const [deviceType, decision] = await Promise.all([
         resolveDeviceType(supabaseClient, effectiveDeviceId),
         evaluateCentralAccess(supabaseClient, payload),
@@ -1133,6 +1198,15 @@ Deno.serve(async (req) => {
 
     if (logError) {
       console.error('Error saving Control iD log:', logError);
+    }
+
+    // Non-identification events
+    if (eventType !== 'identification_event') {
+      const active = await isDeviceActive(supabaseClient, effectiveDeviceId);
+      if (!active && eventType !== 'device_is_alive') {
+        console.log('Device disabled, ignoring non-identification event:', effectiveDeviceId, eventType);
+        return new Response('', { status: 200, headers: corsHeaders });
+      }
     }
 
     // Process specific events
@@ -1318,10 +1392,15 @@ async function updateDeviceStatus(supabaseClient: any, deviceId: string) {
   }
 
   if (rowId) {
-    await supabaseClient
+    const { data: updatedData } = await supabaseClient
       .from('devices')
       .update({ last_sync: now, status: 'online' })
-      .eq('id', rowId);
+      .eq('id', rowId)
+      .select('*')
+      .maybeSingle();
+    if (updatedData) {
+      deviceActiveCache.set(deviceId, !(updatedData.is_active === false || updatedData.is_active === 0 || updatedData.is_active === '0'));
+    }
   }
   // Skip the extra controlid_config update — not needed on every heartbeat.
 }

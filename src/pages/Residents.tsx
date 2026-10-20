@@ -54,6 +54,7 @@ export const Residents = () => {
     phone: '',
     email: '',
     photo: '',
+    photoRemoved: false,
     vehiclePlate: '',
     vehicleModel: '',
     vehicleColor: '',
@@ -261,6 +262,7 @@ export const Residents = () => {
       phone: resident.phone || '',
       email: resident.email || '',
       photo,
+      photoRemoved: false,
       vehiclePlate: resident.vehiclePlate || '',
       vehicleModel: resident.vehicleModel || '',
       vehicleColor: resident.vehicleColor || '',
@@ -306,7 +308,7 @@ export const Residents = () => {
         context.drawImage(video, 0, 0);
         const compressed = await compressImage(canvas);
         const photoData = compressed?.dataUrl ?? canvas.toDataURL('image/jpeg', 0.7);
-        setFormData({ ...formData, photo: photoData });
+        setFormData({ ...formData, photo: photoData, photoRemoved: false });
         stopCamera();
         toast.success('Foto capturada!');
       }
@@ -318,7 +320,7 @@ export const Residents = () => {
     if (file) {
       const compressed = await compressImage(file);
       const photo = compressed?.dataUrl ?? (await blobToDataUrl(file));
-      setFormData({ ...formData, photo });
+      setFormData({ ...formData, photo, photoRemoved: false });
       toast.success('Foto carregada!');
     }
   };
@@ -351,7 +353,7 @@ export const Residents = () => {
         if (progress !== undefined) setDeviceCaptureProgress(progress);
       }, abortCtrl.signal, personInfo);
       if (photo) {
-        setFormData(prev => ({ ...prev, photo }));
+        setFormData(prev => ({ ...prev, photo, photoRemoved: false }));
         setShowDeviceCaptureDialog(false);
         setDeviceCaptureStatus('');
         setDeviceCaptureStep(undefined);
@@ -470,6 +472,7 @@ export const Residents = () => {
       phone: '',
       email: '',
       photo: '',
+      photoRemoved: false,
       vehiclePlate: '',
       vehicleModel: '',
       vehicleColor: '',
@@ -915,7 +918,7 @@ export const Residents = () => {
                       </Button>
                     )}
                     {formData.photo && (
-                      <Button type="button" size="sm" variant="destructive" onClick={() => setFormData({ ...formData, photo: '' })}>
+                      <Button type="button" size="sm" variant="destructive" onClick={() => setFormData({ ...formData, photo: '', photoRemoved: true })}>
                         🗑️ Remover
                       </Button>
                     )}

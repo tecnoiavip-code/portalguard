@@ -121,12 +121,19 @@ export const supabaseStorage = {
     // First check if there's a photo in Storage
     const { data: storageFiles } = await supabase.storage
       .from('resident-photos')
-      .list(id, { limit: 1 });
+      .list(id);
 
     if (storageFiles && storageFiles.length > 0) {
+      // Sempre pegar o arquivo mais recente (evita voltar foto antiga quando
+      // sobraram arquivos de uploads anteriores).
+      const newest = [...storageFiles].sort((a, b) => {
+        const aTime = String((a as any).updated_at || (a as any).created_at || '');
+        const bTime = String((b as any).updated_at || (b as any).created_at || '');
+        return bTime.localeCompare(aTime);
+      })[0];
       const { data: signedUrl } = await supabase.storage
         .from('resident-photos')
-        .createSignedUrl(`${id}/${storageFiles[0].name}`, 3600);
+        .createSignedUrl(`${id}/${newest.name}`, 3600);
       return signedUrl?.signedUrl || '';
     }
 
@@ -155,7 +162,9 @@ export const supabaseStorage = {
   async uploadResidentPhoto(residentId: string, base64OrFile: string | File): Promise<string | null> {
     try {
       const { blob, ext } = await preparePhoto(base64OrFile);
-      const path = `${residentId}/photo.${ext}`;
+      // Nome único: se mantivesse o mesmo caminho, a CDN do Storage poderia
+      // continuar servindo a foto antiga em cache após a troca.
+      const path = `${residentId}/photo-${Date.now()}.${ext}`;
 
       // Remove qualquer foto antiga (inclusive com extensão diferente)
       const { data: existing } = await supabase.storage.from('resident-photos').list(residentId);
@@ -167,7 +176,7 @@ export const supabaseStorage = {
 
       const { error } = await supabase.storage
         .from('resident-photos')
-        .upload(path, blob, { upsert: true, contentType: blob.type });
+        .upload(path, blob, { upsert: true, contentType: blob.type, cacheControl: '0' });
 
       if (error) {
         console.error('Error uploading photo:', error);
@@ -373,11 +382,12 @@ export const supabaseStorage = {
 
     // Upload photo to Storage if provided
     if (resident.photo && resident.photo.startsWith('data:')) {
-      await supabaseStorage.uploadResidentPhoto(savedId, resident.photo);
+      const uploaded = await supabaseStorage.uploadResidentPhoto(savedId, resident.photo);
+      if (!uploaded) return null;
       // Clear base64 from DB column
       await supabase.from('residents').update({ photo_url: null }).eq('id', savedId);
-    } else if (!resident.photo) {
-      // Photo was removed
+    } else if (resident.photoRemoved) {
+      // Photo was explicitly removed by the user
       await supabaseStorage.deleteResidentPhoto(savedId);
       await supabase.from('residents').update({ photo_url: null }).eq('id', savedId);
     }

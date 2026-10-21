@@ -445,7 +445,7 @@ const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise
     }
 
     if (incomingEvent === 3 || incomingEvent === 6) {
-      return { allow: false, reason: 'Nǜo identificado', source: 'db' };
+      return { allow: false, reason: 'Não identificado', source: 'db' };
     }
 
     // O equipamento identificou alguém que não é morador: pode ser um cadastro

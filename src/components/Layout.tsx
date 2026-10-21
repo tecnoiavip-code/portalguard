@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { PanicAlertMonitor } from '@/components/PanicAlertMonitor';
+import { FacialReleaseModal } from '@/components/FacialReleaseModal';
 import { navigateInApp, AppNavTarget } from '@/lib/app-nav';
 
 interface LayoutProps {
@@ -216,6 +217,7 @@ export const Layout = ({ children }: LayoutProps) => {
         {children}
       </div>
       <PanicAlertMonitor />
+      <FacialReleaseModal />
     </div>
   );
 };

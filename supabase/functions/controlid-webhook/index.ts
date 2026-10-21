@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.75.0';
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
-import { buildIdentificationResponse, isDeviceAuthorized, residentHardwareId, type AccessDecision } from './identification-response.ts';
+import { buildIdentificationResponse, isDeviceAuthorized, residentHardwareId, type AccessDecision, type VisitorSubject } from './identification-response.ts';
 
 // Input validation helpers
 const sanitizeString = (val: any, maxLength = 255): string => {
@@ -260,6 +260,121 @@ const DECISION_TIMEOUT_MS = 2500;
 const normalizeName = (s: string) =>
   s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
+// ============= NOVO CADASTRO: LIBERAÇÃO FACIAL DE USO ÚNICO =============
+const VISITOR_ACCESS_TYPES = ['visitor', 'service_provider', 'delivery'];
+const normalizeDocument = (value: unknown) =>
+  String(value ?? '').toUpperCase().replace(/[^0-9A-Z]/g, '');
+const hardwareIdFor = (value: string): number => {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) hash = (hash * 31 + value.charCodeAt(i)) | 0;
+  return Math.abs(hash);
+};
+const stripApartmentPrefix = (value: string) =>
+  value.replace(/^(\d+\w?)\s*[-\u2013]\s*/, '').trim();
+const visitorSubjectKey = (document: unknown, name: unknown) => {
+  const doc = normalizeDocument(document);
+  if (doc.length >= 4) return `doc:${doc}`;
+  const normalizedName = normalizeName(String(name ?? ''));
+  return normalizedName ? `name:${normalizedName}` : null;
+};
+const visitorSubjectFromEntry = (row: any): VisitorSubject & { subjectKey: string } => ({
+  subjectKey: visitorSubjectKey(row.visitor_document, row.visitor_name)!,
+  name: row.visitor_name,
+  document: row.visitor_document,
+  visitorType: row.visitor_type,
+  photoUrl: row.photo_url || null,
+  source: 'device',
+});
+const sameVisitorSubject = (entry: any, subject: VisitorSubject) =>
+  !!subject.subjectKey &&
+  visitorSubjectKey(entry.visitor_document, entry.visitor_name) === subject.subjectKey;
+
+const findVisitorSubject = async (
+  supabaseClient: any,
+  { registration, userName }: { registration?: unknown; userName?: string },
+): Promise<VisitorSubject | null> => {
+  const reg = sanitizeString(registration, 100);
+  const cleanName = stripApartmentPrefix(userName || '');
+  if (!reg && !cleanName) return null;
+
+  const docVariants = Array.from(new Set([
+    reg,
+    reg.replace(/[^0-9A-Z]/gi, ''),
+  ].filter((value) => value.length >= 4)));
+
+  for (const variant of docVariants) {
+    const { data } = await supabaseClient
+      .from('access_entries')
+      .select('visitor_name, visitor_document, visitor_type, photo_url, entry_time')
+      .in('visitor_type', VISITOR_ACCESS_TYPES)
+      .ilike('visitor_document', variant)
+      .order('entry_time', { ascending: false })
+      .limit(5);
+    const row = (data || []).find((item: any) =>
+      normalizeDocument(item.visitor_document) === normalizeDocument(reg));
+    if (row) return visitorSubjectFromEntry(row);
+  }
+
+  if (cleanName) {
+    const { data } = await supabaseClient
+      .from('access_entries')
+      .select('visitor_name, visitor_document, visitor_type, photo_url, entry_time')
+      .in('visitor_type', VISITOR_ACCESS_TYPES)
+      .ilike('visitor_name', cleanName)
+      .order('entry_time', { ascending: false })
+      .limit(5);
+    const row = (data || []).find((item: any) =>
+      normalizeName(item.visitor_name) === normalizeName(cleanName));
+    if (row) return visitorSubjectFromEntry(row);
+  }
+
+  return null;
+};
+
+const isBlockedVisitor = async (supabaseClient: any, subject: VisitorSubject): Promise<boolean> => {
+  try {
+    const { data } = await supabaseClient
+      .from('blocked_visitors')
+      .select('visitor_document, visitor_name')
+      .eq('is_active', true)
+      .limit(500);
+    const doc = normalizeDocument(subject.document);
+    const name = normalizeName(subject.name);
+    return (data || []).some((blocked: any) => {
+      const blockedDoc = normalizeDocument(blocked.visitor_document);
+      return (!!doc && doc === blockedDoc)
+        || (!!name && normalizeName(blocked.visitor_name) === name);
+    });
+  } catch {
+    return false;
+  }
+};
+
+const loadVisitorEntries = async (supabaseClient: any, subject: VisitorSubject) => {
+  const rows: any[] = [];
+  if (subject.document) {
+    const { data } = await supabaseClient
+      .from('access_entries')
+      .select('*')
+      .in('visitor_type', VISITOR_ACCESS_TYPES)
+      .ilike('visitor_document', subject.document)
+      .order('entry_time', { ascending: false })
+      .limit(50);
+    rows.push(...(data || []));
+  }
+  if (!rows.length && subject.name) {
+    const { data } = await supabaseClient
+      .from('access_entries')
+      .select('*')
+      .in('visitor_type', VISITOR_ACCESS_TYPES)
+      .ilike('visitor_name', subject.name)
+      .order('entry_time', { ascending: false })
+      .limit(50);
+    rows.push(...(data || []));
+  }
+  return rows.filter((entry) => sameVisitorSubject(entry, subject));
+};
+
 const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise<AccessDecision> => {
   const work = (async (): Promise<AccessDecision> => {
     const incomingEvent = Number.parseInt(String(payload?.event ?? '0'), 10);
@@ -330,8 +445,20 @@ const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise
     }
 
     if (incomingEvent === 3 || incomingEvent === 6) {
-      return { allow: false, reason: 'Não identificado', source: 'db' };
+      return { allow: false, reason: 'Nǜo identificado', source: 'db' };
     }
+
+    // O equipamento identificou alguém que não é morador: pode ser um cadastro
+    // do Novo Cadastro (visitante/prestador/entregador). A regra de uso único é
+    // aplicada no fluxo de liberação facial, não aqui.
+    const visitorSubject = await findVisitorSubject(supabaseClient, {
+      registration: payload?.registration,
+      userName,
+    });
+    if (visitorSubject) {
+      return { allow: false, reason: 'Visitante reconhecido', source: 'db', visitor_subject: visitorSubject };
+    }
+
     // Known by the device (staff, service providers registered locally): allow.
     return { allow: isDeviceAuthorized(payload), reason: 'Decisão do equipamento', source: 'fallback' };
   })();
@@ -347,8 +474,167 @@ const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise
   }
 };
 
-const tryParseJsonString = (value: unknown) => {
-  if (typeof value !== 'string') return null;
+// ============= REGRA DE USO ÚNICO (ENTRADA + SAÍDA) =============
+const POSITIVE_MS = (value: string | undefined, fallback: number) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+const FACIAL_GRACE_MS = POSITIVE_MS(Deno.env.get('FACIAL_ENTRY_GRACE_MS'), 120000);
+const FACIAL_SCAN_DEBOUNCE_MS = POSITIVE_MS(Deno.env.get('FACIAL_SCAN_DEBOUNCE_MS'), 30000);
+const FACIAL_REQUEST_TTL_MS = POSITIVE_MS(Deno.env.get('FACIAL_REQUEST_TTL_MS'), 300000);
+const FACIAL_DENY_COOLDOWN_MS = POSITIVE_MS(Deno.env.get('FACIAL_DENY_COOLDOWN_MS'), 60000);
+
+const closeVisitorEntry = async (supabaseClient: any, entry: any) => {
+  if (!entry?.id || entry.exit_time) return;
+  const ts = new Date().toISOString();
+  await supabaseClient
+    .from('access_entries')
+    .update({ exit_time: ts, entry_scan_at: entry.entry_scan_at || entry.entry_time || ts })
+    .eq('id', entry.id)
+    .is('exit_time', null);
+};
+
+const decideVisitorAccess = async (
+  supabaseClient: any,
+  deviceId: string,
+  subject: VisitorSubject,
+): Promise<AccessDecision | null> => {
+  if (!subject?.subjectKey) return null;
+
+  const visitorName = sanitizeString(subject.name, 200) || 'Visitante';
+  const base: AccessDecision = {
+    allow: false,
+    source: 'db',
+    reason: 'Aguardando liberação da portaria',
+    resident: visitorName,
+    resident_name: visitorName,
+    resolved_user_id: subject.document ? hardwareIdFor(`sp-${subject.document}`) : 0,
+    visitor_subject: subject,
+  };
+
+  if (await isBlockedVisitor(supabaseClient, subject)) {
+    return { ...base, reason: 'Pessoa bloqueada', visitor_action: 'blocked' };
+  }
+
+  const entries = await loadVisitorEntries(supabaseClient, subject);
+  const template = entries[0] || null;
+  const photoTemplate = entries.find((entry: any) => entry.photo_url) || template;
+  const active = entries.find((entry: any) => !entry.exit_time);
+
+  if (active) {
+    const nowMs = Date.now();
+    const scanAge = active.entry_scan_at ? nowMs - Date.parse(active.entry_scan_at) : null;
+    if (scanAge !== null && scanAge < FACIAL_SCAN_DEBOUNCE_MS) {
+      return { ...base, allow: true, reason: 'Entrada em andamento', visitor_action: 'entry', visitor_entry_id: active.id };
+    }
+
+    const entryAge = active.entry_time ? nowMs - Date.parse(active.entry_time) : Number.POSITIVE_INFINITY;
+    if (!active.entry_scan_at && entryAge < FACIAL_GRACE_MS) {
+      const ts = new Date().toISOString();
+      await supabaseClient
+        .from('access_entries')
+        .update({ entry_scan_at: ts })
+        .eq('id', active.id)
+        .is('entry_scan_at', null);
+      return { ...base, allow: true, reason: 'Entrada confirmada', visitor_action: 'entry', visitor_entry_id: active.id };
+    }
+
+    return { ...base, allow: true, reason: 'Saída registrada', visitor_action: 'exit', visitor_entry_id: active.id };
+  }
+
+  const { data: pending } = await supabaseClient
+    .from('facial_release_requests')
+    .select('*')
+    .eq('subject_key', subject.subjectKey)
+    .eq('status', 'pending')
+    .order('requested_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (pending) {
+    const pendingAge = Date.now() - Date.parse(pending.requested_at);
+    if (pendingAge <= FACIAL_REQUEST_TTL_MS) {
+      await supabaseClient
+        .from('facial_release_requests')
+        .update({ requested_at: new Date().toISOString() })
+        .eq('id', pending.id);
+      return {
+        ...base,
+        reason: 'Aguardando liberação da portaria',
+        visitor_action: 'pending',
+        release_request_id: pending.id,
+      };
+    }
+    await supabaseClient
+      .from('facial_release_requests')
+      .update({ status: 'expired', resolved_at: new Date().toISOString() })
+      .eq('id', pending.id)
+      .eq('status', 'pending');
+  }
+
+  const { data: denied } = await supabaseClient
+    .from('facial_release_requests')
+    .select('resolved_at')
+    .eq('subject_key', subject.subjectKey)
+    .eq('status', 'denied')
+    .order('resolved_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (denied?.resolved_at && (Date.now() - Date.parse(denied.resolved_at)) < FACIAL_DENY_COOLDOWN_MS) {
+    return { ...base, reason: 'Liberação negada recentemente', visitor_action: 'denied' };
+  }
+
+  const ts = new Date().toISOString();
+  const { data: created, error: insertError } = await supabaseClient
+    .from('facial_release_requests')
+    .insert({
+      device_id: deviceId || null,
+      subject_key: subject.subjectKey,
+      visitor_name: visitorName,
+      visitor_document: subject.document || template?.visitor_document || null,
+      visitor_type: subject.visitorType || template?.visitor_type || 'visitor',
+      apartment: template?.apartment || '',
+      resident_id: template?.resident_id || null,
+      resident_name: template?.resident_name || null,
+      photo_url: photoTemplate?.photo_url || subject.photoUrl || null,
+      company: template?.company || null,
+      vehicle_plate: template?.vehicle_plate || null,
+      vehicle_model: template?.vehicle_model || null,
+      vehicle_color: template?.vehicle_color || null,
+      purpose: template?.purpose || null,
+      badge_number: template?.badge_number || null,
+      match_source: subject.source || 'device',
+      match_distance: subject.distance ?? null,
+      status: 'pending',
+      requested_at: ts,
+    })
+    .select('id')
+    .maybeSingle();
+
+  if (insertError) {
+    // Outra leitura simultânea pode ter criado o pedido (índice único parcial).
+    const { data: raced } = await supabaseClient
+      .from('facial_release_requests')
+      .select('id')
+      .eq('subject_key', subject.subjectKey)
+      .eq('status', 'pending')
+      .limit(1)
+      .maybeSingle();
+    return {
+      ...base,
+      visitor_action: 'pending',
+      release_request_id: raced?.id || null,
+    };
+  }
+
+  return {
+    ...base,
+    visitor_action: 'pending',
+    release_request_id: created?.id || null,
+  };
+};
+
+const tryParseJsonString = (value: unknown) => {  if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return null;
   try {
@@ -1028,8 +1314,20 @@ Deno.serve(async (req) => {
         evaluateCentralAccess(supabaseClient, payload),
       ]);
       const relayAction = Deno.env.get('CONTROLID_RELAY_ACTION') === 'door' ? 'door' : 'sec_box';
-      const identResponse = buildIdentificationResponse(payload, url, decision, relayAction);
-      console.log('Central access decision:', { device_id: effectiveDeviceId, ...decision });
+      let finalDecision = decision;
+      if (!finalDecision.allow && finalDecision.visitor_subject) {
+        try {
+          const visitorDecision = await Promise.race([
+            decideVisitorAccess(supabaseClient, effectiveDeviceId, finalDecision.visitor_subject),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+          ]);
+          if (visitorDecision) finalDecision = visitorDecision;
+        } catch (e) {
+          console.error('Visitor access decision error:', e);
+        }
+      }
+      const identResponse = buildIdentificationResponse(payload, url, finalDecision, relayAction);
+      console.log('Central access decision:', { device_id: effectiveDeviceId, ...finalDecision });
       console.log('Identification response (immediate):', {
         device_id: effectiveDeviceId,
         device_type: deviceType,
@@ -1071,6 +1369,21 @@ Deno.serve(async (req) => {
             .single();
 
           const logEntryId = logData?.id || null;
+
+          // Visitante saindo: fecha a visita ativa (o cadastro permanece para a
+          // próxima liberação facial).
+          if (finalDecision.visitor_action === 'exit' && finalDecision.visitor_entry_id) {
+            try {
+              const { data: visitorEntry } = await supabaseClient
+                .from('access_entries')
+                .select('*')
+                .eq('id', finalDecision.visitor_entry_id)
+                .maybeSingle();
+              if (visitorEntry) await closeVisitorEntry(supabaseClient, visitorEntry);
+            } catch (e) {
+              console.error('Error closing visitor entry:', e);
+            }
+          }
 
           // 3. Auto-sync vehicle tag
           const cardValue = String(payload.card_value || '');

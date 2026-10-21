@@ -1,9 +1,25 @@
+export type VisitorSubject = {
+  subjectKey: string;
+  name: string;
+  document?: string | null;
+  visitorType?: string | null;
+  photoUrl?: string | null;
+  distance?: number | null;
+  source?: 'device' | 'face';
+};
+
 export type AccessDecision = {
   allow: boolean;
   reason: string;
   source: 'db' | 'fallback';
   resident?: string;
+  resident_name?: string;
+  resident_id?: string | null;
   resolved_user_id?: number;
+  visitor_subject?: VisitorSubject;
+  visitor_action?: 'entry' | 'exit' | 'pending' | 'denied' | 'blocked';
+  visitor_entry_id?: string | null;
+  release_request_id?: string | null;
 };
 
 // Matches the ID used by resident synchronization/enrollment.

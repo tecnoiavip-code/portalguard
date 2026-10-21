@@ -323,12 +323,12 @@ export const NewRegistry = () => {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         context.drawImage(video, 0, 0);
-        const compressed = await compressImage(canvas);
+        const compressed = await compressImage(canvas, { format: 'jpeg', quality: 0.9, maxDimension: 1600 });
         const photoData = compressed?.dataUrl ?? canvas.toDataURL('image/jpeg');
-        setFormData({
-          ...formData,
+        setFormData(prev => ({
+          ...prev,
           photo: photoData
-        });
+        }));
         stopCamera();
         toast.success('Foto capturada com sucesso!');
       }
@@ -337,12 +337,12 @@ export const NewRegistry = () => {
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const compressed = await compressImage(file);
+      const compressed = await compressImage(file, { format: 'jpeg', quality: 0.9, maxDimension: 1600 });
       const photo = compressed?.dataUrl ?? (await blobToDataUrl(file));
-      setFormData({
-        ...formData,
+      setFormData(prev => ({
+        ...prev,
         photo
-      });
+      }));
       toast.success('Foto carregada com sucesso!');
     }
   };

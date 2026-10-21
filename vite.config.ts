@@ -83,7 +83,7 @@ export default defineConfig(({ mode }) => {
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         skipWaiting: true,
         clientsClaim: true,
-        navigateFallbackDenylist: [/^\/~oauth/],
+        navigateFallbackDenylist: [/^\/~oauth/, /^\/apresentacao/],
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
         runtimeCaching: [
           {
@@ -109,6 +109,12 @@ export default defineConfig(({ mode }) => {
   },
   build: {
     target: 'es2022',
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        apresentacao: path.resolve(__dirname, 'apresentacao/index.html'),
+      },
+    },
   },
   };
 });

@@ -407,7 +407,7 @@ const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise
         resident = (data || []).find((r: any) => {
           const rn = normalizeName(r.name);
           return rn.includes(target) || target.includes(rn);
-        }) || ((data || []).length === 1 ? data[0] : null);
+        }) || null;
       }
     }
 

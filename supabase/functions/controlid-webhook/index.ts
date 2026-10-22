@@ -260,6 +260,20 @@ const DECISION_TIMEOUT_MS = 2500;
 const normalizeName = (s: string) =>
   s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
+// O leitor grava o nome como "<apartamento> - <pessoa>". O apartamento pode ser
+// "101" ou "SALINAS 97", então não dá para assumir que começa com número.
+const splitDeviceUserName = (value: string) => {
+  const text = String(value ?? '').trim();
+  const match = text.match(/\s[-–—]\s/);
+  if (!match || match.index === undefined || match.index <= 0) {
+    return { apartment: '', name: text };
+  }
+  return {
+    apartment: text.slice(0, match.index).trim(),
+    name: text.slice(match.index + match[0].length).trim(),
+  };
+};
+
 // ============= NOVO CADASTRO: LIBERAÇÃO FACIAL DE USO ÚNICO =============
 const VISITOR_ACCESS_TYPES = ['visitor', 'service_provider', 'delivery'];
 const normalizeDocument = (value: unknown) =>
@@ -269,8 +283,7 @@ const hardwareIdFor = (value: string): number => {
   for (let i = 0; i < value.length; i++) hash = (hash * 31 + value.charCodeAt(i)) | 0;
   return Math.abs(hash);
 };
-const stripApartmentPrefix = (value: string) =>
-  value.replace(/^(\d+\w?)\s*[-\u2013]\s*/, '').trim();
+const stripApartmentPrefix = (value: string) => splitDeviceUserName(value).name;
 const visitorSubjectKey = (document: unknown, name: unknown) => {
   const doc = normalizeDocument(document);
   if (doc.length >= 4) return `doc:${doc}`;
@@ -285,6 +298,10 @@ const visitorSubjectFromEntry = (row: any): VisitorSubject & { subjectKey: strin
   photoUrl: row.photo_url || null,
   source: 'device',
 });
+const storedPhotoUrl = (value: unknown) => {
+  const url = String(value || '');
+  return url.startsWith('data:') ? null : (url || null);
+};
 const sameVisitorSubject = (entry: any, subject: VisitorSubject) =>
   !!subject.subjectKey &&
   visitorSubjectKey(entry.visitor_document, entry.visitor_name) === subject.subjectKey;
@@ -395,19 +412,33 @@ const evaluateCentralAccess = async (supabaseClient: any, payload: any): Promise
     }
 
     if (!resident && userName) {
-      const m = userName.match(/^(\d+\w?)\s*[-–]\s*(.+)$/i);
-      if (m) {
-        const [, apt, n] = m;
+      const { apartment: apt, name: rawName } = splitDeviceUserName(userName);
+      if (apt && rawName) {
         const { data, error } = await supabaseClient
           .from('residents')
           .select('id, name, apartment, contract_type, contract_end_date, person_type')
-          .ilike('apartment', `%${apt.trim()}`);
+          .ilike('apartment', `%${apt}%`);
         if (error) throw error;
-        const target = normalizeName(n);
-        resident = (data || []).find((r: any) => {
-          const rn = normalizeName(r.name);
-          return rn.includes(target) || target.includes(rn);
-        }) || null;
+        const target = normalizeName(rawName);
+        // Antes de aceitar qualquer morador por semelhança de nome, verifica se
+        // o documento do equipamento corresponde a um cadastro do Novo Cadastro.
+        const registeredVisitor = await findVisitorSubject(supabaseClient, {
+          registration: payload?.registration,
+        });
+        if (!registeredVisitor) {
+          const exact = (data || []).find((r: any) => normalizeName(r.name) === target);
+          if (exact) {
+            resident = exact;
+          } else {
+            const namedVisitor = await findVisitorSubject(supabaseClient, { userName });
+            if (!namedVisitor) {
+              resident = (data || []).find((r: any) => {
+                const rn = normalizeName(r.name);
+                return rn.includes(target) || target.includes(rn);
+              }) || null;
+            }
+          }
+        }
       }
     }
 
@@ -585,6 +616,9 @@ const decideVisitorAccess = async (
   }
 
   const ts = new Date().toISOString();
+  const rawPhotoUrl = photoTemplate?.photo_url || subject.photoUrl || null;
+  const photoUrl = storedPhotoUrl(rawPhotoUrl);
+  const photoEntryId = photoUrl ? null : (photoTemplate?.id || null);
   const { data: created, error: insertError } = await supabaseClient
     .from('facial_release_requests')
     .insert({
@@ -596,7 +630,8 @@ const decideVisitorAccess = async (
       apartment: template?.apartment || '',
       resident_id: template?.resident_id || null,
       resident_name: template?.resident_name || null,
-      photo_url: photoTemplate?.photo_url || subject.photoUrl || null,
+      photo_url: photoUrl,
+      photo_entry_id: photoEntryId,
       company: template?.company || null,
       vehicle_plate: template?.vehicle_plate || null,
       vehicle_model: template?.vehicle_model || null,

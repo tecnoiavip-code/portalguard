@@ -80,9 +80,28 @@ Deno.serve(async (req) => {
         return json({ error: { message: 'Não foi possível listar os pedidos' } }, 500);
       }
 
+      const retentionCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      await admin
+        .from('facial_release_requests')
+        .delete()
+        .in('status', ['approved', 'denied', 'expired'])
+        .lt('resolved_at', retentionCutoff);
+
+      const photoIds = [...new Set((rows || [])
+        .filter((row: any) => !row.photo_url && row.photo_entry_id)
+        .map((row: any) => row.photo_entry_id))];
+      const entryPhotos = new Map<string, string | null>();
+      if (photoIds.length) {
+        const { data: photos } = await admin
+          .from('access_entries')
+          .select('id, photo_url')
+          .in('id', photoIds);
+        (photos || []).forEach((photo: any) => entryPhotos.set(photo.id, photo.photo_url));
+      }
+
       const requests = await Promise.all((rows || []).map(async (row: any) => ({
         ...row,
-        photo_url: await resolvePhotoUrl(admin, row.photo_url),
+        photo_url: await resolvePhotoUrl(admin, row.photo_url || entryPhotos.get(row.photo_entry_id) || null),
       })));
       return json({ requests });
     }
@@ -140,11 +159,14 @@ Deno.serve(async (req) => {
     if (body?.resident_id) {
       const { data: resident } = await admin
         .from('residents')
-        .select('id, name, apartment')
+        .select('id, name, apartment, person_type')
         .eq('id', String(body.resident_id))
         .maybeSingle();
       if (!resident) {
         return json({ error: { message: 'Morador selecionado não encontrado' } }, 400);
+      }
+      if (resident.person_type && resident.person_type !== 'morador') {
+        return json({ error: { message: 'Selecione um morador para autorizar a entrada' } }, 400);
       }
       residentId = resident.id;
       residentName = resident.name;
@@ -157,6 +179,19 @@ Deno.serve(async (req) => {
 
     if (!apartment) {
       return json({ error: { message: 'Informe o apartamento desta entrada' } }, 400);
+    }
+    if (residentId && !body?.resident_id) {
+      const { data: linkedResident } = await admin
+        .from('residents')
+        .select('person_type')
+        .eq('id', residentId)
+        .maybeSingle();
+      if (!linkedResident) {
+        return json({ error: { message: 'Morador do pedido não encontrado; selecione um morador' } }, 400);
+      }
+      if (linkedResident.person_type && linkedResident.person_type !== 'morador') {
+        return json({ error: { message: 'O pedido está vinculado a um colaborador; selecione um morador' } }, 400);
+      }
     }
 
     const document = String(request.visitor_document || '');

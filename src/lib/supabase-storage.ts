@@ -815,17 +815,20 @@ export const supabaseStorage = {
       return [];
     }
     
-    return (data || []).map(d => ({
-      id: d.id,
-      name: d.name,
-      type: d.type as any,
-      location: d.location,
-      status: d.status as any,
-      lastSync: d.last_sync,
-      ipAddress: d.ip_address || '',
-      serialNumber: d.serial_number || '',
-      isActive: !(d.is_active === false || d.is_active === 0 || d.is_active === '0'),
-    }));
+    return (data || []).map(d => {
+      const device = d as typeof d & { is_active?: boolean | number | string | null };
+      return {
+        id: d.id,
+        name: d.name,
+        type: d.type as any,
+        location: d.location,
+        status: d.status as any,
+        lastSync: d.last_sync,
+        ipAddress: d.ip_address || '',
+        serialNumber: d.serial_number || '',
+        isActive: !(device.is_active === false || device.is_active === 0 || device.is_active === '0'),
+      };
+    });
   },
 
   async saveDevice(device: Device): Promise<boolean> {

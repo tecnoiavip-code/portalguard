@@ -7,6 +7,7 @@ export interface FacialReleaseRequest {
   visitor_document?: string | null;
   visitor_type?: string | null;
   apartment?: string | null;
+  resident_id?: string | null;
   resident_name?: string | null;
   photo_url?: string | null;
   company?: string | null;
@@ -23,6 +24,7 @@ interface FunctionPayload {
   requests?: FacialReleaseRequest[];
   ok?: boolean;
   remote_open?: boolean;
+  error?: { message?: string } | null;
 }
 
 const unwrap = (response: { data?: unknown; error?: { message?: string } | null }): FunctionPayload => {

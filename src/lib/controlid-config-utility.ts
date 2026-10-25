@@ -23,7 +23,7 @@ export function buildControlIdUtilityHtml(devices: { ip: string; name?: string }
     },
     general: { online: '1', local_identification: '1' },
   };
-  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Configurador Control iD - CondoGuard</title>
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Configurador Control iD - PortalGuard</title>
 <style>body{font-family:system-ui;background:#111418;color:#e7e9ec;max-width:760px;margin:30px auto;padding:0 16px}
 input,textarea{width:100%;padding:8px;background:#1c2026;color:#fff;border:1px solid #333;border-radius:6px;box-sizing:border-box}
 button{padding:10px 16px;border:0;border-radius:6px;background:#2f7d4f;color:#fff;font-weight:600;cursor:pointer;margin-top:12px}

@@ -80,15 +80,16 @@ export const FacialReleaseModal = () => {
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
-    supabase
+    const residentsQuery = supabase
       .from('residents')
       .select('id, name, apartment, person_type')
-      .order('apartment', { ascending: true })
-      .then(({ data }: { data: ResidentOption[] | null }) => {
-        if (!cancelled && data) {
-          setResidents(data.filter((resident) => (resident.person_type ?? 'morador') === 'morador'));
-        }
-      });
+      .order('apartment', { ascending: true });
+    residentsQuery.then((response) => {
+      const data = (response as unknown as { data?: ResidentOption[] | null }).data;
+      if (!cancelled && data) {
+        setResidents(data.filter((resident) => (resident.person_type ?? 'morador') === 'morador'));
+      }
+    });
     return () => {
       cancelled = true;
     };

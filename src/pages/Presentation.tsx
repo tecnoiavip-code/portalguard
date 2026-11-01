@@ -49,6 +49,7 @@ import {
   SecurityMockup,
 } from '@/components/presentation/Mockups';
 import '@/components/presentation/presentation.css';
+import demoVideo from '@/assets/videos/portalguard_demo.mp4.asset.json';
 
 const SUPPORT_EMAIL = 'tecno.iavip@gmail.com';
 const SUPPORT_PHONE_DISPLAY = '(11) 97694-9949';
@@ -566,6 +567,19 @@ const Presentation = () => {
                 </FloatingCard>
               </div>
             </div>
+          </div>
+        </section>
+
+        <section id="demonstracao" className="mx-auto max-w-6xl px-5 pb-16 lg:px-8">
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950 shadow-2xl shadow-sky-500/10">
+            <video
+              src={demoVideo.url}
+              poster="/og-apresentacao.png"
+              controls
+              playsInline
+              preload="metadata"
+              className="aspect-video w-full"
+            />
           </div>
         </section>
 

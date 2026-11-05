@@ -49,7 +49,7 @@ import {
   SecurityMockup,
 } from '@/components/presentation/Mockups';
 import '@/components/presentation/presentation.css';
-import demoVideo from '@/assets/videos/portalguard_demo_app.mp4.asset.json';
+const demoVideo = { url: '/videos/portalguard_demo_app.mp4' };
 
 const SUPPORT_EMAIL = 'tecno.iavip@gmail.com';
 const SUPPORT_PHONE_DISPLAY = '(11) 97694-9949';
